@@ -58,6 +58,64 @@ person reading the results.
                     SSE "complete"
 ```
 
+## Two paths: live search and ingestion
+
+Scraping does not happen inside a web request, and the reason is arithmetic.
+Netlify caps functions at 26 seconds (`netlify.toml`); a crawl polite enough
+not to be rate limited takes minutes. Anything that fits in the request budget
+is too aggressive to be sustainable.
+
+So there are two paths:
+
+```
+  scripts/ingest.ts  ──►  boards  ──►  Postgres        (no deadline, scheduled)
+                                          │
+  browser ──► /api/scrape ──► fast API boards + Postgres  (< 18s, per request)
+```
+
+**Ingestion** (`scripts/ingest.ts`, `.github/workflows/ingest.yml`) walks every
+board for a country with no time limit, paced per host, and writes to Postgres.
+Incremental by default: it asks each board for postings changed since the last
+run.
+
+**Live search** (`/api/scrape`) runs only the boards that can answer a keyword
+query inside a request — the JSON APIs — under an 18-second budget, then
+surfaces everything ingestion has already collected. A slow board degrades into
+cached results instead of killing the function.
+
+## Why there is no browser
+
+A job board's *listing* page is often client-rendered, which is what Playwright
+used to be for. But its *job detail* pages are server-rendered with
+`schema.org/JobPosting` markup, because every board wants Google Jobs to index
+them. So a browser was only ever needed to answer one question — which job URLs
+exist — and a sitemap answers that directly:
+
+```
+robots.txt → Sitemap: … → sitemap index → job URLs (+ lastmod) → detail pages → JSON-LD
+```
+
+`lastmod` is the part that matters most. It makes a repeat run fetch only what
+changed, which keeps a daily crawl small enough to stay well inside any board's
+tolerance. See `src/lib/scrapers/boards/sitemap-board.ts`.
+
+## Not getting rate limited
+
+Everything in `src/lib/scrapers/http/`:
+
+| Measure | Why |
+|---|---|
+| Per-host token bucket + concurrency cap | One board never sees a burst, however many boards run at once |
+| Global concurrency cap | Bounds the whole run to one machine's fair share |
+| `Retry-After` honoured on 429/503 | The server said when to come back; ignoring it is how a throttle becomes a block |
+| Jitter applied upward only on explicit `Retry-After` | Spreads retries without ever returning early |
+| Exponential backoff with jitter otherwise | Repeated throttling widens the gap instead of hammering |
+| Conditional GET (`ETag`/`If-Modified-Since`) | A 304 is the cheapest request there is |
+| `robots.txt` incl. `Crawl-delay` | The host's own stated pace, obeyed |
+| Honest `User-Agent` with a project URL | An operator who wants to talk to us, or block us, can |
+| Per-request deadline | A hung response cannot stall a whole run |
+
+
 ## 1. The request
 
 `src/app/api/scrape/route.ts`, `POST /api/scrape`. Node runtime,

@@ -90,16 +90,35 @@ Optional — everything still works without these:
 
 | Variable | What it unlocks |
 |---|---|
-| `PLAYWRIGHT_ENABLED=true` | Renders JavaScript-heavy boards, which adds several sources |
+| `PLAYWRIGHT_ENABLED=true` | Adds live keyword search on JavaScript-heavy boards. Not needed for ingestion, which reaches them through their sitemaps |
 | `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` | Adzuna's free tier, adding local boards in ~19 countries |
 | `DEFAULT_COUNTRY` | Fallback country when yours cannot be detected |
 | `DATABASE_DRIVER` | Force `pg` or `neon` instead of detecting from the URL |
 
 See [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) for the full annotated list.
 
-## Trying a board from the terminal
+## Collecting jobs
 
-Adding or debugging a board does not need the app running:
+Scraping runs as a script, not inside a web request — a polite crawl takes
+minutes and serverless functions are capped at seconds. The script has no
+deadline, paces itself per host, and needs no browser:
+
+```bash
+npm run ingest -- --country CZ            # collect into the database
+npm run ingest -- --country DE --limit 200
+npm run ingest -- --country BR --dry-run  # scrape without writing
+```
+
+It is incremental: a repeat run only fetches postings the board says have
+changed. Schedule it with cron, or use the included GitHub Actions workflow
+(`.github/workflows/ingest.yml`), which needs one secret — `DATABASE_URL`.
+
+The web app then answers searches out of the database, so a search is instant
+and cannot time out.
+
+### Trying a single board
+
+Debugging a board does not need the app or a database:
 
 ```bash
 npx tsx scripts/scrape.ts react --country DE
@@ -144,6 +163,8 @@ npm run lint         # eslint
 npm run typecheck    # tsc --noEmit
 npm test             # unit tests (vitest)
 npm run test:e2e     # end-to-end tests (playwright)
+npm run ingest       # collect jobs into the database
+npm run scrape       # try one board from the terminal
 npm run db:migrate   # apply migrations
 npm run db:studio    # browse the database
 ```
