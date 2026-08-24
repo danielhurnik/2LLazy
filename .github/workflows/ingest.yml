@@ -1,0 +1,78 @@
+name: Ingest jobs
+
+# Scraping runs here rather than in a web request. Netlify caps functions at 26
+# seconds, so a polite multi-board crawl cannot finish inside one — and rushing
+# it hard enough to fit is what gets a scraper rate limited. An Actions job has
+# no such limit, costs nothing on a public repository, and can take its time.
+#
+# Requires one secret: DATABASE_URL. No browser, no API key.
+
+on:
+  schedule:
+    # Twice a day, offset from the hour so this is not competing with every
+    # other cron on GitHub's fleet for a runner.
+    - cron: "17 5,17 * * *"
+  workflow_dispatch:
+    inputs:
+      country:
+        description: "ISO 3166-1 alpha-2 country to collect for"
+        required: false
+        default: "CZ"
+      full:
+        description: "Ignore the last-run timestamp and walk everything"
+        type: boolean
+        required: false
+        default: false
+      limit:
+        description: "Max postings per board"
+        required: false
+        default: "400"
+
+concurrency:
+  # Two ingests writing the same rows at once would just contend on the
+  # database and hammer the boards twice as hard.
+  group: ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    # Generous, but bounded: a run that has not finished in an hour has hit
+    # something worth looking at rather than something worth waiting for.
+    timeout-minutes: 60
+
+    strategy:
+      # Countries run one at a time so the shared worldwide boards (Remotive,
+      # RemoteOK and friends) see one crawler, not four.
+      max-parallel: 1
+      matrix:
+        country: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', inputs.country)) || fromJSON('["CZ","DE","GB","US"]') }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Ingest ${{ matrix.country }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Optional: adds Adzuna's local board in ~19 countries when set.
+          ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
+          ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
+        run: |
+          npx tsx scripts/ingest.ts \
+            --country "${{ matrix.country }}" \
+            --limit "${{ github.event_name == 'workflow_dispatch' && inputs.limit || '400' }}" \
+            --concurrency 4 \
+            ${{ github.event_name == 'workflow_dispatch' && inputs.full == true && '--full' || '' }}

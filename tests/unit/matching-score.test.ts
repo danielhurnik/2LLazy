@@ -284,6 +284,42 @@ describe("scoreJob — explanations", () => {
   });
 });
 
+describe("homogeneous result sets", () => {
+  /**
+   * Regression: a board answering a React search with fifty React jobs drove
+   * the IDF of "react" to nearly zero — it appeared in every document — and
+   * every posting scored below the threshold, so the user saw an empty page.
+   * A title match must carry evidence regardless of what else came back.
+   */
+  const sameRole: ScoreInput[] = Array.from({ length: 20 }, (_, i) => ({
+    title: `Senior React Developer ${i + 1}`,
+    company: `Company ${i + 1}`,
+    description: "We need a Senior React Developer. React, TypeScript, Node.js, Kubernetes.",
+  }));
+
+  it("still shows postings when every result matches the query", () => {
+    const ranked = rankJobs(sameRole, classifyQueryIntent("react"));
+    expect(ranked.every((job) => job.score >= RELEVANCE_THRESHOLD)).toBe(true);
+  });
+
+  it("separates titles even when the descriptions are identical", () => {
+    const mixed: ScoreInput[] = [
+      ...sameRole.slice(0, 10),
+      ...Array.from({ length: 10 }, (_, i) => ({
+        title: `DevOps Engineer ${i + 1}`,
+        company: `Company ${i + 20}`,
+        // Deliberately the same body text as the React postings.
+        description: "We need a Senior React Developer. React, TypeScript, Node.js, Kubernetes.",
+      })),
+    ];
+
+    const ranked = rankJobs(mixed, classifyQueryIntent("react"));
+    const above = ranked.filter((job) => job.score >= RELEVANCE_THRESHOLD);
+    expect(above).toHaveLength(10);
+    expect(above.every((job) => job.title.startsWith("Senior React"))).toBe(true);
+  });
+});
+
 describe("buildCorpusStats", () => {
   it("gives a rare term a higher IDF than a ubiquitous one", () => {
     const { idf } = buildCorpusStats([
@@ -293,6 +329,11 @@ describe("buildCorpusStats", () => {
       "react kubernetes airflow",
     ]);
     expect(idf.get("airflow")!).toBeGreaterThan(idf.get("react")!);
+  });
+
+  it("floors IDF so a term in every document still counts for something", () => {
+    const { idf } = buildCorpusStats(["react", "react", "react", "react"]);
+    expect(idf.get("react")!).toBeGreaterThan(0.3);
   });
 
   it("returns a usable average length for an empty corpus", () => {

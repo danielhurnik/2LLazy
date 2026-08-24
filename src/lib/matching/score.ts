@@ -59,8 +59,20 @@ const B = 0.75;
 const TITLE_WEIGHT = 3.0;
 /** Assumed average posting length when no corpus statistics are supplied. */
 const DEFAULT_AVG_LENGTH = 220;
-/** IDF used for a term the corpus has never seen. */
+/** IDF used for a term the corpus has never seen, and for every title match. */
 const DEFAULT_IDF = 1.6;
+
+/**
+ * Floor under corpus IDF.
+ *
+ * Raw Robertson/Sparck-Jones IDF collapses toward zero for a term present in
+ * every document. That is right for *ordering* within a result set but wrong
+ * for the absolute score, which decides whether a posting is shown at all: a
+ * board that returns fifty genuine React jobs for a React query would drive
+ * "react" to no weight and filter every one of them out. Floor it so a real
+ * match always carries evidence.
+ */
+const MIN_CORPUS_IDF = 0.35;
 
 /** A negative term in the title is close to disqualifying. */
 const NEGATIVE_TITLE_PENALTY = 0.55;
@@ -126,9 +138,10 @@ export function buildCorpusStats(docs: string[]): { idf: Map<string, number>; av
 
   const n = Math.max(docs.length, 1);
   for (const [term, df] of documentFrequency) {
-    // Robertson/Sparck-Jones IDF, floored so a term in every document still
-    // contributes a little rather than going negative.
-    idf.set(term, Math.max(0.05, Math.log(1 + (n - df + 0.5) / (df + 0.5))));
+    // Robertson/Sparck-Jones IDF. Floored rather than allowed toward zero — see
+    // MIN_CORPUS_IDF in ./score for why a homogeneous result set must not
+    // flatten every term to nothing.
+    idf.set(term, Math.max(MIN_CORPUS_IDF, Math.log(1 + (n - df + 0.5) / (df + 0.5))));
   }
 
   return { idf, avgDocLength: docs.length > 0 ? totalLength / n : DEFAULT_AVG_LENGTH };
@@ -208,7 +221,7 @@ export function scoreJob(job: ScoreInput, intent: QueryIntent, ctx: ScoreContext
     const key = normaliseTerm(term);
     if (!key) continue;
     totalWeight += weight;
-    const idf = ctx.idf?.get(key) ?? DEFAULT_IDF;
+    const bodyIdf = Math.max(ctx.idf?.get(key) ?? DEFAULT_IDF, MIN_CORPUS_IDF);
     const inTitle = occurrences(key, title);
     const inBody = occurrences(key, body);
 
@@ -222,8 +235,11 @@ export function scoreJob(job: ScoreInput, intent: QueryIntent, ctx: ScoreContext
     matched.push(term);
     matchedWeight += weight;
     if (inTitle > 0) titleHits++;
-    raw += weight * TITLE_WEIGHT * bm25(inTitle, idf, Math.max(title.length, 1), 8);
-    raw += weight * bm25(inBody, idf, body.length, avgLength);
+    // The title contribution deliberately ignores corpus statistics. Whether a
+    // posting's *title* answers the query is a fact about that posting, not
+    // about what else happened to come back in the same batch.
+    raw += weight * TITLE_WEIGHT * bm25(inTitle, DEFAULT_IDF, Math.max(title.length, 1), 8);
+    raw += weight * bm25(inBody, bodyIdf, body.length, avgLength);
   }
 
   if (totalWeight > 0) {

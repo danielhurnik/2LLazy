@@ -65,6 +65,29 @@ export interface ScrapeQuery {
 export type ScrapeFn = (q: ScrapeQuery) => Promise<ScrapedJob[]>;
 
 /**
+ * Bulk ingestion context. Unlike a live search this has no user query and no
+ * deadline: it walks everything a board publishes, newest first, and yields as
+ * it goes so the caller can persist incrementally and resume after a crash.
+ */
+export interface IngestContext {
+  /** Country this run is collecting for. */
+  country: CountryCode;
+  /** Skip postings the board says have not changed since this. */
+  since: Date | null;
+  /** Stop after this many postings. */
+  limit: number;
+  signal?: AbortSignal;
+  /** Called for progress reporting; never for control flow. */
+  onProgress?: (message: string) => void;
+}
+
+/**
+ * Walks a board in bulk. Yields postings one at a time so a long run can be
+ * checkpointed — an ingest of several thousand jobs must survive being killed.
+ */
+export type IngestFn = (ctx: IngestContext) => AsyncGenerator<ScrapedJob>;
+
+/**
  * Registry metadata for one job board.
  *
  * `countries` drives board selection: a board listing `["CZ", "SK"]` only runs
@@ -92,7 +115,24 @@ export interface BoardDefinition {
   requiredEnv?: string[];
   /** One-line note surfaced in Settings, e.g. "free API, no key required". */
   note?: string;
+  /**
+   * Answers a user's query directly, fast enough to run inside a web request.
+   * Boards whose listing pages are client-rendered cannot do this without a
+   * browser, so they set `supportsLiveSearch: false` and rely on `ingest`.
+   */
   scrape: ScrapeFn;
+  /**
+   * False when the board cannot serve a keyword search without rendering
+   * JavaScript. Such boards are skipped by the live search route and collected
+   * by the ingest script instead; their postings still reach the user, out of
+   * the database.
+   */
+  supportsLiveSearch?: boolean;
+  /**
+   * Bulk collection for the ingest script. Present on every board that can be
+   * walked without a query — which, via sitemaps, is most of them.
+   */
+  ingest?: IngestFn;
 }
 
 // ─── Query intent (deterministic; see src/lib/matching) ───────────────────────

@@ -9,6 +9,7 @@
  */
 import { pwFetch } from "../playwright-browser";
 import { acceptLanguageFor, runHtmlBoard } from "./helpers";
+import { ingestViaSitemap } from "./sitemap-board";
 import type { BoardDefinition, CountryCode } from "../types";
 
 const BASE = "https://nofluffjobs.com";
@@ -56,7 +57,21 @@ export const noFluffJobsBoard: BoardDefinition = {
   countries: Object.keys(COUNTRY_PATHS),
   remoteOnly: false,
   requiresBrowser: true,
+  supportsLiveSearch: true,
   note: "Central-European IT board, salary always disclosed",
+  ingest: (ctx) =>
+    ingestViaSitemap(
+      {
+        id: "nofluffjobs",
+        source: "NOFLUFFJOBS",
+        origin: BASE,
+        country: ctx.country,
+        urlPattern: /nofluffjobs\.com\/[a-z]{2}\/job\//i,
+        sitemapPattern: /job/i,
+        acceptLanguage: acceptLanguageFor(ctx.country),
+      },
+      ctx,
+    ),
   scrape: (q) => {
     const path = countryPath(q.country);
     const acceptLanguage = acceptLanguageFor(q.country);

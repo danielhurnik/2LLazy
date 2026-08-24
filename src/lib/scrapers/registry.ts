@@ -74,6 +74,12 @@ export function missingEnvFor(board: BoardDefinition): string[] {
 export interface BoardSelectionOptions {
   /** Drop boards that also list non-remote roles. */
   remoteOnly?: boolean;
+  /**
+   * Only boards that can answer a keyword search inside a web request. The
+   * search route sets this; the ingest script does not, because it can walk
+   * the rest through their sitemaps with no deadline.
+   */
+  liveSearchOnly?: boolean;
   /** Drop boards needing a browser when Playwright is not enabled. */
   playwrightEnabled?: boolean;
   /** Restrict to these board ids (used by tests and by a future per-user opt-out). */
@@ -94,6 +100,7 @@ export function boardsForCountry(
   const selected = BOARDS.filter((board) => {
     if (opts.only && !opts.only.includes(board.id)) return false;
     if (missingEnvFor(board).length > 0) return false;
+    if (opts.liveSearchOnly && board.supportsLiveSearch === false) return false;
     if (board.requiresBrowser && !playwright) return false;
     if (opts.remoteOnly && !board.remoteOnly) {
       // A general board can still return remote roles; keep it, the ranker
@@ -158,6 +165,21 @@ export function boardStatus(country: CountryCode): BoardStatus[] {
       note: board.note,
     };
   }).sort((a, b) => Number(b.enabled) - Number(a.enabled) || a.name.localeCompare(b.name));
+}
+
+/**
+ * Boards the ingest script should walk for a country.
+ *
+ * Unlike the live search this ignores `requiresBrowser`: a board whose listing
+ * page needs JavaScript is still walkable through its sitemap, which is the
+ * whole reason ingestion exists as a separate path.
+ */
+export function ingestBoardsForCountry(country: CountryCode): BoardDefinition[] {
+  const code = country.toUpperCase();
+  return BOARDS.filter((board) => {
+    if (missingEnvFor(board).length > 0) return false;
+    return isWorldwide(board) || board.countries.includes(code);
+  }).sort((a, b) => Number(isWorldwide(a)) - Number(isWorldwide(b)) || a.name.localeCompare(b.name));
 }
 
 /** Countries with at least one board of their own, for the country picker. */

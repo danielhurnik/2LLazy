@@ -7,6 +7,7 @@
  */
 import { pwFetch } from "../playwright-browser";
 import { acceptLanguageFor, runHtmlBoard, SENIORITY_SLUGS } from "./helpers";
+import { ingestViaSitemap } from "./sitemap-board";
 import type { BoardDefinition } from "../types";
 
 const BASE = "https://www.startupjobs.cz";
@@ -19,7 +20,20 @@ export const startupJobsBoard: BoardDefinition = {
   countries: ["CZ", "SK"],
   remoteOnly: false,
   requiresBrowser: true,
+  supportsLiveSearch: true,
   note: "Czech and Slovak startups",
+  ingest: (ctx) =>
+    ingestViaSitemap(
+      {
+        id: "startupjobs",
+        source: "STARTUPJOBS",
+        origin: BASE,
+        country: ctx.country === "SK" ? "SK" : "CZ",
+        urlPattern: /startupjobs\.cz\/nabidka\//i,
+        acceptLanguage: acceptLanguageFor(ctx.country === "SK" ? "SK" : "CZ"),
+      },
+      ctx,
+    ),
   scrape: (q) => {
     const country = q.country === "SK" ? "SK" : "CZ";
     const acceptLanguage = acceptLanguageFor(country);

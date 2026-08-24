@@ -11,6 +11,7 @@
  */
 import { pwFetch } from "../playwright-browser";
 import { acceptLanguageFor, runHtmlBoard } from "./helpers";
+import { ingestViaSitemap } from "./sitemap-board";
 import type { BoardDefinition, CountryCode } from "../types";
 
 /**
@@ -49,7 +50,20 @@ export const joobleBoard: BoardDefinition = {
   countries: Object.keys(JOOBLE_DOMAINS),
   remoteOnly: false,
   requiresBrowser: true,
+  supportsLiveSearch: true,
   note: "Aggregator with a local site in ~60 countries",
+  ingest: (ctx) =>
+    ingestViaSitemap(
+      {
+        id: "jooble",
+        source: "JOOBLE",
+        origin: `https://${joobleHost(ctx.country)}`,
+        country: ctx.country,
+        urlPattern: /jooble\.org\/(desc|jdp)\//i,
+        acceptLanguage: acceptLanguageFor(ctx.country),
+      },
+      ctx,
+    ),
   scrape: (q) => {
     const host = joobleHost(q.country);
     const acceptLanguage = acceptLanguageFor(q.country);

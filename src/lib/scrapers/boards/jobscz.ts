@@ -4,6 +4,7 @@
  */
 import { pwFetch } from "../playwright-browser";
 import { acceptLanguageFor, runHtmlBoard } from "./helpers";
+import { ingestViaSitemap } from "./sitemap-board";
 import type { BoardDefinition } from "../types";
 
 const BASE = "https://www.jobs.cz";
@@ -16,8 +17,24 @@ export const jobsCzBoard: BoardDefinition = {
   homepage: BASE,
   countries: [COUNTRY],
   remoteOnly: false,
+  // Only the keyword search needs a browser. Bulk ingestion goes through the
+  // sitemap, which is why this board still works with Playwright switched off.
   requiresBrowser: true,
+  supportsLiveSearch: true,
   note: "Largest Czech job board",
+  ingest: (ctx) =>
+    ingestViaSitemap(
+      {
+        id: "jobscz",
+        source: "JOBSCZ",
+        origin: BASE,
+        country: COUNTRY,
+        urlPattern: /jobs\.cz\/(rpd|fp)\//i,
+        sitemapPattern: /(job|rpd|prace|nabidk)/i,
+        acceptLanguage: acceptLanguageFor(COUNTRY),
+      },
+      ctx,
+    ),
   scrape: (q) => {
     const acceptLanguage = acceptLanguageFor(COUNTRY);
 

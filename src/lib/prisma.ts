@@ -55,8 +55,26 @@ function createPrismaClient(): PrismaClient {
   return new PrismaClient({ adapter: new PrismaPg({ connectionString }), log });
 }
 
-export const prisma = globalForPrisma.prisma || createPrismaClient();
-
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
+/**
+ * Lazily constructed, so importing this module never touches the environment.
+ *
+ * Building the client eagerly meant any file transitively importing it threw
+ * when DATABASE_URL was unset — which broke `--help` on the CLI scripts, and
+ * anything else that only wanted the types or a dry run. The proxy defers
+ * construction to the first actual property access.
+ */
+function getClient(): PrismaClient {
+  if (!globalForPrisma.prisma) {
+    globalForPrisma.prisma = createPrismaClient();
+  }
+  return globalForPrisma.prisma;
 }
+
+export const prisma: PrismaClient = new Proxy({} as PrismaClient, {
+  get(_target, property, receiver) {
+    return Reflect.get(getClient() as object, property, receiver);
+  },
+  has(_target, property) {
+    return Reflect.has(getClient() as object, property);
+  },
+});

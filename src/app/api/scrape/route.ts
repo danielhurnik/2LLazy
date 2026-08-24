@@ -10,6 +10,18 @@ import type { ScrapedJob, ScrapeQuery, Seniority } from "@/lib/scrapers/types";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
+/**
+ * How long the live pass may spend on boards before it stops and falls back to
+ * the database.
+ *
+ * Netlify caps functions at 26 seconds (netlify.toml), and being killed
+ * mid-stream loses everything already found. Stopping deliberately at 18s
+ * leaves room to finish the cache pass and close the stream cleanly, so the
+ * user always gets results — the freshest ones the boards managed plus
+ * everything the ingest script collected earlier.
+ */
+const LIVE_SCRAPE_BUDGET_MS = 18_000;
+
 // Simple in-memory rate limiter (per-IP, resets on server restart)
 const rateMap = new Map<string, number>();
 const RATE_LIMIT_MS = 10_000; // 10 seconds between requests per IP
@@ -126,7 +138,10 @@ export async function POST(req: NextRequest) {
   const intent = classifyQueryIntent(query, skillLevel);
   const seniority = parseSeniority(skillLevel) ?? intent.seniority;
 
-  const boards = boardsForCountry(detected.country, { remoteOnly });
+  // Only boards that can answer a query inside a request. The rest — the ones
+  // whose listings need JavaScript — are collected by scripts/ingest.ts and
+  // reach the user through the cache pass below.
+  const boards = boardsForCountry(detected.country, { remoteOnly, liveSearchOnly: true });
 
   const encoder = new TextEncoder();
   const stream = new TransformStream<Uint8Array, Uint8Array>();
@@ -191,11 +206,16 @@ export async function POST(req: NextRequest) {
         salaryMax,
       };
 
+      // Boards get a shared deadline; whatever has not answered by then is
+      // abandoned rather than allowed to run the whole function out of time.
+      const budget = AbortSignal.timeout(LIVE_SCRAPE_BUDGET_MS);
+      const boardSignal = AbortSignal.any([req.signal, budget]);
+
       await Promise.allSettled(
         boards.map(async (board) => {
           await send({ type: "progress", site: board.name, message: `Searching ${board.name}…` });
           try {
-            const jobs = await board.scrape({ ...scrapeQuery, signal: req.signal });
+            const jobs = await board.scrape({ ...scrapeQuery, signal: boardSignal });
             if (jobs.length === 0) return;
 
             // IDF over this board's own result set: a term that appears in every
@@ -252,6 +272,10 @@ export async function POST(req: NextRequest) {
               );
             }
           } catch (err) {
+            // A board cut off by the budget is not an error worth showing: the
+            // user still gets the cached results, and saying "timed out" for
+            // every slow board on every search is just noise.
+            if (budget.aborted && !req.signal.aborted) return;
             console.error(`[scrape] ${board.name} error:`, err);
             await send({ type: "error", site: board.name, message: errorMessage(err) });
           } finally {

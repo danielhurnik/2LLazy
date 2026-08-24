@@ -4,13 +4,43 @@
  * Returns the raw HTML alongside the extracted text and links: deterministic
  * extraction reads structured data (JSON-LD, microdata, meta tags) straight
  * out of the markup, so the HTML must survive the fetch.
+ *
+ * Every request goes through the pacing layer in `./http/limiter`, which caps
+ * the rate and concurrency per host and backs off when a board says 429. That
+ * is deliberately not optional: a caller that could bypass it would eventually
+ * be the caller that gets the project blocked.
  */
 import * as cheerio from "cheerio";
 // undici is Node.js's built-in fetch engine — lets us control TCP connect timeout
 import { Agent } from "undici";
+import { hostOf, penaliseHost, rewardHost, withHostLimit } from "./http/limiter";
+import {
+  conditionalHeaders,
+  validatorsFrom,
+  NO_STORE,
+  type ConditionalStore,
+} from "./http/cache";
 
+/**
+ * Identifies the crawler honestly and points at the project, so an operator
+ * who wants to talk to us or block us can. Pretending to be Chrome invites
+ * exactly the bot-detection arms race this codebase is trying to avoid.
+ */
 const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+  "2LLazy/1.0 (open-source job search; +https://github.com/danielhurnik/2LLazy)";
+
+/** Overall deadline per request, so a hung response cannot stall a whole run. */
+const REQUEST_TIMEOUT_MS = 30_000;
+
+/** Statuses that mean "you are going too fast", as opposed to a hard failure. */
+const THROTTLE_STATUSES = new Set([429, 503]);
+
+/** Store used for conditional requests. Swapped by the ingest script. */
+let conditionalStore: ConditionalStore = NO_STORE;
+
+export function setConditionalStore(store: ConditionalStore): void {
+  conditionalStore = store;
+}
 
 /** A fetched page in every form the extraction layer needs. */
 export interface FetchedPage {
@@ -35,6 +65,16 @@ export interface FetchOptions {
   retries?: number;
   /** Preferred content language, e.g. `"cs,en-US,en;q=0.9"`. */
   acceptLanguage?: string;
+  /** Send `If-None-Match` / `If-Modified-Since` from the store. */
+  conditional?: boolean;
+  /** Overall deadline for this request, including retries. */
+  timeoutMs?: number;
+}
+
+/** Combines the caller's signal with our own per-request deadline. */
+function withDeadline(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
 async function fetchWithRetry(
@@ -43,26 +83,64 @@ async function fetchWithRetry(
   delayMs = 1500,
 ): Promise<Response> {
   const retries = opts.retries ?? 3;
+  const host = hostOf(url);
+  const cached = opts.conditional ? await conditionalStore.get(url) : null;
+
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      const res = await fetch(url, {
-        headers: {
-          "User-Agent": USER_AGENT,
-          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": opts.acceptLanguage ?? "en-US,en;q=0.9",
-          "Cache-Control": "no-cache",
-          ...opts.headers,
-        },
-        redirect: "follow",
-        signal: opts.signal,
-        // @ts-expect-error undici dispatcher not in fetch type definitions
-        dispatcher: agent,
-      });
-      if (res.ok) return res;
-      if (res.status === 429 && attempt < retries) {
-        await sleep(delayMs * attempt * 2, opts.signal);
-        continue;
+      const res = await withHostLimit(
+        url,
+        () =>
+          fetch(url, {
+            headers: {
+              "User-Agent": USER_AGENT,
+              Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+              "Accept-Language": opts.acceptLanguage ?? "en-US,en;q=0.9",
+              ...conditionalHeaders(cached),
+              ...opts.headers,
+            },
+            redirect: "follow",
+            signal: withDeadline(opts.signal, opts.timeoutMs ?? REQUEST_TIMEOUT_MS),
+            // @ts-expect-error undici dispatcher not in fetch type definitions
+            dispatcher: agent,
+          }),
+        opts.signal,
+      );
+
+      // 304: the board confirmed nothing changed. Replay the stored body so
+      // callers never notice, and treat it as a successful, nearly free read.
+      if (res.status === 304 && cached?.body != null) {
+        rewardHost(host);
+        return new Response(cached.body, {
+          status: 200,
+          headers: { "content-type": res.headers.get("content-type") ?? "text/html" },
+        });
       }
+
+      if (res.ok) {
+        rewardHost(host);
+        if (opts.conditional) {
+          const body = await res.clone().text();
+          await conditionalStore.set(url, {
+            ...validatorsFrom(res),
+            fetchedAt: new Date(),
+            body,
+          });
+        }
+        return res;
+      }
+
+      // Being throttled is not a failure to retry through — it is an
+      // instruction. Pause the whole host for as long as it asked.
+      if (THROTTLE_STATUSES.has(res.status)) {
+        const waitMs = penaliseHost(host, res.headers.get("retry-after"));
+        if (attempt < retries) {
+          await sleep(waitMs, opts.signal);
+          continue;
+        }
+        throw new Error(`HTTP ${res.status} for ${url} (rate limited, gave up after ${retries} attempts)`);
+      }
+
       throw new Error(`HTTP ${res.status} for ${url}`);
     } catch (err) {
       // An aborted request is a deliberate cancellation — never retry it.
@@ -141,6 +219,55 @@ export async function fetchJson<T>(url: string, opts: FetchOptions = {}): Promis
 export async function fetchText(url: string, opts: FetchOptions = {}): Promise<string> {
   const res = await fetchWithRetry(url, opts);
   return res.text();
+}
+
+/**
+ * Fetches XML — sitemaps and feeds. Conditional by default: these are the
+ * documents a scraper re-reads most often, so a 304 here is the cheapest
+ * request the whole pipeline makes.
+ */
+export async function fetchXml(url: string, opts: FetchOptions = {}): Promise<string> {
+  const res = await fetchWithRetry(url, {
+    conditional: true,
+    ...opts,
+    headers: { Accept: "application/xml,text/xml;q=0.9,*/*;q=0.8", ...opts.headers },
+  });
+  return res.text();
+}
+
+/** POSTs JSON to a board's own API and parses the reply. */
+export async function postJson<T>(
+  url: string,
+  body: unknown,
+  opts: FetchOptions = {},
+): Promise<T> {
+  const res = await withHostLimit(
+    url,
+    () =>
+      fetch(url, {
+        method: "POST",
+        headers: {
+          "User-Agent": USER_AGENT,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          ...opts.headers,
+        },
+        body: JSON.stringify(body),
+        signal: withDeadline(opts.signal, opts.timeoutMs ?? REQUEST_TIMEOUT_MS),
+        // @ts-expect-error undici dispatcher not in fetch type definitions
+        dispatcher: agent,
+      }),
+    opts.signal,
+  );
+
+  if (res.status === 429 || res.status === 503) {
+    const waitMs = penaliseHost(hostOf(url), res.headers.get("retry-after"));
+    throw new Error(`HTTP ${res.status} for ${url} (rate limited; back off ${Math.round(waitMs / 1000)}s)`);
+  }
+  if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+
+  rewardHost(hostOf(url));
+  return (await res.json()) as T;
 }
 
 /**

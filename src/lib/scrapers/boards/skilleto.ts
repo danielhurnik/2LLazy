@@ -4,6 +4,7 @@
  */
 import { pwFetch } from "../playwright-browser";
 import { acceptLanguageFor, runHtmlBoard } from "./helpers";
+import { ingestViaSitemap } from "./sitemap-board";
 import type { BoardDefinition } from "../types";
 
 const BASE = "https://www.skilleto.cz";
@@ -27,7 +28,20 @@ export const skilletoBoard: BoardDefinition = {
   countries: [COUNTRY],
   remoteOnly: false,
   requiresBrowser: true,
+  supportsLiveSearch: true,
   note: "Czech board indexed by technology",
+  ingest: (ctx) =>
+    ingestViaSitemap(
+      {
+        id: "skilleto",
+        source: "SKILLETO",
+        origin: BASE,
+        country: COUNTRY,
+        urlPattern: /skilleto\.cz\/pozice\//i,
+        acceptLanguage: acceptLanguageFor(COUNTRY),
+      },
+      ctx,
+    ),
   scrape: (q) => {
     const acceptLanguage = acceptLanguageFor(COUNTRY);
     const slug = toSlug(q.intent.scrapingKeyword || q.query);
