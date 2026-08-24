@@ -248,6 +248,14 @@ const ROLE_WORD_RE =
   /(developer|engineer|designer|manager|analyst|architect|consultant|specialist|administrator|scientist|programmer|tester|devops|vyvojar|programator|entwickler|ingenieur|developpeur|desarrollador|programista)/i;
 const ROLE_SEPARATOR_RE = /\s(?:@|\||·|–|—|-|at|u|ve|bei|chez|en|w)\s/i;
 
+/**
+ * Trailing employment dates: "(2022 - present)", "2019 – 2022", "since 2021".
+ * Stripped before the role/company split so a date range's dash is not mistaken
+ * for the separator between a job title and an employer.
+ */
+const ROLE_DATE_TAIL_RE =
+  /[([]?\s*(?:\d{1,2}\/)?(?:19|20)\d{2}\s*(?:[-–—]|to|az|až|do|bis|until)?\s*(?:(?:\d{1,2}\/)?(?:19|20)\d{2}|present|now|current|today|dnes|soucasnost|současnost|heute|obecnie|actualidad|aujourd'hui)?\s*[)\]]?\s*$/i;
+
 function lines(text: string): string[] {
   return text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 }
@@ -284,18 +292,47 @@ function extractPhone(cvText: string): string {
 
 /** The candidate's most recent `role @ company`, when the CV shape reveals it. */
 function extractCurrentRole(cvLines: string[]): { role: string; company: string } | null {
-  for (const line of cvLines) {
-    if (line.length > 90 || !ROLE_WORD_RE.test(deaccent(line))) continue;
-    const separator = line.match(ROLE_SEPARATOR_RE);
-    if (!separator || separator.index === undefined) continue;
-    let left = line.slice(0, separator.index).trim();
-    let right = line.slice(separator.index + separator[0].length).replace(/[(,].*$/, "").trim();
+  for (const rawLine of cvLines) {
+    if (rawLine.length > 90 || !ROLE_WORD_RE.test(deaccent(rawLine))) continue;
+
+    // Drop the employment dates first — a range's dash would otherwise be read
+    // as the separator between the job title and the employer.
+    const line = rawLine.replace(ROLE_DATE_TAIL_RE, "").replace(/[,;\s]+$/, "").trim();
+    if (!line) continue;
+
+    const parts = splitRoleLine(line);
+    if (!parts) continue;
+
+    let [left, right] = parts;
     if (!ROLE_WORD_RE.test(deaccent(left)) && ROLE_WORD_RE.test(deaccent(right))) {
       [left, right] = [right, left];
     }
     if (!left || !right || right.length > 60 || !/\p{L}/u.test(right)) continue;
     return { role: left, company: right };
   }
+  return null;
+}
+
+/**
+ * Splits "Senior Developer at Acme" or "Senior Developer, Acme s.r.o." into its
+ * two halves. The word separator is tried first; a comma is the fallback,
+ * because "Role, Company" is the most common CV layout and a company name may
+ * itself contain commas ("Acme, s.r.o.") that must not split it further.
+ */
+function splitRoleLine(line: string): [string, string] | null {
+  const separator = line.match(ROLE_SEPARATOR_RE);
+  if (separator && separator.index !== undefined) {
+    return [
+      line.slice(0, separator.index).trim(),
+      line.slice(separator.index + separator[0].length).replace(/\(.*$/, "").trim(),
+    ];
+  }
+
+  const comma = line.indexOf(",");
+  if (comma > 0) {
+    return [line.slice(0, comma).trim(), line.slice(comma + 1).replace(/\(.*$/, "").trim()];
+  }
+
   return null;
 }
 
@@ -457,7 +494,14 @@ function resolvePhrases(language: string): LetterPhrases {
 }
 
 function fill(template: string, vars: Record<string, string>): string {
-  return template.replace(/\{(\w+)\}/g, (_, key: string) => vars[key] ?? "");
+  const filled = template.replace(/\{(\w+)\}/g, (_, key: string) => vars[key] ?? "");
+  // Company names routinely end in an abbreviation ("Acme s.r.o.", "Beta Ltd.")
+  // which would otherwise collide with the template's own full stop.
+  return filled
+    .replace(/([^.])\.\.(?!\.)/g, "$1.")
+    .replace(/\s+([,.;:])/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 /** Join labels with localised "and": `React, TypeScript and Docker`. */

@@ -1,0 +1,64 @@
+{
+  "data": [
+    {
+      "slug": "senior-react-developer-berlin-123456",
+      "company_name": "Northwind GmbH",
+      "title": "Senior React Developer",
+      "description": "<p>We build a <strong>React</strong> &amp; TypeScript design system.</p><ul><li>Next.js</li><li>Visa sponsorship available</li></ul>",
+      "remote": true,
+      "url": "https://www.arbeitnow.com/jobs/companies/northwind-gmbh/senior-react-developer-berlin-123456",
+      "tags": ["react", "typescript"],
+      "job_types": ["full_time"],
+      "location": "Berlin, Germany",
+      "created_at": 1787040000
+    },
+    {
+      "slug": "forklift-operator-hamburg-123457",
+      "company_name": "Tidewater Logistik",
+      "title": "Forklift Operator",
+      "description": "Operate a forklift in our Hamburg depot. Shift work, no office duties.",
+      "remote": false,
+      "url": "https://www.arbeitnow.com/jobs/companies/tidewater-logistik/forklift-operator-hamburg-123457",
+      "tags": ["logistics"],
+      "job_types": ["full_time"],
+      "location": "Hamburg, Germany",
+      "created_at": 1786953600
+    },
+    {
+      "slug": "react-native-engineer-vienna-123458",
+      "company_name": null,
+      "title": "React Native Engineer",
+      "description": "<div>Build our mobile apps from the Vienna office.</div>",
+      "remote": false,
+      "url": null,
+      "tags": ["react", "mobile"],
+      "job_types": [],
+      "location": "Vienna, Austria (Hybrid)",
+      "created_at": "1786867200"
+    },
+    {
+      "slug": "no-title-123459",
+      "company_name": "Broken Payload GmbH",
+      "description": "This entry has no title and must be dropped before mapping.",
+      "remote": true,
+      "url": "https://www.arbeitnow.com/jobs/companies/broken-payload-gmbh/no-title-123459",
+      "tags": [],
+      "job_types": [],
+      "location": "Remote",
+      "created_at": 1786780800
+    }
+  ],
+  "links": {
+    "first": "https://www.arbeitnow.com/api/job-board-api?page=1",
+    "last": null,
+    "prev": null,
+    "next": "https://www.arbeitnow.com/api/job-board-api?page=2"
+  },
+  "meta": {
+    "current_page": 1,
+    "from": 1,
+    "path": "https://www.arbeitnow.com/api/job-board-api",
+    "per_page": 100,
+    "to": 4
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "totalCount": 5,
+  "offset": 0,
+  "limit": 50,
+  "jobs": [
+    {
+      "title": "Senior React Engineer",
+      "companyName": "Northwind Labs",
+      "companyLogo": "https://himalayas.app/logo/northwind.png",
+      "locationRestrictions": ["United States"],
+      "description": "<p>Lead our <strong>React</strong> platform work &amp; mentor the team.</p>",
+      "applicationLink": "https://himalayas.app/jobs/northwind-labs-senior-react-engineer",
+      "guid": "https://himalayas.app/jobs/northwind-labs-senior-react-engineer",
+      "pubDate": 1787040000,
+      "minSalary": 120000,
+      "maxSalary": 160000,
+      "salaryCurrency": "USD",
+      "seniority": ["Senior"],
+      "categories": ["Software Development"]
+    },
+    {
+      "title": "Frontend Engineer",
+      "companyName": "Helios",
+      "companyLogo": null,
+      "locationRestrictions": ["United States", "Canada"],
+      "description": "<div>Build our React web client.</div>",
+      "applicationLink": null,
+      "guid": "https://himalayas.app/jobs/helios-frontend-engineer",
+      "pubDate": "1786953600",
+      "minSalary": 90000,
+      "maxSalary": null,
+      "salaryCurrency": null,
+      "seniority": [],
+      "categories": ["Software Development"]
+    },
+    {
+      "title": "Customer Support Representative",
+      "companyName": "Tidewater",
+      "companyLogo": null,
+      "locationRestrictions": [],
+      "description": "Answer billing tickets by email and phone. No engineering background needed.",
+      "applicationLink": "https://himalayas.app/jobs/tidewater-customer-support-representative",
+      "guid": "https://himalayas.app/jobs/tidewater-customer-support-representative",
+      "pubDate": 1786867200,
+      "minSalary": null,
+      "maxSalary": null,
+      "salaryCurrency": null,
+      "seniority": ["Entry"],
+      "categories": ["Customer Support"]
+    },
+    {
+      "title": "React Native Developer",
+      "companyName": null,
+      "companyLogo": null,
+      "locationRestrictions": ["Germany"],
+      "description": "Ship our mobile apps.",
+      "applicationLink": "",
+      "guid": "",
+      "pubDate": 1786780800,
+      "minSalary": 0,
+      "maxSalary": 0,
+      "salaryCurrency": "EUR",
+      "seniority": ["Mid"],
+      "categories": ["Software Development"]
+    },
+    {
+      "companyName": "Broken Payload Inc",
+      "locationRestrictions": ["Worldwide"],
+      "description": "This entry has no title and must be dropped before mapping.",
+      "applicationLink": "https://himalayas.app/jobs/broken-payload",
+      "guid": "https://himalayas.app/jobs/broken-payload",
+      "pubDate": 1786694400
+    }
+  ]
+}

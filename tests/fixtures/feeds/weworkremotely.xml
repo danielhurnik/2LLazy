@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>We Work Remotely: Remote Programming Jobs</title>
+    <link>https://weworkremotely.com/categories/remote-programming-jobs</link>
+    <description>Hand-authored fixture, not a live capture.</description>
+    <item>
+      <title><![CDATA[Northwind Labs: Senior React Developer]]></title>
+      <region>Europe Only</region>
+      <category><![CDATA[Programming]]></category>
+      <type>Full-Time</type>
+      <description><![CDATA[<p>Own our <strong>React</strong> &amp; TypeScript design system.</p><ul><li>5+ years of experience</li></ul>]]></description>
+      <pubDate>Tue, 18 Aug 2026 09:14:00 +0000</pubDate>
+      <link>https://weworkremotely.com/remote-jobs/northwind-labs-senior-react-developer</link>
+      <guid>https://weworkremotely.com/remote-jobs/northwind-labs-senior-react-developer</guid>
+    </item>
+    <item>
+      <title><![CDATA[Tidewater Logistics: Warehouse Operations Lead]]></title>
+      <region>Anywhere in the World</region>
+      <category><![CDATA[Customer Support]]></category>
+      <type>Full-Time</type>
+      <description><![CDATA[<p>Manage our depot team and shift rotas.</p>]]></description>
+      <pubDate>Tue, 18 Aug 2026 10:00:00 +0000</pubDate>
+      <link>https://weworkremotely.com/remote-jobs/tidewater-logistics-warehouse-operations-lead</link>
+      <guid>https://weworkremotely.com/remote-jobs/tidewater-logistics-warehouse-operations-lead</guid>
+    </item>
+    <item>
+      <title><![CDATA[Staff React Engineer]]></title>
+      <category><![CDATA[Programming]]></category>
+      <type>Full-Time</type>
+      <description><![CDATA[<p>A listing whose title carries no company prefix.</p>]]></description>
+      <pubDate>Mon, 17 Aug 2026 11:00:00 +0000</pubDate>
+      <link>https://weworkremotely.com/remote-jobs/staff-react-engineer</link>
+      <guid>https://weworkremotely.com/remote-jobs/staff-react-engineer</guid>
+    </item>
+    <item>
+      <title><![CDATA[Helios: React Native Engineer]]></title>
+      <region>USA Only</region>
+      <category><![CDATA[Programming]]></category>
+      <type>Contract</type>
+      <description><![CDATA[<p>Ship our iOS and Android apps.</p>]]></description>
+      <pubDate>Sun, 16 Aug 2026 07:30:00 +0000</pubDate>
+      <link>https://weworkremotely.com/remote-jobs/helios-react-native-engineer</link>
+      <guid>https://weworkremotely.com/remote-jobs/helios-react-native-engineer</guid>
+    </item>
+    <item>
+      <title><![CDATA[Orbital: React Consultant]]></title>
+      <region>Anywhere in the World</region>
+      <category><![CDATA[Programming]]></category>
+      <type>Contract</type>
+      <description><![CDATA[<p>This entry has no link and must be dropped before mapping.</p>]]></description>
+      <pubDate>Sat, 15 Aug 2026 07:30:00 +0000</pubDate>
+      <link></link>
+      <guid>https://weworkremotely.com/remote-jobs/orbital-react-consultant</guid>
+    </item>
+  </channel>
+</rss>

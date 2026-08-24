@@ -1,0 +1,55 @@
+{
+  "count": 4,
+  "mean": 62500,
+  "__CLASS__": "Adzuna::API::Response::JobSearchResults",
+  "results": [
+    {
+      "id": "4400001",
+      "title": "Senior React Developer",
+      "company": { "display_name": "Northwind Ltd", "__CLASS__": "Adzuna::API::Response::Company" },
+      "location": {
+        "display_name": "Shoreditch, East London",
+        "area": ["UK", "London", "East London", "Shoreditch"],
+        "__CLASS__": "Adzuna::API::Response::Location"
+      },
+      "description": "<p>Own our <strong>React</strong> &amp; TypeScript front end.</p>",
+      "redirect_url": "https://www.adzuna.co.uk/jobs/land/ad/4400001",
+      "created": "2026-08-18T09:14:00Z",
+      "salary_min": 55000,
+      "salary_max": 75000,
+      "contract_time": "full_time"
+    },
+    {
+      "id": "4400002",
+      "title": "React Engineer (Fully Remote)",
+      "company": { "display_name": null },
+      "location": { "display_name": null, "area": ["UK", "South East England", "Reading"] },
+      "description": "A fully remote React role. Work from home anywhere in the UK.",
+      "redirect_url": "https://www.adzuna.co.uk/jobs/land/ad/4400002",
+      "created": "2026-08-17T11:00:00Z",
+      "salary_min": null,
+      "salary_max": null,
+      "contract_time": null
+    },
+    {
+      "id": "4400003",
+      "title": "Warehouse Forklift Operator",
+      "company": { "display_name": "Tidewater Logistics" },
+      "location": { "display_name": "Hull, East Riding of Yorkshire", "area": ["UK", "East Riding of Yorkshire", "Hull"] },
+      "description": "Operate a forklift on our Hull site. Shift work.",
+      "redirect_url": "https://www.adzuna.co.uk/jobs/land/ad/4400003",
+      "created": "2026-08-16T07:30:00Z",
+      "salary_min": 24000,
+      "salary_max": 24000,
+      "contract_time": "full_time"
+    },
+    {
+      "id": "4400004",
+      "title": "Broken Payload Role",
+      "company": { "display_name": "Broken Payload Ltd" },
+      "location": { "display_name": "London", "area": ["UK", "London"] },
+      "description": "This entry has no redirect_url and must be dropped before mapping.",
+      "created": "2026-08-15T07:30:00Z"
+    }
+  ]
+}
