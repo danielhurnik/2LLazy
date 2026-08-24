@@ -72,10 +72,16 @@ export const noFluffJobsBoard: BoardDefinition = {
       delayMs: 800,
       defaultLocation: q.city || "",
       buildUrl: (page) => {
+        // NoFluffJobs takes one `criteria` parameter holding a comma-separated
+        // list, not repeated parameters: `?criteria=city%3Dpraha,remote`.
+        const criteria: string[] = [];
+        if (q.city) criteria.push(`city=${q.city.toLowerCase()}`);
+        if (q.remoteOnly) criteria.push("remote");
+
         const params = new URLSearchParams();
-        if (q.remoteOnly) params.set("criteria", "remote");
-        if (q.city) params.append("criteria", `city=${q.city}`);
+        if (criteria.length > 0) params.set("criteria", criteria.join(","));
         if (page > 1) params.set("page", String(page));
+
         const suffix = params.toString() ? `?${params.toString()}` : "";
         return slug
           ? `${BASE}/${path}/jobs/${slug}${suffix}`

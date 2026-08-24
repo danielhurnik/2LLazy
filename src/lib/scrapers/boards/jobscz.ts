@@ -34,7 +34,9 @@ export const jobsCzBoard: BoardDefinition = {
         const params = new URLSearchParams();
         params.append("q[]", q.query);
         if (q.city) params.set("locality[label]", q.city);
-        if (q.remoteOnly) params.set("arbeitszeit[]", "remote");
+        // Jobs.cz has no stable public parameter for remote-only, so the filter
+        // is left to the ranker rather than guessing at a query string that
+        // might silently return nothing.
         if (page > 1) params.set("page", String(page));
         return `${BASE}/prace/?${params.toString()}`;
       },
