@@ -82,7 +82,21 @@ const SALARY_PRESENT_BONUS = 0.02;
 const RECENCY_BONUS = 0.07;
 
 /** Saturation constant for the final 0–1 squash; see `saturate`. */
-const SATURATION_K = 6.5;
+const SATURATION_K = 10;
+
+/**
+ * Floor and span of the coverage factor.
+ *
+ * A posting that matches one incidental keyword ("Composition API" in a Vue ad
+ * hit on a Backend search) must not score like one that matches the whole term
+ * set. The raw BM25 total is therefore scaled by how much of the query's total
+ * term weight the posting actually evidenced. `* 3` means roughly a third of
+ * the weight is enough for full marks — query term sets include many alias
+ * spellings that no single posting will ever contain.
+ */
+const COVERAGE_FLOOR = 0.35;
+const COVERAGE_SPAN = 0.65;
+const COVERAGE_FULL_AT = 3;
 
 /**
  * Cut-off the scrape pipeline uses to decide what is worth showing.
@@ -188,9 +202,12 @@ export function scoreJob(job: ScoreInput, intent: QueryIntent, ctx: ScoreContext
   // ── Positive term evidence ────────────────────────────────────────────────
   let raw = 0;
   let titleHits = 0;
+  let totalWeight = 0;
+  let matchedWeight = 0;
   for (const { term, weight } of intent.terms) {
     const key = normaliseTerm(term);
     if (!key) continue;
+    totalWeight += weight;
     const idf = ctx.idf?.get(key) ?? DEFAULT_IDF;
     const inTitle = occurrences(key, title);
     const inBody = occurrences(key, body);
@@ -203,9 +220,15 @@ export function scoreJob(job: ScoreInput, intent: QueryIntent, ctx: ScoreContext
     }
 
     matched.push(term);
+    matchedWeight += weight;
     if (inTitle > 0) titleHits++;
     raw += weight * TITLE_WEIGHT * bm25(inTitle, idf, Math.max(title.length, 1), 8);
     raw += weight * bm25(inBody, idf, body.length, avgLength);
+  }
+
+  if (totalWeight > 0) {
+    const coverage = Math.min(1, (matchedWeight / totalWeight) * COVERAGE_FULL_AT);
+    raw *= COVERAGE_FLOOR + COVERAGE_SPAN * coverage;
   }
 
   let score = saturate(raw);
@@ -218,15 +241,25 @@ export function scoreJob(job: ScoreInput, intent: QueryIntent, ctx: ScoreContext
   // ── Negative term evidence ────────────────────────────────────────────────
   // This is what the anti-query embedding used to do: a Backend posting that
   // happens to say "JavaScript" should not win a Frontend search.
+  const bodyNegatives: string[] = [];
   for (const term of intent.negativeTerms) {
     const key = normaliseTerm(term);
     if (!key) continue;
     if (occurrences(key, title) > 0) {
       score -= NEGATIVE_TITLE_PENALTY * score;
       reasons.push(`title suggests a different role (${term})`);
+      bodyNegatives.length = 0;
       break;
     }
-    if (occurrences(key, body) > 0) score -= NEGATIVE_BODY_PENALTY * score;
+    if (occurrences(key, body) > 0) bodyNegatives.push(term);
+  }
+  if (bodyNegatives.length > 0) {
+    // Compounding rather than summing keeps the penalty inside (0,1) no matter
+    // how many out-of-domain terms a long posting happens to contain.
+    score *= Math.pow(1 - NEGATIVE_BODY_PENALTY, Math.min(bodyNegatives.length, 6));
+    if (bodyNegatives.length >= 3) {
+      reasons.push(`mentions other domains (${bodyNegatives.slice(0, 3).join(", ")})`);
+    }
   }
 
   // ── Title inclusion / exclusion ───────────────────────────────────────────
@@ -241,7 +274,10 @@ export function scoreJob(job: ScoreInput, intent: QueryIntent, ctx: ScoreContext
 
   // ── Seniority ─────────────────────────────────────────────────────────────
   if (intent.seniority) {
-    const postingLevel = detectSeniority(`${job.title} ${job.description ?? ""}`);
+    // The title is authoritative: a junior ad that says "you will work
+    // alongside our senior developers" is still a junior ad.
+    const postingLevel =
+      detectSeniority(job.title) ?? detectSeniority(job.description ?? "");
     if (postingLevel && postingLevel !== intent.seniority) {
       score *= SENIORITY_MISMATCH_MULTIPLIER;
       reasons.push(`${postingLevel} role, you asked for ${intent.seniority}`);

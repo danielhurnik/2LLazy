@@ -105,8 +105,10 @@ export async function POST(req: NextRequest) {
   const salaryMin: number | null = typeof body.salaryMin === "number" ? body.salaryMin : null;
   const salaryMax: number | null = typeof body.salaryMax === "number" ? body.salaryMax : null;
 
-  if (!query) {
-    return new Response("Missing query", { status: 400 });
+  // A query with no alphanumeric content cannot match anything; rejecting it
+  // here avoids running every board for a guaranteed-empty result.
+  if (!query || !/[\p{L}\p{N}]/u.test(query)) {
+    return new Response("Missing or unsearchable query", { status: 400 });
   }
 
   // Which country's job market are we searching? An explicit choice wins, then

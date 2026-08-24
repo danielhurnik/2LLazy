@@ -102,6 +102,10 @@ export function cleanTitle(raw: string | null | undefined): string {
 
 /** Company from a breadcrumb trail, an `og:site_name`, or the host as a last resort. */
 function companyFromPage(html: string, meta: Record<string, string>, url: string): string {
+  // With no markup at all there is nothing to infer from; the host name alone
+  // would dress a hint-only record up as a heuristic one.
+  if (!html) return "";
+
   const fromMeta = meta["og:site_name"] ?? meta["application-name"];
   if (fromMeta && fromMeta.length < 60) return fromMeta;
 
@@ -165,20 +169,35 @@ function clampDescription(text: string): string {
   return text.replace(/\s+\n/g, "\n").trim().slice(0, MAX_DESCRIPTION);
 }
 
-/** Builds the floor record every layer improves on. */
-function fromHint(hint: JobHint, description: string): ExtractedJob {
+/** An empty record for the layers to fill. */
+function emptyJob(): ExtractedJob {
   return {
-    title: cleanTitle(hint.title ?? ""),
-    company: hint.company ?? "",
-    location: hint.location ?? "",
+    title: "",
+    company: "",
+    location: "",
     salary: "",
-    description: clampDescription(description),
+    description: "",
     workType: "",
     postedAt: null,
-    country: hint.country ?? null,
+    country: null,
     via: "hint",
     confidence: CONFIDENCE.hint,
   };
+}
+
+/**
+ * Applies the board's own knowledge — link text, the board's country, a default
+ * location — as the floor.
+ *
+ * Deliberately applied *last*: seeding these up front would let a board's
+ * "Czech Republic" default win over the "Praha, CZ" the posting actually
+ * published, because `fill` never overwrites a value that is already set.
+ */
+function applyHint(job: ExtractedJob, hint: JobHint): void {
+  fill(job, "title", cleanTitle(hint.title ?? ""), "hint");
+  fill(job, "company", hint.company ?? "", "hint");
+  fill(job, "location", hint.location ?? "", "hint");
+  fill(job, "country", hint.country ?? null, "hint");
 }
 
 /** Applies a candidate field only when it improves on what we already have. */
@@ -238,7 +257,7 @@ export function extractJob(
 
   try {
     const body = mainContentText(html) || pageText;
-    const job = fromHint(hint, body);
+    const job = emptyJob();
 
     // ── Layer 1 & 2: structured data ────────────────────────────────────────
     const structured = parseJobPostingLd(html).filter(isUsablePosting);
@@ -262,7 +281,10 @@ export function extractJob(
     fill(job, "description", clampDescription(meta["og:description"] ?? meta.description ?? ""), "meta");
 
     // ── Layer 4: heuristics over the visible text ───────────────────────────
-    const haystack = `${job.title}\n${job.description || body}`;
+    // Salary and working arrangement are often stated outside the description
+    // block (a sidebar, a table under the heading), so search the whole page
+    // body as well as whatever description the layers above settled on.
+    const haystack = `${job.title}\n${job.description}\n${body}`.slice(0, 20_000);
     if (!job.salary) {
       const parsed = parseSalary(haystack);
       fill(job, "salary", parsed ? formatSalary(parsed) : "", "heuristic");
@@ -270,19 +292,26 @@ export function extractJob(
     if (!job.workType) fill(job, "workType", detectWorkType(haystack), "heuristic");
     if (!job.company) fill(job, "company", companyFromPage(html, meta, url), "heuristic");
 
+    applyHint(job, hint);
+
     job.title = cleanTitle(job.title);
     job.company = dedupeRepeatedText(job.company);
     job.location = dedupeRepeatedText(job.location);
     job.description = clampDescription(job.description || body);
     return job;
   } catch {
-    return fromHint(hint, pageText);
+    const fallback = emptyJob();
+    applyHint(fallback, hint);
+    fallback.description = clampDescription(pageText);
+    return fallback;
   }
 }
 
 /** Text-only fallback for boards that never expose markup (RSS bodies, APIs). */
 export function extractJobFromText(text: string, hint: JobHint): ExtractedJob {
-  const job = fromHint(hint, text ?? "");
+  const job = emptyJob();
+  applyHint(job, hint);
+  job.description = clampDescription(text ?? "");
   try {
     const haystack = `${hint.title ?? ""}\n${text ?? ""}`;
     const parsed = parseSalary(haystack);
