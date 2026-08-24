@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
+    "db:indexes": "tsx scripts/apply-search-indexes.ts",
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset --force",
     "test": "vitest run",

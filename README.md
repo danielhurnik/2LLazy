@@ -63,6 +63,20 @@ npm run dev
 
 Open <http://localhost:3000>.
 
+<details>
+<summary>If <code>db:migrate</code> fails on the <code>vector</code> extension</summary>
+
+The migration history predates this rewrite and one early migration still
+creates the pgvector extension, even though nothing uses vectors any more. If
+your Postgres does not have pgvector installed, skip the history entirely:
+
+```bash
+npx prisma db push     # builds the current schema directly
+npm run db:indexes     # adds the two search indexes db push cannot create
+```
+
+</details>
+
 ## Configuration
 
 Required:
