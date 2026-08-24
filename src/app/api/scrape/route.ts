@@ -1,18 +1,11 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { generateEmbedding, expandQueryForEmbedding } from "@/lib/ai";
-import { classifyQueryIntent } from "@/lib/queryIntent";
-import { getRoleProfile, buildAugmentedQueryText, scoreWithNegative } from "@/lib/ragProfiles";
-import { scrapeCocuma } from "@/lib/scrapers/cocuma";
-import { scrapeStartupJobs } from "@/lib/scrapers/startupjobs";
-import { scrapeJobstack } from "@/lib/scrapers/jobstack";
-import { scrapeSkilleto } from "@/lib/scrapers/skilleto";
-import { scrapeNoFluffJobs } from "@/lib/scrapers/nofluffjobs";
-import { scrapeJobsCz } from "@/lib/scrapers/jobscz";
-import { scrapeJooble } from "@/lib/scrapers/jooble";
-import { ScrapedJob } from "@/lib/scrapers/types";
-import { cosineSimilarity } from "@/lib/similarity";
 import { auth } from "@/auth";
+import { detectCountry } from "@/lib/geo";
+import { classifyQueryIntent, scoreJob, buildCorpusStats, RELEVANCE_THRESHOLD } from "@/lib/matching";
+import { boardsForCountry } from "@/lib/scrapers/registry";
+import { dedupeRepeatedText } from "@/lib/scrapers/parse/html";
+import type { ScrapedJob, ScrapeQuery, Seniority } from "@/lib/scrapers/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -21,26 +14,69 @@ export const maxDuration = 300;
 const rateMap = new Map<string, number>();
 const RATE_LIMIT_MS = 10_000; // 10 seconds between requests per IP
 
-/** Remove repeated-half duplicates like "React Native DeveloperReact Native Developer" */
-function dedupe(text: string | null | undefined): string {
-  if (!text) return text ?? "";
-  const half = Math.floor(text.length / 2);
-  const first = text.slice(0, half);
-  const second = text.slice(half);
-  return first === second ? first : text;
+const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+/** How many cached postings the post-scrape pass may surface. */
+const CACHE_RESULT_LIMIT = 80;
+/** How many rows the cache query considers before ranking. */
+const CACHE_CANDIDATE_LIMIT = 300;
+
+interface JobPayload {
+  id: string;
+  title: string;
+  company: string;
+  location: string;
+  description: string;
+  sourceUrl: string;
+  source: string;
+  salary?: string;
+  workType?: string;
+  postedAt?: Date;
+  country?: string | null;
+  favourited: boolean;
+  /** 0–1 lexical relevance. Replaces the old cosine similarity. */
+  score: number;
+  /** Query terms found in the posting — shown to the user as "why this matched". */
+  matched: string[];
+  reasons: string[];
+  isNew: boolean;
+  isStale?: boolean;
 }
 
-const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
-
 type SSEEvent =
+  | {
+      type: "meta";
+      country: string;
+      countryName: string;
+      detectedVia: string;
+      boards: Array<{ id: string; name: string; homepage: string; remoteOnly: boolean }>;
+    }
   | { type: "progress"; site: string; message: string }
-  | { type: "job"; data: ScrapedJob & { id: string; favourited: boolean; similarity: number; isNew: boolean; isStale?: boolean } }
+  | { type: "job"; data: JobPayload }
   | { type: "scraperDone"; site: string; doneCount: number; total: number }
   | { type: "scrapersDone"; total: number }
   | { type: "complete"; total: number }
   | { type: "error"; site: string; message: string };
+
 function sseChunk(event: SSEEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`;
+}
+
+const SENIORITY_VALUES: Seniority[] = ["Junior", "Mid", "Senior", "Lead"];
+
+function parseSeniority(input: unknown): Seniority | null {
+  if (typeof input !== "string") return null;
+  const found = SENIORITY_VALUES.find((s) => s.toLowerCase() === input.trim().toLowerCase());
+  return found ?? null;
+}
+
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) {
+    return err.cause ? `${err.message} (cause: ${err.cause})` : err.message;
+  }
+  if (err && typeof err === "object" && "message" in err) {
+    return String((err as { message: unknown }).message);
+  }
+  return typeof err === "string" ? err : JSON.stringify(err);
 }
 
 export async function POST(req: NextRequest) {
@@ -61,16 +97,34 @@ export async function POST(req: NextRequest) {
   rateMap.set(ip, Date.now());
 
   const body = await req.json().catch(() => ({}));
-  const query: string = body.query ?? "";
-  const skillLevel: string = body.skillLevel ?? "";
+  const query: string = typeof body.query === "string" ? body.query.trim() : "";
+  const skillLevel: string = typeof body.skillLevel === "string" ? body.skillLevel : "";
+  const city: string = typeof body.city === "string" ? body.city.trim() : "";
   const deepSearch: boolean = body.deepSearch === true;
-  const city: string = body.city ?? "";
+  const remoteOnly: boolean = body.remoteOnly === true;
   const salaryMin: number | null = typeof body.salaryMin === "number" ? body.salaryMin : null;
   const salaryMax: number | null = typeof body.salaryMax === "number" ? body.salaryMax : null;
 
   if (!query) {
     return new Response("Missing query", { status: 400 });
   }
+
+  // Which country's job market are we searching? An explicit choice wins, then
+  // the user's saved profile, then request geo headers, then Accept-Language.
+  const profile = await prisma.userProfile
+    .findUnique({ where: { userId }, select: { country: true, remoteOnly: true } })
+    .catch(() => null);
+
+  const detected = detectCountry({
+    explicit: typeof body.country === "string" ? body.country : null,
+    profile: profile?.country ?? null,
+    headers: req.headers,
+  });
+
+  const intent = classifyQueryIntent(query, skillLevel);
+  const seniority = parseSeniority(skillLevel) ?? intent.seniority;
+
+  const boards = boardsForCountry(detected.country, { remoteOnly });
 
   const encoder = new TextEncoder();
   const stream = new TransformStream<Uint8Array, Uint8Array>();
@@ -82,234 +136,156 @@ export async function POST(req: NextRequest) {
 
   (async () => {
     try {
-      // Step 1: Classify the query intent (fast path: static table, no extra API call)
-      const intent = await classifyQueryIntent(query, skillLevel);
+      await send({
+        type: "meta",
+        country: detected.country,
+        countryName: detected.countryName,
+        detectedVia: detected.via,
+        boards: boards.map((b) => ({
+          id: b.id,
+          name: b.name,
+          homepage: b.homepage,
+          remoteOnly: b.remoteOnly,
+        })),
+      });
 
-      // Scrapers defined here so they can capture intent for intent-aware boards
-      const scrapers: Array<{ name: string; fn: () => Promise<ScrapedJob[]> }> = [
-        { name: "Cocuma", fn: () => scrapeCocuma(query, skillLevel, deepSearch) },
-        { name: "StartupJobs", fn: () => scrapeStartupJobs(query, skillLevel, deepSearch, { intent }) },
-        { name: "Jobstack", fn: () => scrapeJobstack(query, skillLevel, deepSearch) },
-        { name: "Skilleto", fn: () => scrapeSkilleto(query, skillLevel, deepSearch, city) },
-        { name: "NoFluffJobs", fn: () => scrapeNoFluffJobs(query, skillLevel, deepSearch, city, { intent, scrapingKeyword: intent.scrapingKeyword }) },
-        { name: "Jobs.cz", fn: () => scrapeJobsCz(query, skillLevel, deepSearch, city) },
-        { name: "Jooble", fn: () => scrapeJooble(query, skillLevel, deepSearch, city) },
-      ];
+      if (boards.length === 0) {
+        await send({
+          type: "error",
+          site: "Search",
+          message: `No job boards are configured for ${detected.countryName}.`,
+        });
+        await send({ type: "complete", total: 0 });
+        return;
+      }
 
-      // Step 2: Expand the query into a rich embedding-friendly description
-      await send({ type: "progress", site: "Search", message: "Generating search embedding…" });
-      const expandedQuery = await expandQueryForEmbedding(query, skillLevel, intent);
+      const scrapeQuery: Omit<ScrapeQuery, "signal"> = {
+        query,
+        seniority,
+        city,
+        country: detected.country,
+        deepSearch,
+        remoteOnly,
+        intent,
+      };
 
-      // Step 3: RAG augmentation — load canonical role profile from DB
-      const roleProfile = await getRoleProfile(intent.category);
-      const augmentedQueryText = roleProfile
-        ? buildAugmentedQueryText(expandedQuery, roleProfile)
-        : expandedQuery;
+      // Pre-load the user's favourites once; every emitted job needs the flag.
+      const userFavouriteIds = new Set(
+        (
+          await prisma.userFavourite.findMany({ where: { userId }, select: { jobId: true } })
+        ).map((f) => f.jobId),
+      );
 
-      // Step 4: Embed the (possibly augmented) query + optionally embed the anti-text
-      const [queryEmbedding, antiEmbedding] = await Promise.all([
-        generateEmbedding(augmentedQueryText),
-        roleProfile?.antiQuery ? generateEmbedding(roleProfile.antiQuery) : Promise.resolve(null),
-      ]);
-
-      // emittedSourceUrls prevents duplicates when multiple scrapers find the same job URL
-      // or when the cached DB pass re-encounters a freshly scraped job.
+      // Dedupe across boards: two boards often syndicate the same posting.
       const emittedSourceUrls = new Set<string>();
       const emittedIds = new Set<string>();
       let doneCount = 0;
-      const totalScrapers = scrapers.length;
-      const SIMILARITY_THRESHOLD = 0.30;
 
-      // Pre-load user's favourited job IDs for this session
-      const userFavouriteIds = new Set(
-        (await prisma.userFavourite.findMany({ where: { userId }, select: { jobId: true } }))
-          .map((f) => f.jobId)
-      );
+      const scoreContext = {
+        city,
+        country: detected.country,
+        remoteOnly,
+        salaryMin,
+        salaryMax,
+      };
 
       await Promise.allSettled(
-        scrapers.map(async (scraper) => {
-          await send({ type: "progress", site: scraper.name, message: `Scraping ${scraper.name}…` });
+        boards.map(async (board) => {
+          await send({ type: "progress", site: board.name, message: `Searching ${board.name}…` });
           try {
-            const jobs = await scraper.fn();
+            const jobs = await board.scrape({ ...scrapeQuery, signal: req.signal });
+            if (jobs.length === 0) return;
 
-            // Pre-fetch existing DB records using raw SQL (embedding is Unsupported type)
-            const sourceUrls = jobs.map((j) => j.sourceUrl);
-            const existingRecords = await prisma.$queryRaw<Array<{
-              id: string;
-              sourceUrl: string;
-              embedding: string | null;
-              scrapedAt: Date;
-              firstSeenAt: Date | null;
-            }>>`
-              SELECT id, "sourceUrl", embedding::text as embedding, "scrapedAt", "firstSeenAt"
-              FROM "JobPosting"
-              WHERE "sourceUrl" = ANY(${sourceUrls})
-            `;
+            // IDF over this board's own result set: a term that appears in every
+            // posting on the board tells us nothing, one that appears in three
+            // tells us a lot.
+            const stats = buildCorpusStats(jobs.map((j) => `${j.title} ${j.description}`));
 
-            type ExistingRecord = { id: string; sourceUrl: string; embedding: number[] | null; scrapedAt: Date; firstSeenAt: Date | null };
-            const existingMap = new Map<string, ExistingRecord>();
-            for (const r of existingRecords) {
-              existingMap.set(r.sourceUrl, {
-                ...r,
-                embedding: r.embedding ? JSON.parse(r.embedding) : null,
-              } as ExistingRecord);
-            }
-
-            await send({ type: "progress", site: scraper.name, message: `Ranking ${scraper.name} results…` });
+            await send({
+              type: "progress",
+              site: board.name,
+              message: `Ranking ${jobs.length} results from ${board.name}…`,
+            });
 
             for (let i = 0; i < jobs.length; i += 8) {
               await Promise.allSettled(
                 jobs.slice(i, i + 8).map(async (job) => {
-                  job.title = dedupe(job.title);
-                  job.company = dedupe(job.company);
-                  job.location = dedupe(job.location);
+                  if (emittedSourceUrls.has(job.sourceUrl)) return;
+
+                  const cleaned = cleanJob(job);
+                  const result = scoreJob(cleaned, intent, { ...scoreContext, ...stats });
+                  if (result.score < RELEVANCE_THRESHOLD) return;
+
                   try {
-                    const existing = existingMap.get(job.sourceUrl);
-                    const ageHours = existing?.scrapedAt
-                      ? (Date.now() - existing.scrapedAt.getTime()) / 3_600_000
-                      : Infinity;
+                    const saved = await persistJob(cleaned, detected.country);
+                    if (emittedSourceUrls.has(job.sourceUrl)) return;
+                    emittedSourceUrls.add(job.sourceUrl);
+                    emittedIds.add(saved.id);
 
-                    const storedEmbedding = existing?.embedding as number[] | null | undefined;
-                    const dimensionMatch =
-                      storedEmbedding && storedEmbedding.length === queryEmbedding.length;
-
-                    let embedding: number[];
-                    let id: string;
-                    let favourited: boolean;
-                    let isNew: boolean;
-
-                    if (existing?.embedding && ageHours < 24 && dimensionMatch) {
-                      embedding = storedEmbedding!;
-                      id = existing.id;
-                      favourited = userFavouriteIds.has(existing.id);
-                      isNew = existing.firstSeenAt
-                        ? existing.firstSeenAt.getTime() > Date.now() - TWENTY_FOUR_HOURS
-                        : false;
-                    } else {
-                      const embeddingText = `${job.title}\n${job.title}\n${job.description.slice(0, 1200)}`;
-                      embedding = await generateEmbedding(embeddingText);
-
-                      const newId = crypto.randomUUID().replace(/-/g, "");
-                      await prisma.$executeRaw`
-                        INSERT INTO "JobPosting" (id, title, company, location, description, "sourceUrl", source, salary, "workType", "postedAt", embedding, "scrapedAt", "firstSeenAt")
-                        VALUES (${newId}, ${job.title}, ${job.company}, ${job.location ?? "Remote"}, ${job.description}, ${job.sourceUrl}, ${job.source}::"JobSource", ${job.salary ?? null}, ${job.workType ?? null}, ${job.postedAt ?? null}, ${JSON.stringify(embedding)}::vector, NOW(), NOW())
-                        ON CONFLICT ("sourceUrl") DO UPDATE SET
-                          title = EXCLUDED.title,
-                          description = EXCLUDED.description,
-                          "workType" = EXCLUDED."workType",
-                          "scrapedAt" = NOW(),
-                          embedding = EXCLUDED.embedding
-                      `;
-                      const saved = await prisma.jobPosting.findUniqueOrThrow({ where: { sourceUrl: job.sourceUrl } });
-                      id = saved.id;
-                      favourited = userFavouriteIds.has(id);
-                      isNew = saved.firstSeenAt.getTime() > Date.now() - TWENTY_FOUR_HOURS;
-                    }
-
-                    const baseSimilarity = antiEmbedding
-                      ? scoreWithNegative(embedding, queryEmbedding, antiEmbedding)
-                      : cosineSimilarity(queryEmbedding, embedding);
-                    // Boost similarity for jobs that have salary info matching user's desired range
-                    let similarity = baseSimilarity;
-                    if (job.salary && (salaryMin !== null || salaryMax !== null)) {
-                      // Extract first number from salary string as a rough match
-                      const nums = job.salary.match(/[\d\s]+/g)?.map((n) => parseInt(n.replace(/\s/g, ""), 10)).filter((n) => !isNaN(n) && n > 0) ?? [];
-                      if (nums.length > 0) {
-                        const mid = nums.reduce((a, b) => a + b, 0) / nums.length;
-                        const inRange =
-                          (salaryMin === null || mid >= salaryMin) &&
-                          (salaryMax === null || mid <= salaryMax);
-                        if (inRange) similarity = Math.min(1, similarity + 0.08);
-                      }
-                    } else if (job.salary && salaryMin === null && salaryMax === null) {
-                      // Slight boost for having any salary info (user prefers transparent pay)
-                      similarity = Math.min(1, similarity + 0.02);
-                    }
-
-                    // Emit immediately (emit-as-you-go streaming)
-                    if (similarity >= SIMILARITY_THRESHOLD && !emittedSourceUrls.has(job.sourceUrl)) {
-                      emittedSourceUrls.add(job.sourceUrl);
-                      emittedIds.add(id);
-                      await send({ type: "job", data: { ...job, id, favourited, similarity, isNew } });
-                    }
+                    await send({
+                      type: "job",
+                      data: {
+                        id: saved.id,
+                        title: saved.title,
+                        company: saved.company,
+                        location: saved.location ?? "",
+                        description: saved.description,
+                        sourceUrl: saved.sourceUrl,
+                        source: saved.source,
+                        salary: saved.salary ?? undefined,
+                        workType: saved.workType ?? undefined,
+                        postedAt: saved.postedAt ?? undefined,
+                        country: saved.country,
+                        favourited: userFavouriteIds.has(saved.id),
+                        score: result.score,
+                        matched: result.matched,
+                        reasons: result.reasons,
+                        isNew: saved.firstSeenAt.getTime() > Date.now() - TWENTY_FOUR_HOURS,
+                      },
+                    });
                   } catch (err) {
                     console.error(`[scrape] Failed to save job ${job.sourceUrl}:`, err);
                   }
                 }),
               );
             }
-
           } catch (err) {
-            let message = "Unknown error";
-            if (err instanceof Error) {
-              message = err.message;
-              if (err.cause) message += ` (cause: ${err.cause})`;
-            } else if (err && typeof err === "object" && "message" in err) {
-              message = String((err as { message: unknown }).message);
-            } else if (typeof err === "string") {
-              message = err;
-            } else {
-              message = JSON.stringify(err);
-            }
-            console.error(`[scrape] ${scraper.name} error:`, err);
-            await send({ type: "error", site: scraper.name, message });
+            console.error(`[scrape] ${board.name} error:`, err);
+            await send({ type: "error", site: board.name, message: errorMessage(err) });
           } finally {
             doneCount++;
-            await send({ type: "scraperDone", site: scraper.name, doneCount, total: totalScrapers });
+            await send({
+              type: "scraperDone",
+              site: board.name,
+              doneCount,
+              total: boards.length,
+            });
           }
         }),
       );
 
       await send({ type: "scrapersDone", total: emittedIds.size });
 
-      // ── Surface cached jobs that weren't scraped this run ──────────────
-      // pgvector ORDER BY ranks candidates in the DB — no JS sort needed for
-      // the common (no antiEmbedding) case. When antiEmbedding is present we
-      // re-sort the 200-row subset in JS after applying the negative penalty.
+      // ── Surface cached postings the live pass did not re-scrape ────────────
+      // Postgres full-text narrows hundreds of thousands of rows to a few
+      // hundred candidates; the same lexical ranker then scores them, so a
+      // cached hit and a fresh hit are ranked on identical terms.
       try {
-        await send({ type: "progress", site: "Cache", message: "Loading cached results…" });
-        const queryVec = JSON.stringify(queryEmbedding);
-        const cachedRows = await prisma.$queryRaw<Array<{
-          id: string;
-          title: string;
-          company: string;
-          location: string;
-          description: string;
-          sourceUrl: string;
-          source: string;
-          salary: string | null;
-          workType: string | null;
-          embedding: string;
-          firstSeenAt: Date;
-          postedAt: Date | null;
-        }>>`
-          SELECT id, title, company, location, description, "sourceUrl",
-                 source::text as source, salary, "workType",
-                 embedding::text as embedding, "firstSeenAt", "postedAt"
-          FROM "JobPosting"
-          WHERE embedding IS NOT NULL
-          ORDER BY embedding <=> ${queryVec}::vector
-          LIMIT 200
-        `;
+        await send({ type: "progress", site: "Cache", message: "Checking previously found jobs…" });
+        const cached = await loadCachedCandidates(query, intent.scrapingKeyword, detected.country);
 
-        // Apply threshold (+ optional anti-penalty) on the pre-sorted 200 rows
-        const candidates: Array<{ row: (typeof cachedRows)[0]; similarity: number }> = [];
-        for (const row of cachedRows) {
-          if (emittedIds.has(row.id) || emittedSourceUrls.has(row.sourceUrl)) continue;
-          try {
-            const emb = JSON.parse(row.embedding) as number[];
-            if (emb.length !== queryEmbedding.length) continue;
-            const similarity = antiEmbedding
-              ? scoreWithNegative(emb, queryEmbedding, antiEmbedding)
-              : cosineSimilarity(queryEmbedding, emb);
-            if (similarity >= SIMILARITY_THRESHOLD) candidates.push({ row, similarity });
-          } catch { /* malformed embedding */ }
-        }
+        const fresh = cached.filter(
+          (row) => !emittedIds.has(row.id) && !emittedSourceUrls.has(row.sourceUrl),
+        );
+        const stats = buildCorpusStats(fresh.map((r) => `${r.title} ${r.description}`));
 
-        // Re-sort only when negative penalty may have changed the pgvector order
-        if (antiEmbedding) candidates.sort((a, b) => b.similarity - a.similarity);
+        const ranked = fresh
+          .map((row) => ({ row, result: scoreJob(row, intent, { ...scoreContext, ...stats }) }))
+          .filter(({ result }) => result.score >= RELEVANCE_THRESHOLD)
+          .sort((a, b) => b.result.score - a.result.score)
+          .slice(0, CACHE_RESULT_LIMIT);
 
-        for (const { row, similarity } of candidates.slice(0, 80)) {
+        for (const { row, result } of ranked) {
           emittedSourceUrls.add(row.sourceUrl);
           emittedIds.add(row.id);
           await send({
@@ -318,15 +294,18 @@ export async function POST(req: NextRequest) {
               id: row.id,
               title: row.title,
               company: row.company,
-              location: row.location,
+              location: row.location ?? "",
               description: row.description,
               sourceUrl: row.sourceUrl,
-              source: row.source as ScrapedJob["source"],
+              source: row.source,
               salary: row.salary ?? undefined,
               workType: row.workType ?? undefined,
               postedAt: row.postedAt ?? undefined,
+              country: row.country,
               favourited: userFavouriteIds.has(row.id),
-              similarity,
+              score: result.score,
+              matched: result.matched,
+              reasons: result.reasons,
               isNew: false,
               isStale: true,
             },
@@ -338,9 +317,9 @@ export async function POST(req: NextRequest) {
 
       await send({ type: "complete", total: emittedIds.size });
     } catch (err) {
-      await send({ type: "error", site: "Search", message: err instanceof Error ? err.message : String(err) });
+      await send({ type: "error", site: "Search", message: errorMessage(err) });
     } finally {
-      await writer.close();
+      await writer.close().catch(() => {});
     }
   })();
 
@@ -352,4 +331,80 @@ export async function POST(req: NextRequest) {
       "X-Accel-Buffering": "no",
     },
   });
+}
+
+/** Board output arrives with scraping artefacts; normalise before it is stored. */
+function cleanJob(job: ScrapedJob): ScrapedJob {
+  return {
+    ...job,
+    title: dedupeRepeatedText(job.title).trim(),
+    company: dedupeRepeatedText(job.company).trim(),
+    location: dedupeRepeatedText(job.location ?? "").trim(),
+  };
+}
+
+/**
+ * Upsert by `sourceUrl`. `firstSeenAt` is deliberately never updated so the
+ * "new" badge keeps meaning "first appeared in the last 24 hours".
+ */
+async function persistJob(job: ScrapedJob, searchCountry: string) {
+  const data = {
+    title: job.title,
+    company: job.company || "Unknown",
+    location: job.location || null,
+    country: job.country ?? searchCountry,
+    description: job.description,
+    source: job.source,
+    salary: job.salary ?? null,
+    workType: job.workType || null,
+    postedAt: job.postedAt ?? null,
+    scrapedAt: new Date(),
+  };
+
+  return prisma.jobPosting.upsert({
+    where: { sourceUrl: job.sourceUrl },
+    create: { ...data, sourceUrl: job.sourceUrl },
+    update: data,
+  });
+}
+
+interface CachedRow {
+  id: string;
+  title: string;
+  company: string;
+  location: string | null;
+  description: string;
+  sourceUrl: string;
+  source: string;
+  salary: string | null;
+  workType: string | null;
+  postedAt: Date | null;
+  country: string | null;
+  firstSeenAt: Date;
+}
+
+/**
+ * Candidate cached postings for this search.
+ *
+ * Uses the `'simple'` text-search configuration (not `'english'`) because the
+ * cache holds postings in Czech, Polish, German and English side by side and
+ * English stemming mangles the rest. Postings for the searched country come
+ * first, but worldwide-remote rows are kept too.
+ */
+async function loadCachedCandidates(
+  query: string,
+  keyword: string,
+  country: string,
+): Promise<CachedRow[]> {
+  const searchText = `${query} ${keyword}`.trim();
+  return prisma.$queryRaw<CachedRow[]>`
+    SELECT id, title, company, location, description, "sourceUrl", source,
+           salary, "workType", "postedAt", country, "firstSeenAt"
+    FROM "JobPosting"
+    WHERE to_tsvector('simple',
+            coalesce(title, '') || ' ' || coalesce(company, '') || ' ' || coalesce(description, '')
+          ) @@ plainto_tsquery('simple', ${searchText})
+    ORDER BY (country = ${country}) DESC, "scrapedAt" DESC
+    LIMIT ${CACHE_CANDIDATE_LIMIT}
+  `;
 }

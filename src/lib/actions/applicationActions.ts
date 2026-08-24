@@ -26,7 +26,7 @@ export async function getCoverLettersForJob(jobId: string) {
   const userId = await requireUserId();
   return prisma.coverLetter.findMany({
     where: { jobId, userId },
-    select: { id: true, content: true, generatedByAI: true },
+    select: { id: true, content: true, generatedFromTemplate: true },
     orderBy: { id: "desc" },
   });
 }

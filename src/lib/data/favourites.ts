@@ -1,9 +1,16 @@
 import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { JobSource } from "@prisma/client";
 import type { JobItem } from "@/types";
 
-const VALID_SOURCES = new Set(Object.values(JobSource));
+/**
+ * `source` is a free-form board id now that boards live in the runtime
+ * registry, so validate the shape rather than membership of a fixed enum —
+ * a filter for a board that has since been removed simply matches nothing.
+ */
+function sourceFilter(source: string | undefined): string | undefined {
+  if (!source || source === "ALL") return undefined;
+  return /^[A-Z0-9_]{2,32}$/.test(source) ? source : undefined;
+}
 
 export interface FavouriteFilters {
   source?: string;
@@ -19,7 +26,7 @@ async function _getFavourites(userId: string, filters?: FavouriteFilters): Promi
   const jobs = await prisma.jobPosting.findMany({
     where: {
       favouritedBy: { some: { userId } },
-      ...(source && source !== "ALL" && VALID_SOURCES.has(source as JobSource) ? { source: source as JobSource } : {}),
+      ...(sourceFilter(source) ? { source: sourceFilter(source) } : {}),
       ...(hasSalary ? { salary: { not: null } } : {}),
       ...(position?.trim()
         ? {

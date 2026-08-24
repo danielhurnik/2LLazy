@@ -35,7 +35,13 @@ export type SourceChipColor =
   | "error"
   | "default";
 
+/**
+ * Chip colours for known board ids. Boards are free-form strings (a new board
+ * never needs a migration), so this map is a hint, not an exhaustive list —
+ * use {@link sourceColor} to colour an arbitrary source.
+ */
 export const SOURCE_COLOR: Record<string, SourceChipColor> = {
+  // Czech / Slovak boards
   STARTUPJOBS: "success",
   JOBSTACK: "warning",
   COCUMA: "info",
@@ -43,7 +49,44 @@ export const SOURCE_COLOR: Record<string, SourceChipColor> = {
   NOFLUFFJOBS: "primary",
   JOBSCZ: "error",
   JOOBLE: "warning",
+  // Worldwide remote boards
+  REMOTIVE: "info",
+  REMOTEOK: "secondary",
+  ARBEITNOW: "primary",
+  JOBICY: "success",
+  HIMALAYAS: "warning",
+  WEWORKREMOTELY: "error",
+  // Aggregators
+  ADZUNA: "primary",
+  INDEED: "info",
 };
+
+/** Palette used when a board id is not in {@link SOURCE_COLOR}. */
+const FALLBACK_SOURCE_COLORS: SourceChipColor[] = [
+  "primary",
+  "secondary",
+  "success",
+  "warning",
+  "info",
+  "error",
+];
+
+/**
+ * Chip colour for any board id.
+ *
+ * Unknown boards get a colour derived from the id itself rather than a flat
+ * "default" grey, so a newly added board is still visually distinguishable and
+ * keeps the same colour on every render and every device.
+ */
+export function sourceColor(source: string): SourceChipColor {
+  const known = SOURCE_COLOR[source];
+  if (known) return known;
+  if (!source) return "default";
+  // djb2-ish rolling hash — stable across sessions, no dependency on Map order.
+  let hash = 5381;
+  for (let i = 0; i < source.length; i++) hash = ((hash << 5) + hash + source.charCodeAt(i)) >>> 0;
+  return FALLBACK_SOURCE_COLORS[hash % FALLBACK_SOURCE_COLORS.length];
+}
 
 /** Unified job item used in search results and favourites. */
 export interface JobItem {
@@ -56,7 +99,18 @@ export interface JobItem {
   source: string;
   salary?: string;
   workType?: string;
-  /** Only present on search results (0–1 cosine similarity). */
+  /** ISO 3166-1 alpha-2 country the posting belongs to, when known. */
+  country?: string;
+  /** Lexical relevance of the posting to the query, 0–1. Search results only. */
+  score?: number;
+  /** Query terms actually found in the posting, e.g. `["react", "typescript"]`. */
+  matched?: string[];
+  /** Short human-readable explanations of the score, e.g. "title matches react". */
+  reasons?: string[];
+  /**
+   * @deprecated Legacy cosine-similarity score. Kept so cached search sessions
+   * and not-yet-migrated callers keep rendering; read {@link JobItem.score}.
+   */
   similarity?: number;
   favourited?: boolean;
   /** Latest generated cover letter for this job, if any. */
@@ -65,6 +119,11 @@ export interface JobItem {
   isNew?: boolean;
   /** True if the job was returned from the DB cache, not freshly scraped in this run. */
   isStale?: boolean;
+}
+
+/** Relevance of a job, preferring the lexical score and falling back to the legacy field. */
+export function jobScore(job: JobItem): number {
+  return job.score ?? job.similarity ?? 0;
 }
 
 export interface ApplicationInterview {
@@ -156,4 +215,51 @@ export interface UserProfile {
   githubUrl: string;
   coverLetterLanguage: string;
   googleCalendarSync: boolean;
+  /** ISO 3166-1 alpha-2 country used to pick job boards. */
+  country: string;
+  /** Preferred way of working; "" means no preference. */
+  preferredWorkType: string;
+  /** Only search remote-first boards / remote roles. */
+  remoteOnly: boolean;
+}
+
+// ─── Board / country status ─────────────────────────────────────────────
+
+/** How the searching user's country was determined. */
+export type CountryDetection =
+  | "explicit"
+  | "profile"
+  | "geo-header"
+  | "accept-language"
+  | "default";
+
+/** One job board as reported by `GET /api/boards` and by the settings page. */
+export interface BoardStatus {
+  id: string;
+  name: string;
+  homepage: string;
+  /** Countries served, or `["*"]` for worldwide boards. */
+  countries: string[];
+  remoteOnly: boolean;
+  requiresBrowser: boolean;
+  enabled: boolean;
+  /** Why the board is skipped, e.g. "ADZUNA_APP_ID is not set". */
+  disabledReason: string | null;
+  note?: string;
+}
+
+/** Payload of `GET /api/boards?country=XX`. */
+export interface BoardsResponse {
+  country: string;
+  countryName: string;
+  detectedVia: CountryDetection;
+  boards: BoardStatus[];
+}
+
+/** Boards shown as a compact chip row while searching (from the scrape `meta` event). */
+export interface SearchBoard {
+  id: string;
+  name: string;
+  homepage: string;
+  remoteOnly: boolean;
 }

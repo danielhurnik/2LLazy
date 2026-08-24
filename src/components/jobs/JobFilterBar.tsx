@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   Box,
   FormControl,
@@ -16,6 +16,7 @@ import {
   ToggleButtonGroup,
   InputAdornment,
 } from "@mui/material";
+import { countryLabel, type CountryOption } from "./CountrySelect";
 
 export interface JobFilters {
   source: string;
@@ -25,6 +26,13 @@ export interface JobFilters {
   city: string;
   salaryMin: string;
   salaryMax: string;
+  /**
+   * ISO 3166-1 alpha-2 code, or "ALL". Optional so callers that build filters
+   * from URL params (e.g. the favourites page) do not have to enumerate it.
+   */
+  country?: string;
+  /** Keep only postings whose work type is Remote. */
+  remoteOnly?: boolean;
 }
 
 export const DEFAULT_JOB_FILTERS: JobFilters = {
@@ -35,38 +43,62 @@ export const DEFAULT_JOB_FILTERS: JobFilters = {
   city: "",
   salaryMin: "",
   salaryMax: "",
+  country: "ALL",
+  remoteOnly: false,
 };
 
 interface JobFilterBarProps {
   sources: string[];
   filters: JobFilters;
   onChange: (filters: JobFilters) => void;
+  /** Country codes present in the current result set; the filter hides when empty. */
+  countries?: string[];
+  /** Names for those codes, when the server has reported them. */
+  countryNames?: CountryOption[];
+  /** Currency shown on the salary inputs, e.g. "CZK". Omitted when mixed/unknown. */
+  currency?: string;
 }
 
-export function JobFilterBar({ sources, filters, onChange }: JobFilterBarProps) {
+export function JobFilterBar({
+  sources,
+  filters,
+  onChange,
+  countries = [],
+  countryNames,
+  currency,
+}: JobFilterBarProps) {
   const set = <K extends keyof JobFilters>(key: K, value: JobFilters[K]) =>
     onChange({ ...filters, [key]: value });
 
-  const [positionInput, setPositionInput] = useState(filters.position);
-  const [cityInput, setCityInput] = useState(filters.city);
-  useEffect(() => setPositionInput(filters.position), [filters.position]);
-  useEffect(() => setCityInput(filters.city), [filters.city]);
+  // Text filters commit on blur/Enter, not on every keystroke, so they keep a
+  // local draft. When the parent replaces the filters (new search, URL change)
+  // the draft is re-derived during render — comparing against the last props we
+  // saw — instead of in an effect, which would cause a cascading re-render.
+  const [draft, setDraft] = useState({ position: filters.position, city: filters.city });
+  const [lastProps, setLastProps] = useState({ position: filters.position, city: filters.city });
+  if (lastProps.position !== filters.position || lastProps.city !== filters.city) {
+    setLastProps({ position: filters.position, city: filters.city });
+    setDraft({ position: filters.position, city: filters.city });
+  }
 
-  const commitPosition = () => set("position", positionInput);
-  const commitCity = () => set("city", cityInput);
+  const commitPosition = () => set("position", draft.position);
+  const commitCity = () => set("city", draft.city);
 
   const allSources = ["ALL", ...sources];
+  const salaryAdornment = currency
+    ? { startAdornment: <InputAdornment position="start">{currency}</InputAdornment> }
+    : undefined;
 
   return (
     <Box sx={{ mb: 2.5 }}>
       <Stack spacing={1.5}>
         {/* Row 1: text filters */}
-        <Stack direction="row" spacing={1.5} sx={{ flexWrap: "wrap", alignItems: "center" }}>
+        <Stack direction="row" spacing={1.5} sx={{ flexWrap: "wrap", gap: 1.5, alignItems: "center" }}>
           <TextField
             label="Position / Company"
             size="small"
-            value={positionInput}
-            onChange={(e) => setPositionInput(e.target.value)}
+            value={draft.position}
+            onChange={(e) => setDraft((d) => ({ ...d, position: e.target.value }))}
             onBlur={commitPosition}
             onKeyDown={(e) => e.key === "Enter" && commitPosition()}
             sx={{ minWidth: 200 }}
@@ -76,12 +108,12 @@ export function JobFilterBar({ sources, filters, onChange }: JobFilterBarProps) 
           <TextField
             label="City"
             size="small"
-            value={cityInput}
-            onChange={(e) => setCityInput(e.target.value)}
+            value={draft.city}
+            onChange={(e) => setDraft((d) => ({ ...d, city: e.target.value }))}
             onBlur={commitCity}
             onKeyDown={(e) => e.key === "Enter" && commitCity()}
             sx={{ minWidth: 150 }}
-            placeholder="e.g. Praha, Brno…"
+            placeholder="e.g. Berlin, Praha…"
           />
 
           <FormControl size="small" sx={{ minWidth: 140 }}>
@@ -100,6 +132,25 @@ export function JobFilterBar({ sources, filters, onChange }: JobFilterBarProps) 
             </Select>
           </FormControl>
 
+          {countries.length > 0 && (
+            <FormControl size="small" sx={{ minWidth: 160 }}>
+              <InputLabel id="job-filter-country-label">Country</InputLabel>
+              <Select
+                labelId="job-filter-country-label"
+                value={filters.country ?? "ALL"}
+                label="Country"
+                onChange={(e) => set("country", e.target.value)}
+              >
+                <MenuItem value="ALL">All countries</MenuItem>
+                {countries.map((code) => (
+                  <MenuItem key={code} value={code}>
+                    {countryLabel(code, countryNames)}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
+
           <FormControlLabel
             control={
               <Switch
@@ -111,10 +162,22 @@ export function JobFilterBar({ sources, filters, onChange }: JobFilterBarProps) 
             label={<Typography variant="body2" color="text.secondary">Has Salary</Typography>}
             sx={{ ml: 0, gap: 0.5 }}
           />
+
+          <FormControlLabel
+            control={
+              <Switch
+                size="small"
+                checked={filters.remoteOnly ?? false}
+                onChange={(e) => set("remoteOnly", e.target.checked)}
+              />
+            }
+            label={<Typography variant="body2" color="text.secondary">Remote only</Typography>}
+            sx={{ ml: 0, gap: 0.5 }}
+          />
         </Stack>
 
         {/* Row 2: work type + salary range */}
-        <Stack direction="row" spacing={1.5} sx={{ flexWrap: "wrap", alignItems: "center" }}>
+        <Stack direction="row" spacing={1.5} sx={{ flexWrap: "wrap", gap: 1.5, alignItems: "center" }}>
           <ToggleButtonGroup
             value={filters.workType}
             exclusive
@@ -135,7 +198,7 @@ export function JobFilterBar({ sources, filters, onChange }: JobFilterBarProps) 
             value={filters.salaryMin}
             onChange={(e) => set("salaryMin", e.target.value)}
             sx={{ width: 130 }}
-            InputProps={{ startAdornment: <InputAdornment position="start">CZK</InputAdornment> }}
+            InputProps={salaryAdornment}
           />
           <TextField
             label="Max Salary"
@@ -144,7 +207,7 @@ export function JobFilterBar({ sources, filters, onChange }: JobFilterBarProps) 
             value={filters.salaryMax}
             onChange={(e) => set("salaryMax", e.target.value)}
             sx={{ width: 130 }}
-            InputProps={{ startAdornment: <InputAdornment position="start">CZK</InputAdornment> }}
+            InputProps={salaryAdornment}
           />
         </Stack>
       </Stack>

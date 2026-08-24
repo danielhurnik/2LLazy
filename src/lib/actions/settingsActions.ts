@@ -6,6 +6,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { settingsTag } from "@/lib/data/settings";
 import { requireUserId } from "@/lib/auth/sessionManager";
+import { normaliseCountryCode } from "@/lib/geo";
 
 const ALLOWED_EXTENSIONS = new Set([".pdf", ".docx", ".doc", ".txt"]);
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -67,19 +68,43 @@ export async function deleteUploadedFileAction(id: string): Promise<{ error?: st
   return {};
 }
 
-export async function saveUserProfile(profile: {
+export interface UserProfileInput {
   name: string;
   email: string;
   phone?: string;
   linkedInUrl?: string;
   githubUrl?: string;
   coverLetterLanguage?: string;
-}): Promise<void> {
+  /** ISO 3166-1 alpha-2. Decides which job boards a search runs against. */
+  country?: string;
+  /** "Remote" | "Hybrid" | "Onsite"; empty means no preference. */
+  preferredWorkType?: string;
+  remoteOnly?: boolean;
+}
+
+const WORK_TYPES = new Set(["Remote", "Hybrid", "Onsite", ""]);
+
+export async function saveUserProfile(profile: UserProfileInput): Promise<void> {
   const userId = await requireUserId();
+
+  // The country drives board selection on every later search, so normalise it
+  // here rather than trusting whatever the form posted.
+  const country = normaliseCountryCode(profile.country ?? null);
+  const preferredWorkType = WORK_TYPES.has(profile.preferredWorkType ?? "")
+    ? (profile.preferredWorkType ?? "")
+    : "";
+
+  const data = {
+    ...profile,
+    country,
+    preferredWorkType: preferredWorkType || null,
+    remoteOnly: profile.remoteOnly ?? false,
+  };
+
   await prisma.userProfile.upsert({
     where: { userId },
-    update: profile,
-    create: { userId, ...profile },
+    update: data,
+    create: { userId, ...data },
   });
   revalidateTag(settingsTag(userId), "default");
   revalidatePath("/settings");

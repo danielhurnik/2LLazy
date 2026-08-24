@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local agent tooling, not application code: CommonJS helper scripts that
+    // legitimately use require() and are never bundled or shipped.
+    ".claude/**",
+    ".claude-flow/**",
   ]),
 ]);
 
