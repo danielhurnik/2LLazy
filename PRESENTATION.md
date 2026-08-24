@@ -1,252 +1,213 @@
-# 2LLazy — AI-Powered Job Application Automation Platform
+# 2LLazy — Job Search Without the Middleman
 
-> *Stop copy-pasting your CV into the same form 200 times.*
+> *Finding work is hard enough. The tool shouldn't cost you a subscription or your data.*
 
 ---
 
 ## Overview
 
-**2LLazy** is a full-stack web application that automates the entire job search and application lifecycle for IT professionals. It simultaneously scrapes multiple job boards, ranks results by semantic similarity to your query using vector embeddings, generates tailored cover letters via GPT-4o, and autonomously fills and submits application forms using a real browser — all from a single dashboard.
+**2LLazy** is a full-stack web application that searches job boards, ranks the
+results against what you actually asked for, and tracks every application from
+"found it" to the interview.
 
-The application is now deployed to **Netlify** with a serverless-compatible Playwright setup (`@sparticuz/chromium-min` + `playwright-core`), backed by a PostgreSQL database, and powered exclusively by **OpenAI GPT-4o** and **text-embedding-3-small**.
+It runs on **no AI, no API keys and no paid services**. Every part of the
+pipeline — finding listings, reading job pages, ranking results, drafting cover
+letters — is deterministic code you can read, test and fix. Give it a Postgres
+database and it runs, on a laptop or a server, for free.
+
+It is also **country-aware**: the set of job boards a search hits is chosen from
+the searching user's country. Local boards where they exist, worldwide remote
+boards everywhere else, so the app is useful to a developer in Nairobi or São
+Paulo and not only to one in Prague.
 
 ---
 
 ## Architecture at a Glance
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        CLIENT  (React 19 / MUI v5)                     │
-│  Search Page  │  Dashboard  │  Favourites  │  Interviews  │  Settings  │
-└──────────┬────────────────────────────────────────────────────────────-┘
-           │  fetch / SSE / GraphQL (Apollo Server over HTTP)
-┌──────────▼─────────────────────────────────────────────────────────────┐
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        CLIENT  (React 19 / MUI v5)                      │
+│  Search  │  Dashboard  │  Favourites  │  Interviews  │  Stats  │ Settings│
+└──────────┬──────────────────────────────────────────────────────────────┘
+           │  fetch / SSE / GraphQL
+┌──────────▼──────────────────────────────────────────────────────────────┐
 │                  SERVER  (Next.js 16 App Router — Node runtime)         │
-│                                                                         │
-│  POST /api/scrape ──► Scraping Pipeline ──► SSE stream                 │
-│  POST /api/graphql ──► Apollo Server ──► Resolvers                     │
-│  POST /api/cover-letter/stream ──► GPT-4o stream ──► SSE              │
-│  POST /api/apply ──► Playwright browser automation                     │
-│  POST /api/uploads ──► CV storage (PostgreSQL bytea)                   │
-└──────────┬─────────────────────────────────────────────────────────────┘
+│                                                                          │
+│  POST /api/scrape ──► country detect ─► board registry ─► SSE stream    │
+│  GET  /api/boards ──► which boards cover this country, and why not      │
+│  POST /api/graphql ─► Apollo Server ─► Postgres full-text search        │
+│  POST /api/cover-letter/stream ──► template composer ──► SSE            │
+│  POST /api/cv-adjust/stream ─────► CV match report ──────► SSE          │
+│  POST /api/uploads ──► CV storage (PostgreSQL bytea)                    │
+└──────────┬──────────────────────────────────────────────────────────────┘
            │
-┌──────────▼─────────────────────────────────────────────────────────────┐
-│                         DATA LAYER                                      │
-│  Prisma 7  ──►  PostgreSQL (via @prisma/adapter-pg)                    │
-│                                                                         │
-│  JobPosting  Application  CoverLetter  Interview                        │
-│  CalendarEvent  SiteCredential  CvDocument  UserProfile                │
-└────────────────────────────────────────────────────────────────────────┘
+┌──────────▼──────────────────────────────────────────────────────────────┐
+│                         SCRAPING PIPELINE                                │
+│                                                                          │
+│  boardsForCountry(CZ) ─┬─► local boards   (Jobs.cz, StartupJobs, …)     │
+│                        └─► worldwide      (Remotive, RemoteOK, …)       │
+│                                    │                                     │
+│         listing page ─► selectJobLinks() ─► detail pages                 │
+│                                    │                                     │
+│         extractJob():  JSON-LD → microdata → meta → heuristics          │
+│                                    │                                     │
+│         scoreJob():    BM25 + taxonomy + domain rules ─► 0–1 + reasons  │
+└──────────┬──────────────────────────────────────────────────────────────┘
            │
-┌──────────▼─────────────────────────────────────────────────────────────┐
-│                        AI LAYER  (OpenAI)                               │
-│  text-embedding-3-small  — 1 536-dim vectors for semantic search        │
-│  gpt-4o-mini             — structured job extraction (scraper)          │
-│  gpt-4o                  — cover letters (full + streaming)             │
-└────────────────────────────────────────────────────────────────────────┘
+┌──────────▼──────────────────────────────────────────────────────────────┐
+│                         DATA LAYER                                       │
+│  Prisma 7  ──►  PostgreSQL                                               │
+│  JobPosting  Application  CoverLetter  Interview                         │
+│  CalendarEvent  CvDocument  UserProfile  UserFavourite                   │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## Technology Stack
 
-| Layer | Technology | Why |
-|---|---|---|
-| **Framework** | Next.js 16 (App Router) | Server Components, Server Actions, API Routes with `runtime = "nodejs"` |
-| **Language** | TypeScript 5 | End-to-end type safety across server and client |
-| **UI** | Material UI v5 + Emotion | Pre-built accessible components; dark-theme MUI |
-| **State / Data** | Apollo Server 5 + GraphQL | Single typed API surface for all read/write operations |
-| **ORM** | Prisma 7 + `@prisma/adapter-pg` | Type-safe DB access; driver-adapter pattern for PG connection pools |
-| **Database** | PostgreSQL + pgvector | `vector(1536)` column for semantic similarity ranking |
-| **AI — embeddings** | OpenAI `text-embedding-3-small` | 1 536-dim dense vectors; cosine similarity job ranking |
-| **AI — generation** | OpenAI `gpt-4o` | Cover letter generation (full + token streaming) |
-| **AI — extraction** | OpenAI `gpt-4o-mini` | Structured JSON extraction from raw HTML, job-URL classification |
-| **AI — orchestration** | LangGraph (`@langchain/langgraph`) | DAG-based agentic scraper with typed state and looping edges |
-| **Browser automation** | `playwright-core` + `@sparticuz/chromium-min` | Headless Chromium for scraping and form-filling; serverless-safe binary |
-| **Encryption** | Node.js `crypto` — AES-256-GCM | Site passwords and session cookies encrypted at rest |
-| **Session** | `iron-session` | Signed, encrypted HTTP-only cookies |
-| **Hosting** | Netlify + `@netlify/plugin-nextjs` | Serverless Next.js functions; esbuild-bundled with external native modules |
+| Layer | Choice |
+|---|---|
+| Framework | Next.js 16 (App Router), React 19, TypeScript |
+| UI | Material UI v5 + Emotion |
+| Data | Prisma 7, PostgreSQL |
+| API | Apollo GraphQL (`/api/graphql`), SSE routes for streaming |
+| Parsing | Cheerio |
+| Rendering | Playwright (optional — only for JavaScript-heavy boards) |
+| Testing | Vitest (unit + network-stubbed integration), Playwright (e2e) |
+
+No model provider. No vector database. No paid API in the default path.
 
 ---
 
 ## Core Features
 
-### 1. Semantic Job Search
+### 1. Country-aware job search
 
-A user types a query (e.g. *"React Native developer"*) and chooses a skill level. On submit:
+Boards are entries in a registry, each declaring the countries it serves:
 
-1. The query + skill level string is embedded via `OpenAIEmbeddings.embedQuery()` → 1 536-dim vector.
-2. Eight scrapers run concurrently via `Promise.allSettled()`:
-   - **StartupJobs.cz** — query mapped to Czech category slugs via regex rules
-   - **Jobstack.it** — keyword + seniority query params, Czech locale headers
-   - **Cocuma.cz** — Czech tech job board, keyword search
-   - **Skilleto.cz** — Czech IT jobs, URL-pattern filtered
-   - **NoFluffJobs.com** — Polish/Czech tech board, category-based
-   - **Jobs.cz** — major Czech general job board
-   - **Jooble.org** — aggregator, Czech locale
-   - **Glassdoor.com** — international aggregator
-3. Each job is embedded (`title × 2 + description[:1200]`) and a cosine similarity score is computed against the query vector.
-4. Results stream to the UI as **SSE events** (`progress | job | error | complete`) so cards appear one by one in real time, ordered by arrival (not score).
-5. Results are upserted into `JobPosting` with the embedding stored in a `vector(1536)` column (pgvector) for cache reuse on subsequent searches (24-hour TTL, dimension-checked to handle provider switches).
+```ts
+export const jobsCzBoard: BoardDefinition = {
+  id: "jobscz", name: "Jobs.cz", source: "JOBSCZ",
+  countries: ["CZ"], remoteOnly: false, requiresBrowser: true,
+  scrape: (q) => runHtmlBoard({ /* … */ }),
+};
+```
 
-```typescript
-// Ranking kernel — O(n) dot-product scan
-export function cosineSimilarity(a: number[], b: number[]): number {
-  let dot = 0, normA = 0, normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot   += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
-  }
-  const denom = Math.sqrt(normA) * Math.sqrt(normB);
-  return denom === 0 ? 0 : dot / denom;
+`boardsForCountry("DE")` returns the German-capable boards plus every worldwide
+board, local ones first. The user's country comes from an explicit choice, then
+their profile, then request geo headers (`x-vercel-ip-country`, `cf-ipcountry`,
+Netlify's `x-nf-geo`), then `Accept-Language`. Jooble alone contributes a local
+site in roughly sixty countries.
+
+Adding a board is one file and one registry line — no migration, because
+`JobPosting.source` is a plain string rather than a database enum.
+
+### 2. Deterministic extraction
+
+Most boards publish `schema.org/JobPosting` as JSON-LD so Google Jobs can index
+them. That structured data is authoritative and free to read, which is what
+makes dropping the model viable. Four layers run in order of trustworthiness,
+each filling only the gaps the previous one left:
+
+| Layer | Confidence | Source |
+|---|---|---|
+| JSON-LD | 0.95 | `<script type="application/ld+json">` |
+| Microdata | 0.85 | `itemprop` attributes |
+| Meta / OpenGraph | 0.60 | `og:title`, `og:description`, `<h1>` |
+| Heuristics | 0.40 | salary regexes, work-type keywords, breadcrumbs |
+
+The parser handles the shapes real boards emit: `@graph` wrappers, `@type` as an
+array, `hiringOrganization` as a bare string, `jobLocation` as a list, salary as
+either `value` or `minValue`/`maxValue`, and JSON that does not quite parse.
+Nothing throws — a page that defeats every layer still yields a usable record.
+
+### 3. Explainable ranking
+
+Relevance is BM25 over a hand-written taxonomy of ~45 roles and technologies,
+each with aliases, strong and related terms, out-of-domain terms, and title
+include/exclude lists. On top sit the domain rules: title matches count triple,
+negative terms penalise, an excluded job title cuts the score sharply, seniority
+mismatches demote, and recency, city, country and salary nudge.
+
+Searching "react" over the test corpus:
+
+```
+  73%  Senior React Developer
+  42%  Frontend Engineer (React)
+  26%  Fullstack Developer (React / Node.js)
+· 12%  Vue.js Developer
+·  1%  IT Director            ← mentions React twice; correctly filtered
+·  1%  Technical Recruiter    ← hires React devs; correctly filtered
+```
+
+Every result carries the terms it matched and a short list of reasons, so a bad
+ranking is something a user can see and report rather than an opaque number to
+argue with. That is a genuine improvement over the embedding score it replaced.
+
+### 4. Cover letters and CV match reports
+
+The cover letter is a **template filled from your CV and the posting** — matched
+skills become bullets, unknowns become `«…»` placeholders you fill in, and the
+signature comes from your CV. Localised for English, Czech, German, Polish,
+Spanish and French. It never claims to have written anything for you.
+
+CV tailoring was replaced by a **match report**: which of the posting's
+keywords appear in your CV, quoting the line that carries each one, and which do
+not. Rewriting somebody's CV is exactly the thing a model does confidently and
+wrongly; this does the honest half and leaves the writing to the person whose
+career it is.
+
+### 5. Application lifecycle tracker
+
+Favourites, a status pipeline (Pending → Applied → Interview → Offer / Rejected),
+an interview and reminder calendar with optional Google Calendar sync, and a
+stats page.
+
+---
+
+## Data Model
+
+```prisma
+model JobPosting {
+  id          String    @id @default(cuid())
+  title       String
+  company     String
+  location    String?
+  country     String?   // ISO 3166-1 alpha-2
+  description String    @db.Text
+  sourceUrl   String    @unique
+  source      String    // board id from the registry — no enum, no migration
+  salary      String?
+  workType    String?
+  postedAt    DateTime?
+  scrapedAt   DateTime  @default(now())
+  firstSeenAt DateTime  @default(now())
+
+  @@index([source])
+  @@index([country, scrapedAt])
+  // plus a GIN full-text index and a pg_trgm title index, created as raw SQL
 }
 ```
 
----
-
-### 2. LangGraph Agentic Scraper
-
-An alternative, agent-driven scraping mode uses LangGraph to operate as a DAG:
-
-```
-START
-  └─► scrapeSearchResults   Playwright → Markdown (Turndown) + anchor list
-        └─► filterJobLinks  gpt-4o-mini classifies which links are job-detail pages
-              └─► scrapeJobDetail  ◄────────────────────────────────────┐
-                    │  gpt-4o-mini structured output → JobPosting        │
-                    ├── urlsToVisit.length > 0  ─────────────────────────┘
-                    └── urlsToVisit.length = 0 ──► END
-```
-
-**State reducers** prevent the graph from stalling:
-- `visitedUrls` and `errors` use **append + Set dedup** reducers — failed URLs are always consumed.
-- `urlsToVisit` uses a **replace** reducer — each node owns the full remaining queue.
-- `extractedJobs` uses an **append** reducer — grows across iterations.
-
-This architecture means a single-node failure never crashes the full graph.
-
----
-
-### 3. GPT-4o Cover Letter Generation (Streaming)
-
-`POST /api/cover-letter/stream` opens a **Server-Sent Events** response. The handler:
-
-1. Retrieves the job from PostgreSQL.
-2. Reads the latest uploaded CV (`pdf-parse` for PDF, `Buffer.toString` for TXT).
-3. Calls `generateCoverLetterStream()` — a LangChain `ChatOpenAI({ model: "gpt-4o", streaming: true })` async generator.
-4. Each token chunk is written as `data: {"token":"..."}` into the SSE stream.
-5. After the stream closes, the complete letter is persisted to `CoverLetter` and the job is auto-favourited — both inside a `prisma.$transaction([])`.
-
-The UI renders tokens progressively via a `useRef`-backed accumulator, producing a typewriter effect.
-
----
-
-### 4. AI Form-Fill Auto-Apply
-
-> **Currently disabled** — `POST /api/apply` returns `501 Not Implemented`.
-
-This feature was built but has been suspended. The original implementation used Playwright to snapshot form fields via `data-aaf-idx` injection, sent the snapshot + user profile to `gpt-4o-mini` to produce a Zod-validated `FillPlan`, then executed field fills, file uploads, and form submission automatically.
-
----
-
-### 5. Application Lifecycle Tracker (Dashboard)
-
-Every application moves through a finite state machine:
-
-```
-PENDING ──► APPLIED ──► INTERVIEW ──► (manual resolution)
-                  └───► REJECTED
-                  └───► FAILED
-```
-
-The dashboard is a server-hydrated page (`getApplications` GraphQL query) with an optimistic-UI client layer. Status changes fire a `updateApplicationStatus` mutation and update local state immediately via `useTransition`. Cover letters are viewable inline; interviews can be scheduled directly from the card, creating a `CalendarEvent` + updating status to `INTERVIEW` inside a `prisma.$transaction`.
-
----
-
-### 6. Security — Credential Storage
-
-Site passwords are never stored in plaintext. The encryption scheme:
-
-```
-plaintext → AES-256-GCM(key=ENCRYPTION_KEY, iv=random 96-bit) → iv(hex) + authTag(hex) + ciphertext(hex)
-```
-
-- `ENCRYPTION_KEY` is a 64-character hex string (32 bytes) from the environment.
-- The GCM auth tag provides **integrity verification** — tampered ciphertext throws on decrypt.
-
----
-
-### 7. Netlify Serverless Deployment
-
-Running Playwright in a serverless environment requires a stripped-down Chromium binary. The browser module uses **dynamic imports** to select the right strategy at runtime:
-
-```typescript
-// src/lib/browser.ts (simplified)
-if (process.env.NODE_ENV === "production") {
-  const chromium = await import("@sparticuz/chromium-min");
-  const { chromium: pw } = await import("playwright-core");
-  return pw.launch({
-    args: chromium.args,
-    executablePath: await chromium.executablePath(REMOTE_TAR_URL),
-    headless: chromium.headless,
-  });
-}
-// dev: use local Playwright Chromium
-const { chromium } = await import("playwright-core");
-return chromium.launch({ headless: true, args: [...] });
-```
-
-`next.config.ts` marks `playwright-core` and `@sparticuz/chromium-min` as `serverExternalPackages` so Next.js does not attempt to bundle their native binaries. `netlify.toml` configures esbuild with `external_node_modules` to the same effect.
-
-The Prisma client uses a pool of `max: 3` connections to avoid exhausting the database on concurrent Lambda cold-starts.
-
----
-
-## Data Model (Prisma Schema)
-
-```
-UserProfile         — name, email, phone, linkedInUrl, githubUrl, coverLetterLanguage
-JobPosting          — title, company, location, description, sourceUrl, source,
-                      salary, postedAt, scrapedAt, firstSeenAt, embedding: vector(1536),
-                      favourited, →[Application], →[CoverLetter]
-Application         — jobId→Job, status(enum), appliedAt, errorMessage,
-                      coverLetterId→CoverLetter, →Interview
-CoverLetter         — jobId→Job, content(Text), generatedByAI, →[Application]
-Interview           — applicationId→Application(unique), scheduledAt,
-                      durationMinutes, timezone, notes
-CalendarEvent       — title, scheduledAt, durationMinutes, notes
-SiteCredential      — site(enum, unique), username, encryptedPassword, cookieJson
-CvDocument          — originalName, data(Bytes), size, uploadedAt
-```
-
-Embeddings are stored as `vector(1536)` via the PostgreSQL **pgvector** extension, enabling in-process cosine similarity ranking.
+The `vector(1536)` embedding column and the whole `RoleProfile` table are gone —
+they existed only to hold model output. Ranking is lexical now, so the schema
+carries a `'simple'`-configuration full-text index instead, chosen over
+`'english'` because the cache holds Czech, Polish, German and English side by
+side.
 
 ---
 
 ## API Surface
 
-| Method | Path | Transport | Purpose |
-|---|---|---|---|
-| `POST` | `/api/graphql` | JSON/HTTP | All read + write operations (Apollo Server) |
-| `POST` | `/api/scrape` | SSE stream | Live job scraping — emits `progress`, `job`, `error`, `complete` events |
-| `POST` | `/api/cover-letter/stream` | SSE stream | GPT-4o token stream + DB persist |
-| `POST` | `/api/apply` | JSON/HTTP | Auto-apply *(currently disabled — returns 501)* |
-| `POST` | `/api/uploads` | multipart | CV file upload (PDF/TXT → `CvDocument.data(Bytes)`) |
-| `GET/DELETE` | `/api/uploads/[filename]` | binary | Download or delete a stored CV |
-
----
-
-## Pages
-
-| Route | Rendering | Description |
-|---|---|---|
-| `/` | Client Component | Live search — SSE consumer, session-persisted results, filter bar, job cards |
-| `/favourites` | Client (hydrated) | Bookmarked jobs with apply / cover-letter actions |
-| `/dashboard` | Client (hydrated) | Application tracker — filter by status, inline cover letter viewer, status mutation |
-| `/interviews` | Server + Client | Monthly calendar — schedule interviews and free-form work events |
-| `/settings` | Server + Client | User profile, CV upload, per-site credential management, AI health status |
-| `/login` | Client | Iron-session authentication gate |
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/scrape` | Country-aware search; streams `meta`, `progress`, `job`, `complete` |
+| `GET /api/boards` | Boards covering a country, and why the rest are skipped |
+| `POST /api/graphql` | Queries, favourites, applications, interviews |
+| `POST /api/cover-letter/stream` | Composed cover-letter draft |
+| `POST /api/cv-adjust/stream` | CV ↔ posting match report |
+| `POST /api/uploads` | CV upload (magic-byte validated) |
 
 ---
 
@@ -255,27 +216,32 @@ Embeddings are stored as `vector(1536)` via the PostgreSQL **pgvector** extensio
 | Variable | Required | Description |
 |---|---|---|
 | `DATABASE_URL` | ✅ | PostgreSQL connection string |
-| `OPENAI_API_KEY` | ✅ | Powers embeddings, cover letters, and job extraction |
-| `ENCRYPTION_KEY` | ✅ | 64-char hex (32 bytes) — AES-256-GCM key for credential storage |
-| `SESSION_PASSWORD` | ✅ | ≥32-char string for iron-session cookie signing |
-| `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` | ⬜ | Override Chromium binary path (auto-resolved in production via sparticuz) |
+| `SESSION_PASSWORD` | ✅ | ≥32-char string for session cookie signing |
+| `PLAYWRIGHT_ENABLED` | ⬜ | Renders JavaScript-heavy boards; adds sources |
+| `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` | ⬜ | Adzuna free tier — local boards in ~19 countries |
+| `DEFAULT_COUNTRY` | ⬜ | Fallback when the user's country cannot be detected |
+| `ENCRYPTION_KEY` | ⬜ | 64-char hex, for the encryption helpers |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | ⬜ | Google Calendar sync |
+
+There is no AI or model key, because there is nothing to point one at.
+See [`.env.example`](.env.example) for the annotated list.
 
 ---
 
 ## Local Setup
 
 ```bash
-# 1. Install dependencies
 npm install
-
-# 2. Set environment variables
-cp .env.example .env   # fill in DATABASE_URL, OPENAI_API_KEY, ENCRYPTION_KEY, SESSION_PASSWORD
-
-# 3. Apply database migrations
+cp .env.example .env.local   # DATABASE_URL and SESSION_PASSWORD are enough
 npm run db:migrate
+npm run dev                  # → http://localhost:3000
+```
 
-# 4. Start the dev server
-npm run dev            # → http://localhost:3000
+Try a board straight from the terminal, no server and no database needed:
+
+```bash
+npx tsx scripts/scrape.ts react --country DE
+npx tsx scripts/scrape.ts --list --country BR
 ```
 
 ---
@@ -284,51 +250,49 @@ npm run dev            # → http://localhost:3000
 
 ```
 src/
-├── app/                         # Next.js App Router pages + API routes
+├── app/                         # App Router pages + API routes
 │   ├── page.tsx                 # Search page (SSE consumer)
-│   ├── dashboard/               # Application tracker
-│   ├── favourites/              # Bookmarked jobs
-│   ├── interviews/              # Calendar view
-│   ├── settings/                # Profile, CV, credentials, AI status
+│   ├── dashboard/ favourites/ interviews/ stats/ settings/
 │   └── api/
-│       ├── graphql/route.ts     # Apollo Server HTTP handler
-│       ├── scrape/route.ts      # SSE scraping endpoint
-│       ├── cover-letter/stream/ # SSE cover-letter stream
-        ├── apply/route.ts       # Auto-apply stub (501 — disabled)
+│       ├── scrape/route.ts      # Country-aware SSE search
+│       ├── boards/route.ts      # Board coverage for a country
+│       ├── graphql/route.ts     # Apollo Server handler
+│       ├── cover-letter/stream/ # Template composer stream
+│       ├── cv-adjust/stream/    # CV match report stream
 │       └── uploads/             # CV binary storage
-├── components/                  # Shared UI components (MUI-based)
-├── graphql/
-│   ├── schema.ts                # GraphQL SDL type definitions
-│   └── resolvers.ts             # All Query + Mutation resolvers
-└── lib/
-    ├── ai.ts                    # AI layer — OpenAI embeddings + GPT-4o cover letters
-    ├── browser.ts               # Playwright browser factory (dev vs. serverless)
-    ├── crypto.ts                # AES-256-GCM encrypt / decrypt
-    ├── cv.ts                    # CV parser (PDF + TXT via pdf-parse)
-    ├── similarity.ts            # Cosine similarity kernel
-    ├── prisma.ts                # Prisma client singleton (pool capped for serverless)
-    ├── agent/                   # LangGraph agentic scraper
-    │   ├── graph.ts             # StateGraph definition + compiled agentScraper
-    │   ├── nodes.ts             # scrapeSearchResults / filterJobLinks / scrapeJobDetail
-    │   ├── state.ts             # GraphStateAnnotation with typed reducers
-    │   └── tools/browser.ts     # navigateAndExtract (Playwright → Turndown Markdown)
-    ├── auth/sessionManager.ts   # Session auth guard (requireUserId)
-    ├── scrapers/
-    │   ├── extract.ts           # GPT-4o-mini structured job extraction
-    │   ├── startupjobs.ts       # StartupJobs.cz scraper
-    │   ├── jobstack.ts          # Jobstack.it scraper
-    │   ├── cocuma.ts            # Cocuma.cz scraper
-    │   ├── skilleto.ts          # Skilleto.cz scraper
-    │   ├── nofluffjobs.ts       # NoFluffJobs.com scraper
-    │   ├── jobscz.ts            # Jobs.cz scraper
-    │   ├── jooble.ts            # Jooble.org scraper
-    │   ├── fetcher.ts           # HTTP fetch helper
-    │   ├── playwright-browser.ts # Scraper-specific Playwright utilities
-    │   ├── types.ts             # Scraper shared types
-    │   └── utils.ts             # batchProcess + dismissCookies utilities
-    └── data/                    # Server-side data loaders for each page
+├── components/                  # Shared MUI components
+├── graphql/                     # Schema + resolvers
+├── lib/
+│   ├── geo/                     # Country data and detection
+│   ├── matching/                # Taxonomy, intent, BM25 scoring
+│   ├── scrapers/
+│   │   ├── registry.ts          # Board registry, country selection
+│   │   ├── boards/              # One file per job board
+│   │   ├── parse/               # JSON-LD, salary, work type, listings
+│   │   ├── extract.ts           # Layered extraction
+│   │   └── fetcher.ts           # HTTP + Playwright fetching
+│   ├── coverLetter.ts  cvMatch.ts
+│   └── data/  actions/          # Server data access and actions
+scripts/scrape.ts                # Board smoke-test CLI
+docs/                            # Architecture, adding a job board
 ```
 
 ---
 
-*Built with Next.js 16 · TypeScript · Prisma · PostgreSQL · OpenAI · LangGraph · Playwright · Material UI · Netlify*
+## What used to be here
+
+This project was previously built around OpenAI. The git history still shows it,
+so for anyone reading back:
+
+| Removed | Replaced by |
+|---|---|
+| GPT-4o-mini picking job links off listing pages | Per-board CSS selectors and job-URL patterns |
+| GPT-4o-mini extracting job fields from page text | JSON-LD → microdata → meta → heuristics |
+| `text-embedding-3-small` + cosine similarity | BM25 over a hand-written skill taxonomy |
+| GPT-4o-mini query intent classification | Static taxonomy with token expansion |
+| GPT-4o cover letters | Template composed from your CV and the posting |
+| GPT-4o CV rewriting | CV ↔ posting keyword match report |
+| LangGraph auto-apply agent | Removed (its endpoints already returned 410) |
+
+The result costs nothing to run, works offline in tests, and can explain every
+result it produces.

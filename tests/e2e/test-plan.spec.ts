@@ -1,6 +1,5 @@
 /**
  * E2E Test Plan — Sections 1–5, 7
- * (Auto-apply covered in auto-apply.spec.ts)
  *
  * Tests map directly to the TEST PLAN.md written for April 19.
  * All tests that need a real scrape have generous timeouts and
@@ -115,12 +114,12 @@ test.describe("1 — Intent Engine + Domain Boundary", () => {
   });
 });
 
-// ── Section 2: Negative Scoring ────────────────────────────────────────────
+// ── Section 2: Relevance Scoring ───────────────────────────────────────────
 
-test.describe("2 — Negative Scoring", () => {
+test.describe("2 — Relevance Scoring", () => {
   test.skip(!authAvailable(), "Skipped: not authenticated");
 
-  test("React search: high-similarity jobs score > 0 and are sorted descending", async ({ page }) => {
+  test("React search: relevant jobs score > 0 and are sorted descending", async ({ page }) => {
     const cards = await runSearch(page, "React");
     if (!cards) test.skip();
 
