@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    name: Lint, typecheck and unit tests
+    runs-on: ubuntu-latest
+
+    env:
+      # `npx prisma generate` reads DATABASE_URL through prisma.config.ts. It
+      # never connects to the database, so any well-formed URL will do. Nothing
+      # else in this job touches Postgres: the unit tests stub the network and
+      # the database, which is the point of a deterministic pipeline.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # package-lock.json still carries three root entries left over from the
+      # LangChain removal (@langchain/core, @langchain/langgraph,
+      # @langchain/openai). `npm ci` only fails on packages that package.json
+      # requires and the lock cannot satisfy, so leftovers are simply not
+      # installed and this step passes. If a future change to package.json ever
+      # does break it, run `npm install` locally and commit the updated lock
+      # rather than switching this to `npm install --no-audit --no-fund`.
+      - name: Install dependencies
+        run: npm ci
+
+      # Generates the Prisma client that `npm run typecheck` needs to resolve
+      # @prisma/client types.
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
