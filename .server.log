@@ -1,0 +1,45 @@
+
+> application-fatique@0.1.0 start
+> next start
+
+▲ Next.js 16.2.1
+- Local:         http://localhost:3000
+- Network:       http://192.0.2.2:3000
+✓ Ready in 154ms
+prisma:error 
+Invalid `prisma.user.findUnique()` invocation:
+
+
+Can't reach database server at 127.0.0.1:5433
+[31m[auth][error][0m CallbackRouteError: Read more at https://errors.authjs.dev#callbackrouteerror
+[31m[auth][cause][0m: PrismaClientKnownRequestError: 
+Invalid `prisma.user.findUnique()` invocation:
+
+
+Can't reach database server at 127.0.0.1:5433
+    at Gr.handleRequestError (/home/user/2LLazy/node_modules/@prisma/client/runtime/client.js:65:8286)
+    at Gr.handleAndLogRequestError (/home/user/2LLazy/node_modules/@prisma/client/runtime/client.js:65:7581)
+    at Gr.request (/home/user/2LLazy/node_modules/@prisma/client/runtime/client.js:65:7288)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async a (/home/user/2LLazy/node_modules/@prisma/client/runtime/client.js:75:6730)
+    at async Object.authorize (/home/user/2LLazy/.next/server/chunks/_0.-jjjb._.js:404:82662)
+    at async iv (/home/user/2LLazy/.next/server/chunks/_0.-jjjb._.js:404:40832)
+    at async iO (/home/user/2LLazy/.next/server/chunks/_0.-jjjb._.js:404:50396)
+    at async i$ (/home/user/2LLazy/.next/server/chunks/_0.-jjjb._.js:404:54646)
+    at async rz.do (/home/user/2LLazy/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.prod.js:5:21393)
+[31m[auth][details][0m: {
+  "provider": "credentials"
+}
+[himalayas] fetch failed for https://himalayas.app/jobs/api?limit=50&offset=0: HTTP 403 for https://himalayas.app/jobs/api?limit=50&offset=0
+[arbeitnow] fetch failed for https://www.arbeitnow.com/api/job-board-api: HTTP 403 for https://www.arbeitnow.com/api/job-board-api
+[remoteok] fetch failed for https://remoteok.com/api: 
+[remotive] fetch failed for https://remotive.com/api/remote-jobs?search=React&limit=50: 
+[jobicy] fetch failed for https://jobicy.com/api/v2/remote-jobs?count=50&geo=europe&industry=dev&tag=React: 
+[weworkremotely] fetch failed for https://weworkremotely.com/categories/remote-programming-jobs.rss: 
+[cocuma] scrape failed: 
+[jobstack] scrape failed: 
+ResponseAborted: 
+    at ServerResponse.<anonymous> (.next/server/chunks/[root-of-the-server]__0j8-xkl._.js:1:56633)
+⨯ unhandledRejection:  ResponseAborted: 
+    at ServerResponse.<anonymous> (.next/server/chunks/[root-of-the-server]__0j8-xkl._.js:1:56633)
+Killed

@@ -332,9 +332,21 @@ export function locationMatchesCountry(location: string, country: CountryCode): 
 }
 
 /** Resolves the single country a location string names, when it names one. */
+/**
+ * Region names that name a continent, not a country, and must never resolve to
+ * one. "North America Only" and "Latin America Only" both contain the US alias
+ * "america"; stamping such a posting `US` would then drive country filtering
+ * and location ranking off a country the employer never named.
+ */
+const MULTI_COUNTRY_REGIONS =
+  /\b(north|south|latin|central)\s+america\b|\bamericas\b|\b(western|eastern|northern|southern)?\s*europe\b|\bemea\b|\bapac\b|\basia[- ]pacific\b|\bworldwide\b|\banywhere\b|\bglobal\b/;
+
 export function resolveCountry(location: unknown): CountryCode | undefined {
   const text = str(location);
   if (!text) return undefined;
+  // A multi-country region wins outright: it is not a country, and a country
+  // alias hiding inside it is a false positive rather than extra information.
+  if (MULTI_COUNTRY_REGIONS.test(foldText(text))) return undefined;
   const candidates = KNOWN_COUNTRIES.flatMap((code) =>
     countryNames(code).map((name) => ({ code, name })),
   ).sort((a, b) => b.name.length - a.name.length);

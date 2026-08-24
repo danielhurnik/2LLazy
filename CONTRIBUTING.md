@@ -13,7 +13,7 @@ work for more people in more countries is welcome.
 2. **No paid API in the default path.** A fresh clone with a database URL must
    do everything the README describes. Optional integrations are allowed when
    they are environment-gated (`requiredEnv` on a board), degrade cleanly when
-   the variable is absent, and are documented in `.env.example`.
+   the variable is absent, and are documented in `docs/CONFIGURATION.md`.
 
 These are not stylistic preferences. They are what makes the app free to run
 and possible to test.
@@ -26,7 +26,7 @@ You need Node.js 20 or newer and a PostgreSQL 14+ database.
 git clone https://github.com/danielhurnik/2llazy.git
 cd 2llazy
 npm install
-cp .env.example .env.local
+# Copy the variable block from docs/CONFIGURATION.md into .env.local
 ```
 
 Fill in `DATABASE_URL` and `AUTH_SECRET` in `.env.local`, then:

@@ -526,12 +526,9 @@ describe("We Work Remotely fails soft", () => {
     expect(warn).toHaveBeenCalledTimes(1);
   });
 
-  // BUG (src/lib/scrapers/boards/weworkremotely.ts): the feed loop `break`s on a
-  // fetch failure. The five WWR feeds are independent resources, not pages of
-  // one list, so a single 503 on the first feed zeroes out the whole board even
-  // though the other four would have answered. `continue` is what this loop
-  // wants. Skipped until the lead fixes the source.
-  it.skip("moves on to the next feed when one of them fails", async () => {
+  // The five WWR feeds are independent resources, not pages of one list, so a
+  // 503 on the first must not zero out the board.
+  it("moves on to the next feed when one of them fails", async () => {
     captureWarn();
     serve(fails("HTTP 503 for weworkremotely"), text(WWR_RSS));
 
@@ -562,14 +559,9 @@ describe("We Work Remotely region resolution", () => {
     expect(jobs[0].country).toBeUndefined();
   });
 
-  // BUG (src/lib/scrapers/boards/shared.ts): `resolveCountry` matches the US
-  // alias "america" inside these region names, so a posting open to all of
-  // North or Latin America is stamped country "US". WWR publishes both strings
-  // verbatim, and the mis-stamped country then drives country filtering and the
-  // location ranking. The alias needs a guard for a preceding "north"/"latin"
-  // (or "america" should stop being a bare alias for the US).
-  // Skipped until the lead fixes the source.
-  it.skip("does not read a multi-country Americas region as the United States", async () => {
+  // "North America Only" and "Latin America Only" both contain the US alias
+  // "america"; neither names a single country.
+  it("does not read a multi-country Americas region as the United States", async () => {
     serve(text(feedWithRegion("North America Only")));
     const north = await weWorkRemotelyBoard.scrape(query());
     expect(north[0].country).toBeUndefined();

@@ -63,8 +63,11 @@ Field by field:
   anyone, which in practice means worldwide remote boards. A user in a country
   with no local board still gets every `WORLDWIDE` board, and that baseline is
   what makes the app usable in countries nobody has written a board for.
-- **`remoteOnly`** describes the *board*, not the search. It only affects UI
-  labels and one selection detail; the ranker handles the user's remote filter.
+- **`remoteOnly`** describes the *board*, not the search: true only if the
+  board lists nothing but remote roles. It is reported to the UI and used by the
+  Settings screen; it does **not** currently exclude a board from a remote-only
+  search, because a general board still carries remote roles and the ranker
+  applies the user's filter. Set it honestly and let the ranker do the work.
 - **`requiresBrowser: true`** tells the registry the board is useless without
   Playwright. When `PLAYWRIGHT_ENABLED` is not `"true"`, such a board is never
   selected and the Settings screen explains why. Set it only if you have
@@ -495,7 +498,7 @@ Run them with `npm test`, or `npm run test:watch` while you work.
 - [ ] `requiresBrowser: true` only if you confirmed a plain GET returns nothing.
 - [ ] No API key in the default path. If the board needs credentials, declare
       them in `requiredEnv`, make sure the board is skipped without them, and
-      document them in `.env.example`.
+      document them in `docs/CONFIGURATION.md`.
 - [ ] The board returns `[]` on failure and never throws.
 - [ ] Imported and added to `BOARDS` in `src/lib/scrapers/registry.ts`.
 - [ ] A test that runs offline.

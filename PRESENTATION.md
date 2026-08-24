@@ -216,7 +216,7 @@ side.
 | Variable | Required | Description |
 |---|---|---|
 | `DATABASE_URL` | ✅ | PostgreSQL connection string |
-| `SESSION_PASSWORD` | ✅ | ≥32-char string for session cookie signing |
+| `AUTH_SECRET` | ✅ | Session signing secret (any long random string) |
 | `PLAYWRIGHT_ENABLED` | ⬜ | Renders JavaScript-heavy boards; adds sources |
 | `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` | ⬜ | Adzuna free tier — local boards in ~19 countries |
 | `DEFAULT_COUNTRY` | ⬜ | Fallback when the user's country cannot be detected |
@@ -224,7 +224,7 @@ side.
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | ⬜ | Google Calendar sync |
 
 There is no AI or model key, because there is nothing to point one at.
-See [`.env.example`](.env.example) for the annotated list.
+See [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) for the annotated list.
 
 ---
 
@@ -232,7 +232,7 @@ See [`.env.example`](.env.example) for the annotated list.
 
 ```bash
 npm install
-cp .env.example .env.local   # DATABASE_URL and SESSION_PASSWORD are enough
+# create .env.local — DATABASE_URL and AUTH_SECRET are enough
 npm run db:migrate
 npm run dev                  # → http://localhost:3000
 ```

@@ -116,24 +116,26 @@ async function scrape(q: ScrapeQuery): Promise<ScrapedJob[]> {
     if (q.signal?.aborted) break;
     const url = feedUrl(feed);
 
+    // The category feeds are independent resources, not pages of one list, so
+    // a failure on any single one must not cost us the other four.
     let xml: string;
     try {
       xml = await fetchText(url, { signal: q.signal });
     } catch (err) {
       warn(`fetch failed for ${url}`, err);
-      break;
+      continue;
     }
 
     if (!xml || !xml.includes("<item")) {
       warn(`unexpected feed body from ${url}`);
-      break;
+      continue;
     }
 
     try {
       jobs.push(...parseFeed(xml, q));
     } catch (err) {
       warn(`failed to parse ${url}`, err);
-      break;
+      continue;
     }
 
     if (jobs.length >= MAX_JOBS_PER_BOARD) break;

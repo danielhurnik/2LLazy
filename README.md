@@ -55,7 +55,7 @@ That is the whole list.
 git clone https://github.com/danielhurnik/2llazy.git
 cd 2llazy
 npm install
-cp .env.example .env.local     # fill in DATABASE_URL and a password
+# create .env.local — see docs/CONFIGURATION.md for the variables
 npm run db:migrate
 npm run db:generate
 npm run dev
@@ -84,8 +84,7 @@ Required:
 | Variable | What it is |
 |---|---|
 | `DATABASE_URL` | PostgreSQL connection string |
-| `AUTH_SECRET` | NextAuth signing secret (any long random string) |
-| `ADMIN_PASSWORD` | The password you log in with |
+| `AUTH_SECRET` | Session signing secret (any long random string) |
 
 Optional — everything still works without these:
 
@@ -94,8 +93,9 @@ Optional — everything still works without these:
 | `PLAYWRIGHT_ENABLED=true` | Renders JavaScript-heavy boards, which adds several sources |
 | `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` | Adzuna's free tier, adding local boards in ~19 countries |
 | `DEFAULT_COUNTRY` | Fallback country when yours cannot be detected |
+| `DATABASE_DRIVER` | Force `pg` or `neon` instead of detecting from the URL |
 
-See [`.env.example`](.env.example) for the full annotated list.
+See [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) for the full annotated list.
 
 ## Trying a board from the terminal
 
