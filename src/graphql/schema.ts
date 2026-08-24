@@ -1,10 +1,4 @@
 export const typeDefs = `#graphql
-  enum JobSource {
-    STARTUPJOBS
-    JOBSTACK
-    COCUMA
-  }
-
   enum ApplicationStatus {
     PENDING
     APPLIED
@@ -20,10 +14,14 @@ export const typeDefs = `#graphql
     location: String
     description: String!
     sourceUrl: String!
-    source: JobSource!
+    source: String!
     salary: String
     postedAt: String
     scrapedAt: String!
+    country: String
+    """Lexical relevance of the posting to the query, 0–1."""
+    score: Float
+    """@deprecated Legacy name for score; kept so older clients keep working."""
     similarity: Float
     favourited: Boolean!
   }
@@ -43,7 +41,7 @@ export const typeDefs = `#graphql
     id: ID!
     jobId: ID!
     content: String!
-    generatedByAI: Boolean!
+    generatedFromTemplate: Boolean!
     createdAt: String!
   }
 
@@ -66,9 +64,12 @@ export const typeDefs = `#graphql
     githubUrl: String
   }
 
-  type AIHealth {
+  type ScraperHealth {
     ok: Boolean!
-    missing: [String!]!
+    """True when Playwright is enabled, which unlocks the JavaScript-heavy boards."""
+    playwrightEnabled: Boolean!
+    """Optional integrations that are configured, for example Adzuna."""
+    optionalIntegrations: [String!]!
   }
 
   type Query {
@@ -79,7 +80,7 @@ export const typeDefs = `#graphql
     getInterviews(month: Int!, year: Int!): [Interview!]!
     getCoverLetter(id: ID!): CoverLetter
     getUserProfile: UserProfile
-    aiHealth: AIHealth!
+    scraperHealth: ScraperHealth!
   }
 
   type Mutation {

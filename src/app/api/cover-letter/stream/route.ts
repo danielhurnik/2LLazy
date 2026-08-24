@@ -3,12 +3,15 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { applicationTag } from "@/lib/data/applications";
 import { favouriteTag } from "@/lib/data/favourites";
-import { generateCoverLetterStream } from "@/lib/ai";
+import { streamCoverLetter } from "@/lib/coverLetter";
 import { readCvText } from "@/lib/cv";
 import { auth } from "@/auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
+
+/** Pause between chunks; enough to animate, short enough to feel instant. */
+const STREAM_DELAY_MS = 12;
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -45,20 +48,23 @@ export async function POST(req: NextRequest) {
   (async () => {
     let fullContent = "";
     try {
-      for await (const token of generateCoverLetterStream(
-        job.title,
-        job.company,
-        job.description,
+      // Chunked rather than emitted whole so the existing typing animation in
+      // StreamingCoverLetterDialog still reads as text arriving.
+      for (const token of streamCoverLetter({
+        jobTitle: job.title,
+        company: job.company,
+        jobDescription: job.description,
         cvText,
         language,
-      )) {
+      })) {
         fullContent += token;
         await send({ token });
+        await new Promise((resolve) => setTimeout(resolve, STREAM_DELAY_MS));
       }
 
       // Persist cover letter, link it to the application (if one exists), and auto-favourite
       const coverLetter = await prisma.coverLetter.create({
-        data: { userId, jobId, content: fullContent, generatedByAI: true },
+        data: { userId, jobId, content: fullContent, generatedFromTemplate: true },
       });
 
       const application = await prisma.application.findFirst({ where: { userId, jobId } });

@@ -1,11 +1,26 @@
+/**
+ * CV match report.
+ *
+ * This endpoint used to send the user's CV and the job ad to GPT-4o and stream
+ * back a rewritten CV. It now streams a deterministic report instead: which of
+ * the posting's requirements the CV already evidences, which it does not, and
+ * the CV line backing each match. Nothing is rewritten and nothing is invented.
+ *
+ * The SSE wire format is unchanged (`{token}` … `{done:true}` / `{error}`) so
+ * the existing dialog keeps working.
+ */
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { readCvText } from "@/lib/cv";
-import { ChatOpenAI } from "@langchain/openai";
 import { auth } from "@/auth";
+import { buildCvMatchReport, renderCvMatchMarkdown } from "@/lib/cvMatch";
+import { chunkForStreaming } from "@/lib/coverLetter";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 60;
+
+/** Pause between chunks so the report renders progressively rather than at once. */
+const STREAM_DELAY_MS = 8;
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -30,72 +45,31 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const prompt = `You are an expert CV writer and personal branding specialist. Tailor the candidate's CV specifically for the job below — reorder sections, rewrite bullet points to use stronger action verbs, and emphasise directly relevant skills and achievements.
-
-**Output format: structured Markdown with emojis as section icons**
-
-Use this structure (adapt to what's in the CV):
-
-# [Full Name]
-[email] · [phone] · [LinkedIn/GitHub if present]
-
----
-
-## 🎯 Professional Summary
-2–3 sentences tailored to this specific role. Mention the job title and key skills the employer is looking for.
-
-## 🛠️ Skills
-Comma-separated list, most relevant to this job first. Bold the top 5–6 matching skills.
-
-## 💼 Experience
-### [Job Title] · [Company] · [Dates]
-- Strong action-verb bullet points (e.g. "Built...", "Led...", "Reduced...")
-- Quantify results where possible (%, time saved, team size, etc.)
-- Put the most job-relevant bullets first
-
-## 🎓 Education
-### [Degree] · [University] · [Year]
-
-## 🏆 Achievements / Projects (if present in CV)
-Highlight any that are relevant to this job.
-
----
-
-**Rules:**
-- Do NOT fabricate experience, skills, or qualifications not in the original CV
-- Do NOT use placeholder text like [Your Name] — use the real name from the CV
-- Keep total length reasonable (1–2 pages equivalent)
-- Write in the same language as the original CV
-
---- JOB ---
-Title: ${job.title}
-Company: ${job.company}
-${job.description.slice(0, 3000)}
-
---- ORIGINAL CV ---
-${cvText.slice(0, 6000)}`;
-
   const encoder = new TextEncoder();
   const stream = new TransformStream<Uint8Array, Uint8Array>();
   const writer = stream.writable.getWriter();
 
+  const send = (payload: Record<string, unknown>) =>
+    writer.write(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+
   (async () => {
     try {
-      const llm = new ChatOpenAI({ model: "gpt-4o", streaming: true, temperature: 0 });
-      const streamResult = await llm.stream(prompt);
-      for await (const chunk of streamResult) {
-        const token = typeof chunk.content === "string" ? chunk.content : "";
-        if (token) {
-          await writer.write(encoder.encode(`data: ${JSON.stringify({ token })}\n\n`));
-        }
+      const report = buildCvMatchReport(cvText, {
+        title: job.title,
+        company: job.company,
+        description: job.description,
+      });
+      const markdown = renderCvMatchMarkdown(report, { title: job.title, company: job.company });
+
+      for (const token of chunkForStreaming(markdown)) {
+        await send({ token });
+        await new Promise((resolve) => setTimeout(resolve, STREAM_DELAY_MS));
       }
-      await writer.write(encoder.encode(`data: ${JSON.stringify({ done: true })}\n\n`));
+      await send({ done: true });
     } catch (err) {
-      await writer.write(
-        encoder.encode(`data: ${JSON.stringify({ error: String(err) })}\n\n`),
-      );
+      await send({ error: err instanceof Error ? err.message : String(err) });
     } finally {
-      await writer.close();
+      await writer.close().catch(() => {});
     }
   })();
 
