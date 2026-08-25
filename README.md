@@ -156,7 +156,8 @@ cover your country yet, that is the most useful thing you can fix.
 
 [`CONTRIBUTING.md`](CONTRIBUTING.md) has setup and style;
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) explains how a search flows
-through the system.
+through the system; [`docs/JOB_SOURCES.md`](docs/JOB_SOURCES.md) catalogues
+every board we read and every one worth adding next.
 
 Two rules that will not change:
 
