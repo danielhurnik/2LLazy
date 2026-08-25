@@ -214,8 +214,6 @@ DATABASE_URL=postgresql://twollazy:THE_PASSWORD@localhost:5432/twollazy?schema=p
 AUTH_SECRET=...
 AUTH_URL=https://jobs.example.com
 NODE_ENV=production
-PORT=3000
-HOSTNAME=127.0.0.1
 ```
 
 The ingester reads the same variables, so either point both units at this file
@@ -223,10 +221,13 @@ or copy `DATABASE_URL` into `/etc/2llazy/ingest.env`.
 
 ### 3. Schema
 
+`set -a` exports what the file defines so the commands inherit `DATABASE_URL`:
+
 ```bash
 cd /opt/2llazy
-sudo -u 2llazy env $(cat /etc/2llazy/app.env | xargs) npx prisma migrate deploy
-sudo -u 2llazy env $(cat /etc/2llazy/app.env | xargs) npx tsx scripts/apply-search-indexes.ts
+sudo -u 2llazy sh -c 'set -a; . /etc/2llazy/app.env; set +a
+  npx prisma migrate deploy
+  npx tsx scripts/apply-search-indexes.ts'
 ```
 
 If `migrate deploy` fails on the `vector` extension, see
