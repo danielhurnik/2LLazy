@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { generateEmbedding, generateCoverLetter, checkOllamaHealth } from "@/lib/ai";
 import { readCvText } from "@/lib/cv";
-import { cosineSimilarity } from "@/lib/similarity";
+import { composeCoverLetter } from "@/lib/coverLetter";
 import { ApplicationStatus } from "@prisma/client";
 import { revalidateTag, revalidatePath } from "next/cache";
 import { favouriteTag } from "@/lib/data/favourites";
@@ -19,45 +18,55 @@ export const resolvers = {
       { query, skillLevel = "", limit = 20 }: { query: string; skillLevel?: string; limit?: number },
       { userId }: GqlContext
     ) => {
+      // Postgres full-text over the cached postings. The `'simple'` dictionary
+      // is deliberate: the cache holds Czech, Polish, German and English side
+      // by side, and English stemming mangles the rest. Ranking happens in SQL
+      // so this resolver stays a thin read path — the richer lexical scorer in
+      // src/lib/matching runs on the live scrape route instead.
       const text = `${query} ${skillLevel}`.trim();
-      const queryEmbedding = await generateEmbedding(text);
+      const take = Math.min(Math.max(limit ?? 20, 1), 100);
 
-      const allJobs = await prisma.$queryRaw<Array<{
+      const rows = await prisma.$queryRaw<Array<{
         id: string; title: string; company: string; location: string | null;
         sourceUrl: string; source: string; salary: string | null;
-        postedAt: Date | null; scrapedAt: Date;
-        embedding: string | null;
+        postedAt: Date | null; scrapedAt: Date; description: string;
+        country: string | null; rank: number;
       }>>`
-        SELECT id, title, company, location, "sourceUrl", source::text, salary,
-               "postedAt", "scrapedAt", embedding::text as embedding
+        SELECT id, title, company, location, "sourceUrl", source, salary,
+               "postedAt", "scrapedAt", description, country,
+               ts_rank(
+                 to_tsvector('simple',
+                   coalesce(title, '') || ' ' || coalesce(company, '') || ' ' || coalesce(description, '')),
+                 plainto_tsquery('simple', ${text})
+               ) AS rank
         FROM "JobPosting"
-        WHERE embedding IS NOT NULL
-        LIMIT 500
+        WHERE to_tsvector('simple',
+                coalesce(title, '') || ' ' || coalesce(company, '') || ' ' || coalesce(description, '')
+              ) @@ plainto_tsquery('simple', ${text})
+        ORDER BY rank DESC, "scrapedAt" DESC
+        LIMIT ${take}
       `;
 
-      // Check which jobs are favourited by this user
       const favouritedIds = new Set(
         (await prisma.userFavourite.findMany({ where: { userId }, select: { jobId: true } }))
           .map((f) => f.jobId)
       );
 
-      const parsedJobs = allJobs.map((j) => ({
-        ...j,
-        favourited: favouritedIds.has(j.id),
-        embedding: j.embedding ? JSON.parse(j.embedding) as number[] : null,
-      }));
-      const jobs = parsedJobs.filter(
-        (j) => j.embedding !== null && (j.embedding as number[]).length === queryEmbedding.length
-      );
-      return jobs
-        .map((job) => ({
-          ...job,
-          postedAt: job.postedAt?.toISOString() ?? null,
-          scrapedAt: job.scrapedAt.toISOString(),
-          similarity: cosineSimilarity(queryEmbedding, job.embedding as number[]),
-        }))
-        .sort((a, b) => b.similarity - a.similarity)
-        .slice(0, limit);
+      // ts_rank is unbounded in principle but rarely exceeds ~1 in practice;
+      // normalise against the top hit so the UI's 0–1 contract holds.
+      const topRank = rows.length > 0 ? Math.max(...rows.map((r) => Number(r.rank))) : 0;
+
+      return rows.map((row) => {
+        const score = topRank > 0 ? Number(row.rank) / topRank : 0;
+        return {
+          ...row,
+          postedAt: row.postedAt?.toISOString() ?? null,
+          scrapedAt: row.scrapedAt.toISOString(),
+          favourited: favouritedIds.has(row.id),
+          score,
+          similarity: score,
+        };
+      });
     },
 
     getFavourites: async (
@@ -133,8 +142,21 @@ export const resolvers = {
       return prisma.userProfile.findUnique({ where: { userId } });
     },
 
-    aiHealth: async () => {
-      return checkOllamaHealth();
+    /**
+     * Scraping needs no credentials, so `ok` is always true. What is worth
+     * reporting is which optional integrations are configured — the app works
+     * without every one of them, just with fewer sources.
+     */
+    scraperHealth: async () => {
+      const optionalIntegrations: string[] = [];
+      if (process.env.ADZUNA_APP_ID?.trim() && process.env.ADZUNA_APP_KEY?.trim()) {
+        optionalIntegrations.push("Adzuna");
+      }
+      return {
+        ok: true,
+        playwrightEnabled: process.env.PLAYWRIGHT_ENABLED === "true",
+        optionalIntegrations,
+      };
     },
   },
 
@@ -272,17 +294,17 @@ export const resolvers = {
       });
       const language = userProfile?.coverLetterLanguage ?? "English";
 
-      const content = await generateCoverLetter(
-        job.title,
-        job.company,
-        job.description,
+      const { content } = composeCoverLetter({
+        jobTitle: job.title,
+        company: job.company,
+        jobDescription: job.description,
         cvText,
         language,
-      );
+      });
 
       const [coverLetter] = await prisma.$transaction([
         prisma.coverLetter.create({
-          data: { userId, jobId, content, generatedByAI: true },
+          data: { userId, jobId, content, generatedFromTemplate: true },
         }),
         prisma.userFavourite.upsert({
           where: { userId_jobId: { userId, jobId } },

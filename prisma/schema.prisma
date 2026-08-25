@@ -2,25 +2,17 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider        = "prisma-client-js"
-  previewFeatures = ["postgresqlExtensions"]
+  provider = "prisma-client-js"
 }
 
 datasource db {
-  provider   = "postgresql"
-  extensions = [pgvector(map: "vector")]
+  provider = "postgresql"
 }
 
-enum JobSource {
-  STARTUPJOBS
-  JOBSTACK
-  COCUMA
-  SKILLETO
-  NOFLUFFJOBS
-  JOBSCZ
-  JOOBLE
-  GLASSDOOR
-}
+// NOTE: `JobPosting.source` is a plain String, not an enum, on purpose.
+// Job boards live in the runtime board registry (src/lib/scrapers), keyed by an
+// uppercase id such as "REMOTIVE" or "ADZUNA". Adding a board must never require
+// a database migration.
 
 enum ApplicationStatus {
   PENDING
@@ -104,6 +96,9 @@ model UserFavourite {
   job  JobPosting @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   @@id([userId, jobId])
+  // The composite PK already covers lookups by userId; purging stale postings
+  // cascades by jobId, which without this index means a sequential scan per row.
+  @@index([jobId])
 }
 
 // ── App models ─────────────────────────────────────────────────────────────────
@@ -119,6 +114,10 @@ model UserProfile {
   githubUrl           String?
   coverLetterLanguage String   @default("English")
   googleCalendarSync  Boolean  @default(false)
+  // Scraping preferences — drive board selection and result filtering.
+  country             String? // ISO 3166-1 alpha-2, uppercase (e.g. "CZ")
+  preferredWorkType   String?
+  remoteOnly          Boolean  @default(false)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -126,22 +125,38 @@ model UserProfile {
 }
 
 model JobPosting {
-  id           String                       @id @default(cuid())
-  title        String
-  company      String
-  location     String?
-  description  String                       @db.Text
-  sourceUrl    String                       @unique
-  source       JobSource
-  salary       String?
-  workType     String?
-  postedAt     DateTime?
-  scrapedAt    DateTime                     @default(now())
-  firstSeenAt  DateTime                     @default(now())
-  embedding    Unsupported("vector(1536)")?
+  id          String    @id @default(cuid())
+  title       String
+  company     String
+  location    String?
+  country     String? // ISO 3166-1 alpha-2, uppercase; null = unknown / worldwide
+  description String    @db.Text
+  sourceUrl   String    @unique
+  source      String // uppercase board id from the scraper registry, e.g. "REMOTIVE"
+  salary      String?
+  workType    String?
+  postedAt    DateTime?
+  scrapedAt   DateTime  @default(now())
+  firstSeenAt DateTime  @default(now())
+
   applications Application[]
   coverLetters CoverLetter[]
   favouritedBy UserFavourite[]
+
+  @@index([source])
+  @@index([country])
+  // The search path filters by country and freshness together.
+  @@index([country, scrapedAt])
+  @@index([scrapedAt])
+  @@index([firstSeenAt])
+  // Ranking is lexical now that embeddings are gone. Two indexes back it and are
+  // NOT expressible in Prisma schema — they are created as raw SQL in
+  // prisma/migrations/20260823010000_remove_ai_add_country/migration.sql:
+  //   * "JobPosting_fulltext_idx"   — GIN over to_tsvector('simple', title || company || description)
+  //   * "JobPosting_title_trgm_idx" — GIN gin_trgm_ops on title (fuzzy matching)
+  // `prisma migrate dev` will propose `DROP INDEX "JobPosting_title_trgm_idx"`
+  // because it cannot model an operator class. Delete that line from any
+  // generated migration — the index is intentional.
 }
 
 model Application {
@@ -159,18 +174,26 @@ model Application {
   interview     Interview?
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
+
+  @@index([userId])
+  @@index([jobId])
 }
 
 model CoverLetter {
-  id            String        @id @default(cuid())
-  userId        String
-  jobId         String
-  job           JobPosting    @relation(fields: [jobId], references: [id])
-  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  content       String        @db.Text
-  generatedByAI Boolean       @default(false)
-  createdAt     DateTime      @default(now())
-  applications  Application[]
+  id           String        @id @default(cuid())
+  userId       String
+  jobId        String
+  job          JobPosting    @relation(fields: [jobId], references: [id])
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content      String        @db.Text
+  // Letters are composed from a template + CV + job facts — nothing is generated
+  // by a model any more. Renamed from `generatedByAI`.
+  generatedFromTemplate Boolean @default(false)
+  createdAt    DateTime      @default(now())
+  applications Application[]
+
+  @@index([userId])
+  @@index([jobId])
 }
 
 model Interview {
@@ -198,18 +221,6 @@ model CalendarEvent {
   updatedAt             DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-// ── RAG Role Profiles ──────────────────────────────────────────────────────────
-
-model RoleProfile {
-  id            String                       @id @default(cuid())
-  category      String                       @unique
-  description   String                       @db.Text
-  antiQuery     String                       @db.Text
-  embedding     Unsupported("vector(1536)")?
-  antiEmbedding Unsupported("vector(1536)")?
-  updatedAt     DateTime                     @updatedAt
 }
 
 model CvDocument {

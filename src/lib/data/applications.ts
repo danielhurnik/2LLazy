@@ -1,10 +1,17 @@
 import { prisma } from "@/lib/prisma";
-import { ApplicationStatus, JobSource } from "@prisma/client";
+import { ApplicationStatus } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import type { Application, AppStatus } from "@/types";
 import { ALL_STATUSES } from "@/types";
 
-const VALID_SOURCES = new Set(Object.values(JobSource));
+/**
+ * `source` is a free-form board id now that boards live in the runtime
+ * registry, so validate the shape rather than membership of a fixed enum.
+ */
+function sourceFilter(source: string | undefined): string | undefined {
+  if (!source || source === "ALL") return undefined;
+  return /^[A-Z0-9_]{2,32}$/.test(source) ? source : undefined;
+}
 
 export interface ApplicationFilters {
   status?: string;
@@ -16,7 +23,8 @@ export interface ApplicationFilters {
 function buildJobWhere(filters?: Omit<ApplicationFilters, "status">): Prisma.JobPostingWhereInput | undefined {
   const { source, position, hasSalary } = filters ?? {};
   const clause: Prisma.JobPostingWhereInput = {};
-  if (source && source !== "ALL" && VALID_SOURCES.has(source as JobSource)) clause.source = source as JobSource;
+  const validSource = sourceFilter(source);
+  if (validSource) clause.source = validSource;
   if (hasSalary) clause.salary = { not: null };
   if (position?.trim()) {
     clause.OR = [

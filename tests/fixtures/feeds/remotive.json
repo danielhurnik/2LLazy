@@ -1,0 +1,47 @@
+{
+  "0-legal-notice": "Remotive API sample — hand-authored fixture, not a live capture.",
+  "job-count": 3,
+  "jobs": [
+    {
+      "id": 1900001,
+      "url": "https://remotive.com/remote-jobs/software-dev/senior-react-engineer-1900001",
+      "title": "Senior React Engineer",
+      "company_name": "Northwind Labs",
+      "category": "Software Development",
+      "job_type": "full_time",
+      "publication_date": "2026-08-18T09:14:00",
+      "candidate_required_location": "Europe",
+      "salary": "$90,000 - $120,000",
+      "description": "<p>We are looking for a <strong>Senior React Engineer</strong> to join our web &amp; platform team.</p><ul><li>5+ years with React and TypeScript</li><li>Experience with Next.js</li></ul>"
+    },
+    {
+      "id": 1900002,
+      "url": "https://remotive.com/remote-jobs/software-dev/backend-engineer-1900002",
+      "title": "Backend Engineer (Go)",
+      "company_name": "Tidewater",
+      "category": "Software Development",
+      "job_type": "contract",
+      "publication_date": "2026-08-17T11:00:00",
+      "candidate_required_location": "USA",
+      "salary": "",
+      "description": "<div>Build Go services on Kubernetes.</div>"
+    },
+    {
+      "id": 1900003,
+      "url": "https://remotive.com/remote-jobs/design/product-designer-1900003",
+      "title": "Product Designer",
+      "company_name": null,
+      "category": "Design",
+      "job_type": "full_time",
+      "publication_date": null,
+      "candidate_required_location": null,
+      "salary": null,
+      "description": null
+    },
+    {
+      "id": 1900004,
+      "company_name": "Broken Payload Inc",
+      "description": "<p>This entry has no title and no url and must be dropped.</p>"
+    }
+  ]
+}

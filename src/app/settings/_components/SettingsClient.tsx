@@ -1,23 +1,27 @@
 import { Box, Typography } from "@mui/material";
-import { AiStatusCard } from "./AiStatusCard";
+import { ScraperStatusCard } from "./ScraperStatusCard";
 import { UserProfileCard } from "./UserProfileCard";
 import { CvDocumentsCard } from "./CvDocumentsCard";
 import { GoogleCalendarCard } from "./GoogleCalendarCard";
-import type { UploadedFile, UserProfile } from "@/types";
+import type { BoardStatus, UploadedFile, UserProfile } from "@/types";
 
 interface Props {
   profile: UserProfile;
   uploadedFiles: UploadedFile[];
-  aiHealth: { ok: boolean; missing: string[] };
-  hasOpenAI: boolean;
+  country: string;
+  countryName: string;
+  boards: BoardStatus[];
+  playwrightEnabled: boolean;
   hasCalendarAccess: boolean;
 }
 
 export function SettingsClient({
   profile,
   uploadedFiles,
-  aiHealth,
-  hasOpenAI,
+  country,
+  countryName,
+  boards,
+  playwrightEnabled,
   hasCalendarAccess,
 }: Props) {
   return (
@@ -27,10 +31,15 @@ export function SettingsClient({
           Settings
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Configure your profile, CV documents, and AI integrations.
+          Your profile, CV documents, and the job boards your searches use.
         </Typography>
       </Box>
-      <AiStatusCard hasOpenAI={hasOpenAI} aiHealth={aiHealth} />
+      <ScraperStatusCard
+        country={country}
+        countryName={countryName}
+        boards={boards}
+        playwrightEnabled={playwrightEnabled}
+      />
       <GoogleCalendarCard enabled={profile.googleCalendarSync} hasCalendarAccess={hasCalendarAccess} />
       <UserProfileCard profile={profile} />
       <CvDocumentsCard uploadedFiles={uploadedFiles} />

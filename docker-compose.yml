@@ -1,0 +1,162 @@
+# 2LLazy — the whole stack: PostgreSQL, the web app, and the job ingester.
+#
+#   docker compose up -d                        # database, migrations, app
+#   docker compose run --rm ingest --country CZ # collect jobs for one country
+#
+# Configuration lives in a .env file next to this one. The repository's
+# .gitignore excludes .env*, so it is never committed. Every variable below has
+# a default that works on a machine where nothing else is listening, except
+# AUTH_SECRET, which you must set — the stack refuses to start without it.
+#
+# See docs/SELF_HOSTING.md for the walkthrough, TLS, and scheduling.
+
+name: 2llazy
+
+# Shared by the app and the two batch services so they cannot drift apart.
+x-app-env: &app-env
+  DATABASE_URL: ${DATABASE_URL:-postgresql://twollazy:twollazy@db:5432/twollazy?schema=public}
+  # No default on purpose. Without it every sign-in fails with MissingSecret,
+  # so the stack refuses to start instead of half-working.
+  AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env, see docs/SELF_HOSTING.md}
+  # The public origin. Auth.js refuses to trust a proxied Host header in
+  # production unless this (or AUTH_TRUST_HOST) is set, and sign-in fails with
+  # UntrustedHost. Set it to the URL people type in, https and all.
+  AUTH_URL: ${AUTH_URL:-}
+  DEFAULT_COUNTRY: ${DEFAULT_COUNTRY:-US}
+  # Optional: adds Adzuna's local board in ~19 countries.
+  ADZUNA_APP_ID: ${ADZUNA_APP_ID:-}
+  ADZUNA_APP_KEY: ${ADZUNA_APP_KEY:-}
+  # Optional: Google sign-in and calendar sync.
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+  # Off, and not configurable here: the image ships no browser. Ingestion does
+  # not need one — JavaScript-heavy boards are walked through their sitemaps.
+  PLAYWRIGHT_ENABLED: "false"
+  TZ: ${TZ:-UTC}
+
+services:
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  # Not published to the host: only the app and the batch jobs talk to it, over
+  # the compose network. Add a ports entry below if you want psql from outside.
+  db:
+    # Defaults to the pgvector image because one old migration still runs
+    # `CREATE EXTENSION vector`, even though nothing in the app uses vectors any
+    # more — stock postgres:16-alpine cannot apply the migration history.
+    # Set POSTGRES_IMAGE=postgres:16-alpine to use stock PostgreSQL and bring
+    # the schema up with the `db-push` profile instead. See
+    # docs/SELF_HOSTING.md, "Migrations fail on the vector extension".
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg16}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-twollazy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-twollazy}
+      POSTGRES_DB: ${POSTGRES_DB:-twollazy}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-twollazy} -d ${POSTGRES_DB:-twollazy}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    # ports:
+    #   - "127.0.0.1:5432:5432"
+
+  # ── Schema ─────────────────────────────────────────────────────────────────
+  # Runs to completion before the app starts, on every `up`. Both steps are
+  # idempotent, so a no-op re-run costs a second.
+  #
+  # apply-search-indexes.ts is not redundant: the two expression indexes behind
+  # lexical search cannot be described in schema.prisma, and running it here
+  # means the same command works whether the schema came from the migration
+  # history or from `db push`.
+  migrate:
+    build:
+      context: .
+      target: worker
+    image: 2llazy-worker:local
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: *app-env
+    command:
+      - sh
+      - -c
+      - npx prisma migrate deploy && npx tsx scripts/apply-search-indexes.ts
+
+  # ── Web app ────────────────────────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      target: runner
+      args:
+        # NEXT_PUBLIC_* is compiled into the browser bundle, so it has to be
+        # set at build time. Changing it means rebuilding the image.
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
+    image: 2llazy-app:local
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment: *app-env
+    # Bound to loopback by default because a reverse proxy on the same machine
+    # terminates TLS in front of it. Set APP_BIND=0.0.0.0 only if you really
+    # mean to expose plain HTTP to the network.
+    ports:
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-3000}:3000"
+    volumes:
+      # /api/uploads writes CV files here. Everything else lives in Postgres.
+      - app-uploads:/app/uploads
+
+  # ── Job ingester ───────────────────────────────────────────────────────────
+  # Behind a profile so `docker compose up` never starts a crawl. It is a batch
+  # job: run it a few times a day, one country per run.
+  #
+  #   docker compose run --rm ingest --country CZ
+  #   docker compose run --rm ingest --country DE --limit 200
+  #   docker compose run --rm ingest --country BR --dry-run
+  #
+  # Arguments after the service name replace the default flags below.
+  ingest:
+    profiles: ["ingest"]
+    build:
+      context: .
+      target: worker
+    image: 2llazy-worker:local
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: *app-env
+    entrypoint: ["npx", "tsx", "scripts/ingest.ts"]
+    command: ["--country", "${INGEST_COUNTRY:-US}"]
+
+  # ── Schema without the migration history ───────────────────────────────────
+  # The escape hatch for a PostgreSQL without pgvector: builds the current
+  # schema directly and then adds the indexes db push cannot create. Use this
+  # instead of `migrate`, not as well as.
+  #
+  #   docker compose run --rm db-push
+  db-push:
+    profiles: ["push"]
+    build:
+      context: .
+      target: worker
+    image: 2llazy-worker:local
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: *app-env
+    command:
+      - sh
+      - -c
+      - npx prisma db push --skip-generate && npx tsx scripts/apply-search-indexes.ts
+
+volumes:
+  db-data:
+  app-uploads:

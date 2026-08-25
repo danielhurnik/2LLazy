@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Box,
   Typography,
@@ -20,34 +20,69 @@ import {
   FormControlLabel,
   Tooltip,
   Alert,
+  Chip,
   CircularProgress,
+  Link,
+  alpha,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
+import PublicIcon from "@mui/icons-material/Public";
 import { JobCard } from "@/components/jobs/JobCard";
 import { JobFilterBar, type JobFilters, DEFAULT_JOB_FILTERS } from "@/components/jobs/JobFilterBar";
+import { CountrySelect, countryLabel, flagEmoji, type CountryOption } from "@/components/jobs/CountrySelect";
 import { ErrorAlertList } from "@/components/ui/ErrorAlertList";
-import type { JobItem } from "@/types";
+import type { BoardsResponse, CountryDetection, JobItem, SearchBoard } from "@/types";
+import { jobScore } from "@/types";
 import { useScrapeProgress } from "@/context/ScrapeProgressContext";
 import { ios } from "@/theme/theme";
 
 type JobResult = JobItem;
 
-interface ScrapeEvent {
-  type: "progress" | "job" | "complete" | "error" | "scraperDone";
-  site?: string;
-  message?: string;
-  data?: JobResult;
-  total?: number;
-  doneCount?: number;
-}
+/** Events streamed by `POST /api/scrape`, one per `data:` line. */
+type ScrapeEvent =
+  | {
+      type: "meta";
+      country: string;
+      countryName: string;
+      detectedVia: CountryDetection;
+      boards: SearchBoard[];
+    }
+  | { type: "progress"; site?: string; message?: string }
+  | { type: "job"; data: JobResult }
+  | { type: "scraperDone"; site?: string; doneCount: number; total: number }
+  | { type: "scrapersDone"; total: number }
+  | { type: "complete"; total?: number }
+  | { type: "error"; site?: string; message?: string };
 
 const SKILL_LEVELS = ["Junior", "Mid", "Senior", "Lead", "Any"];
+
+/** Detection methods the user did not choose themselves — worth flagging. */
+const AUTO_DETECTED: CountryDetection[] = ["geo-header", "accept-language"];
+
+interface SearchSession {
+  jobs?: JobResult[];
+  query?: string;
+  city?: string;
+  skillLevel?: string;
+  deepSearch?: boolean;
+  remoteOnly?: boolean;
+  country?: string;
+  progress?: string;
+  errors?: string[];
+}
 
 export default function SearchPage() {
   const queryInputRef = useRef<HTMLInputElement>(null);
   const cityInputRef = useRef<HTMLInputElement>(null);
+  const countryBoxRef = useRef<HTMLDivElement>(null);
   const [skillLevel, setSkillLevel] = useState("Any");
   const [deepSearch, setDeepSearch] = useState(false);
+  const [remoteOnly, setRemoteOnly] = useState(false);
+  const [country, setCountry] = useState("");
+  const [countryName, setCountryName] = useState("");
+  const [detectedVia, setDetectedVia] = useState<CountryDetection | null>(null);
+  const [countryOptions, setCountryOptions] = useState<CountryOption[]>([]);
+  const [boards, setBoards] = useState<SearchBoard[]>([]);
   const [jobs, setJobs] = useState<JobResult[]>([]);
   const [progress, setProgress] = useState<string | null>(null);
   const { scraping, setScraping, scrapePercent, setScrapePercent } = useScrapeProgress();
@@ -67,20 +102,17 @@ export default function SearchPage() {
     try {
       const saved = sessionStorage.getItem("job_search_session");
       if (saved) {
-        const p = JSON.parse(saved) as {
-          jobs?: JobResult[];
-          query?: string;
-          city?: string;
-          skillLevel?: string;
-          deepSearch?: boolean;
-          progress?: string;
-          errors?: string[];
-        };
+        const p = JSON.parse(saved) as SearchSession;
         if (p.jobs?.length) setJobs(p.jobs.map((j) => ({ ...j, description: j.description ? j.description + "…" : "" })));
         if (p.query && queryInputRef.current) queryInputRef.current.value = p.query;
         if (p.city && cityInputRef.current) cityInputRef.current.value = p.city ?? "";
         if (p.skillLevel) setSkillLevel(p.skillLevel);
         if (p.deepSearch !== undefined) setDeepSearch(p.deepSearch);
+        if (p.remoteOnly !== undefined) setRemoteOnly(p.remoteOnly);
+        if (p.country) {
+          setCountry(p.country);
+          setDetectedVia("explicit");
+        }
         // Only restore a terminal progress message, not a mid-scrape one
         if (p.progress && !p.progress.startsWith("Scraping") && !p.progress.startsWith("Starting")) {
           setProgress(p.progress);
@@ -88,6 +120,51 @@ export default function SearchPage() {
         if (p.errors?.length) setErrors(p.errors);
       }
     } catch { /* corrupt / unavailable */ }
+  }, []);
+
+  /** Applies a `meta` event (or the /api/boards payload) to the country UI. */
+  const applyCountryMeta = useCallback(
+    (meta: { country: string; countryName: string; detectedVia: CountryDetection; boards: SearchBoard[] }) => {
+      setCountry(meta.country);
+      setCountryName(meta.countryName);
+      setDetectedVia(meta.detectedVia);
+      setBoards(meta.boards ?? []);
+      if (meta.country && meta.countryName) {
+        setCountryOptions((prev) =>
+          prev.some((c) => c.code === meta.country)
+            ? prev
+            : [...prev, { code: meta.country, name: meta.countryName }],
+        );
+      }
+    },
+    [],
+  );
+
+  // Ask the server which boards serve this user before the first search, so the
+  // country selector is pre-filled and the board row is not empty on arrival.
+  useEffect(() => {
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const saved = (() => {
+          try {
+            return (JSON.parse(sessionStorage.getItem("job_search_session") ?? "{}") as SearchSession).country ?? "";
+          } catch { return ""; }
+        })();
+        const qs = saved ? `?country=${encodeURIComponent(saved)}` : "";
+        const res = await fetch(`/api/boards${qs}`, { signal: controller.signal });
+        if (!res.ok) return;
+        const data = (await res.json()) as BoardsResponse;
+        applyCountryMeta({
+          country: data.country,
+          countryName: data.countryName,
+          detectedVia: data.detectedVia,
+          boards: data.boards.filter((b) => b.enabled),
+        });
+      } catch { /* offline or aborted — the selector still works from COMMON_COUNTRIES */ }
+    })();
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Persist the job list only when it actually changes (avoids stringify on every keystroke)
@@ -111,10 +188,10 @@ export default function SearchPage() {
       const parsed = existing ? JSON.parse(existing) : {};
       sessionStorage.setItem(
         "job_search_session",
-        JSON.stringify({ ...parsed, skillLevel, deepSearch, progress, errors }),
+        JSON.stringify({ ...parsed, skillLevel, deepSearch, remoteOnly, country, progress, errors }),
       );
     } catch { /* storage quota exceeded */ }
-  }, [skillLevel, deepSearch, progress, errors, scraping]);
+  }, [skillLevel, deepSearch, remoteOnly, country, progress, errors, scraping]);
 
   const handleSearch = async () => {
     const q = queryInputRef.current?.value.trim() ?? "";
@@ -124,7 +201,7 @@ export default function SearchPage() {
     try {
       const existing = sessionStorage.getItem("job_search_session");
       const parsed = existing ? JSON.parse(existing) : {};
-      sessionStorage.setItem("job_search_session", JSON.stringify({ ...parsed, query: q, city }));
+      sessionStorage.setItem("job_search_session", JSON.stringify({ ...parsed, query: q, city, country }));
     } catch { /* storage quota exceeded */ }
     setJobs([]);
     setErrors([]);
@@ -139,11 +216,60 @@ export default function SearchPage() {
 
     abortRef.current = new AbortController();
 
+    // One handler for both the streaming loop and the post-stream flush.
+    const handleEvent = (event: ScrapeEvent) => {
+      if (event.type === "meta") {
+        applyCountryMeta(event);
+      } else if (event.type === "progress") {
+        setProgress(event.message ?? null);
+      } else if (event.type === "scraperDone" && event.doneCount != null && event.total != null) {
+        setScrapePercent(Math.round((event.doneCount / event.total) * 100));
+      } else if (event.type === "scrapersDone") {
+        // Boards are finished; the server is still de-duplicating and ranking.
+        setScrapePercent(100);
+        setProgress("Ranking results…");
+      } else if (event.type === "job" && event.data) {
+        const job = event.data;
+        if (!newJobIdsRef.current.has(job.id)) {
+          newJobIdsRef.current.add(job.id);
+          jobArrivalIndexRef.current.set(job.id, arrivalCountRef.current++);
+        }
+        setJobs((prev) => {
+          const exists = prev.some((j) => j.id === job.id);
+          if (!exists) uniqueJobCountRef.current++;
+          return exists ? prev : [...prev, job];
+        });
+      } else if (event.type === "complete") {
+        setScrapePercent(100);
+        setProgress(uniqueJobCountRef.current === 0 ? "done-empty" : null);
+        setScraping(false);
+      } else if (event.type === "error") {
+        setErrors((prev) => [...prev, `${event.site ?? "scraper"}: ${event.message ?? "failed"}`]);
+      }
+    };
+
+    const handleLine = (line: string) => {
+      if (!line.startsWith("data: ")) return;
+      try {
+        handleEvent(JSON.parse(line.slice(6)) as ScrapeEvent);
+      } catch {
+        // malformed / truncated SSE line — skip
+      }
+    };
+
     try {
       const res = await fetch("/api/scrape", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: q, skillLevel, deepSearch, city }),
+        // `country` is optional: omitting it lets the server detect from geo headers.
+        body: JSON.stringify({
+          query: q,
+          skillLevel,
+          deepSearch,
+          city,
+          remoteOnly,
+          ...(country ? { country } : {}),
+        }),
         signal: abortRef.current.signal,
       });
 
@@ -164,55 +290,11 @@ export default function SearchPage() {
         // Keep the last part — it may be an incomplete line
         buf = parts.pop() ?? "";
 
-        for (const line of parts) {
-          if (!line.startsWith("data: ")) continue;
-          try {
-            const event = JSON.parse(line.slice(6)) as ScrapeEvent;
-            if (event.type === "progress") {
-              setProgress(event.message ?? null);
-            } else if (event.type === "scraperDone" && event.doneCount != null && event.total != null) {
-              setScrapePercent(Math.round((event.doneCount / event.total) * 100));
-            } else if (event.type === "job" && event.data) {
-              const jobId = event.data.id;
-              if (!newJobIdsRef.current.has(jobId)) {
-                newJobIdsRef.current.add(jobId);
-                jobArrivalIndexRef.current.set(jobId, arrivalCountRef.current++);
-              }
-              setJobs((prev) => {
-                const exists = prev.some((j) => j.id === event.data!.id);
-                if (!exists) uniqueJobCountRef.current++;
-                return exists ? prev : [...prev, event.data!];
-              });
-            } else if (event.type === "complete") {
-              setScrapePercent(100);
-              setProgress(uniqueJobCountRef.current === 0 ? "done-empty" : null);
-              setScraping(false);
-            } else if (event.type === "error") {
-              setErrors((prev) => [...prev, `${event.site}: ${event.message}`]);
-            }
-          } catch {
-            // malformed SSE line — skip
-          }
-        }
+        for (const line of parts) handleLine(line);
       }
 
       // Flush any remaining buffered content after stream ends
-      if (buf.startsWith("data: ")) {
-        try {
-          const event = JSON.parse(buf.slice(6)) as ScrapeEvent;
-          if (event.type === "job" && event.data) {
-            setJobs((prev) => {
-              const exists = prev.some((j) => j.id === event.data!.id);
-              if (!exists) uniqueJobCountRef.current++;
-              return exists ? prev : [...prev, event.data!];
-            });
-          } else if (event.type === "complete") {
-            setScrapePercent(100);
-            setProgress(uniqueJobCountRef.current === 0 ? "done-empty" : null);
-            setScraping(false);
-          }
-        } catch { /* incomplete */ }
-      }
+      if (buf) handleLine(buf);
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
         setErrors((prev) => [...prev, "Scrape failed: " + String(err)]);
@@ -248,10 +330,15 @@ export default function SearchPage() {
     }
   };
 
+  const focusCountry = () => {
+    countryBoxRef.current?.querySelector("input")?.focus();
+  };
 
   const filteredJobs = jobs
     .filter((job) => {
       if (filters.source !== "ALL" && job.source !== filters.source) return false;
+      if (filters.country && filters.country !== "ALL" && job.country !== filters.country) return false;
+      if (filters.remoteOnly && job.workType !== "Remote") return false;
       if (filters.hasSalary && !job.salary) return false;
       if (filters.workType !== "ALL" && job.workType && job.workType !== filters.workType) return false;
       if (filters.city.trim()) {
@@ -280,11 +367,17 @@ export default function SearchPage() {
 
   const freshJobs = filteredJobs
     .filter((j) => !j.isStale)
-    .sort((a, b) => (b.similarity ?? 0) - (a.similarity ?? 0));
+    .sort((a, b) => jobScore(b) - jobScore(a));
 
   const staleJobs = filteredJobs
     .filter((j) => j.isStale)
-    .sort((a, b) => (b.similarity ?? 0) - (a.similarity ?? 0));
+    .sort((a, b) => jobScore(b) - jobScore(a));
+
+  const resultCountries = Array.from(
+    new Set(jobs.map((j) => j.country).filter((c): c is string => Boolean(c))),
+  ).sort();
+
+  const autoDetected = detectedVia != null && AUTO_DETECTED.includes(detectedVia);
 
   return (
     <Box>
@@ -303,7 +396,7 @@ export default function SearchPage() {
           Find Jobs
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Enter a role and skill level — results ranked by semantic match.
+          Pick a role, a country and a skill level — results are ranked by how well the posting matches your words.
         </Typography>
       </Box>
 
@@ -313,7 +406,8 @@ export default function SearchPage() {
           <Stack
             direction={{ xs: "column", sm: "row" }}
             spacing={1.5}
-            alignItems="flex-end"
+            alignItems={{ xs: "stretch", sm: "flex-end" }}
+            sx={{ flexWrap: "wrap", gap: 1.5 }}
           >
             <TextField
               label="Job Position"
@@ -321,20 +415,34 @@ export default function SearchPage() {
               inputRef={queryInputRef}
               defaultValue=""
               onKeyDown={(e) => e.key === "Enter" && !scraping && handleSearch()}
-              fullWidth
               variant="outlined"
               size="small"
+              sx={{ flexGrow: 1, minWidth: 200 }}
             />
             <TextField
               label="City (optional)"
-              placeholder="e.g. Praha, Brno"
+              placeholder="e.g. Berlin, Praha"
               inputRef={cityInputRef}
               defaultValue=""
               onKeyDown={(e) => e.key === "Enter" && !scraping && handleSearch()}
               variant="outlined"
               size="small"
-              sx={{ minWidth: 160, flexShrink: 0 }}
+              sx={{ minWidth: 150, flexShrink: 0 }}
             />
+            <Box ref={countryBoxRef} sx={{ minWidth: { xs: "100%", sm: 190 }, flexShrink: 0 }}>
+              <CountrySelect
+                value={country}
+                onChange={(code) => {
+                  setCountry(code);
+                  setDetectedVia("explicit");
+                  setCountryName(
+                    countryOptions.find((c) => c.code === code)?.name ?? "",
+                  );
+                }}
+                countries={countryOptions}
+                disabled={scraping}
+              />
+            </Box>
             <FormControl size="small" sx={{ minWidth: 130, flexShrink: 0 }}>
               <InputLabel>Skill Level</InputLabel>
               <Select
@@ -360,31 +468,115 @@ export default function SearchPage() {
 
           {scraping && <LinearProgress sx={{ mt: 2 }} />}
 
-          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 1.5 }}>
-            <Tooltip title="Scrapes multiple pages per site — slower but finds more results.">
-              <FormControlLabel
-                control={
-                  <Switch
-                    size="small"
-                    checked={deepSearch}
-                    onChange={(e) => setDeepSearch(e.target.checked)}
-                    disabled={scraping}
-                  />
-                }
-                label={
-                  <Typography variant="caption" color="text.secondary">
-                    Deep Search
-                  </Typography>
-                }
-                sx={{ ml: 0, gap: 0.5 }}
-              />
-            </Tooltip>
+          <Stack
+            direction="row"
+            justifyContent="space-between"
+            alignItems="center"
+            sx={{ mt: 1.5, flexWrap: "wrap", gap: 1 }}
+          >
+            <Stack direction="row" sx={{ flexWrap: "wrap", gap: 1 }}>
+              <Tooltip title="Scrapes multiple pages per site — slower but finds more results.">
+                <FormControlLabel
+                  control={
+                    <Switch
+                      size="small"
+                      checked={deepSearch}
+                      onChange={(e) => setDeepSearch(e.target.checked)}
+                      disabled={scraping}
+                    />
+                  }
+                  label={
+                    <Typography variant="caption" color="text.secondary">
+                      Deep Search
+                    </Typography>
+                  }
+                  sx={{ ml: 0, gap: 0.5 }}
+                />
+              </Tooltip>
+              <Tooltip title="Only search boards and postings for remote roles.">
+                <FormControlLabel
+                  control={
+                    <Switch
+                      size="small"
+                      checked={remoteOnly}
+                      onChange={(e) => setRemoteOnly(e.target.checked)}
+                      disabled={scraping}
+                    />
+                  }
+                  label={
+                    <Typography variant="caption" color="text.secondary">
+                      Remote only
+                    </Typography>
+                  }
+                  sx={{ ml: 0, gap: 0.5 }}
+                />
+              </Tooltip>
+            </Stack>
             {progress && (
               <Typography variant="caption" color="text.secondary">
-                {progress}
+                {progress === "done-empty" ? "No results" : progress}
               </Typography>
             )}
           </Stack>
+
+          {/* ── Boards for the selected country ────────────────────── */}
+          {boards.length > 0 && (
+            <Box sx={{ mt: 1.5, pt: 1.5, borderTop: `1px solid ${ios.separator}` }}>
+              <Stack
+                direction="row"
+                alignItems="center"
+                sx={{ mb: 1, flexWrap: "wrap", gap: 0.75 }}
+              >
+                <Typography variant="caption" sx={{ color: ios.label2, fontWeight: 600 }}>
+                  {boards.length} {boards.length === 1 ? "board" : "boards"} for{" "}
+                  {countryName ? `${flagEmoji(country)} ${countryName}` : countryLabel(country, countryOptions)}
+                </Typography>
+                {autoDetected && (
+                  <Typography variant="caption" sx={{ color: ios.label3 }}>
+                    · detected from your connection —{" "}
+                    <Link
+                      component="button"
+                      type="button"
+                      onClick={focusCountry}
+                      underline="hover"
+                      sx={{ color: ios.blue, font: "inherit", verticalAlign: "baseline" }}
+                    >
+                      change
+                    </Link>
+                  </Typography>
+                )}
+              </Stack>
+              <Stack direction="row" sx={{ flexWrap: "wrap", gap: 0.75 }}>
+                {boards.map((b) => (
+                  <Tooltip
+                    key={b.id}
+                    title={b.remoteOnly ? `${b.name} — remote roles only` : b.name}
+                  >
+                    <Chip
+                      size="small"
+                      component="a"
+                      href={b.homepage}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      clickable
+                      icon={b.remoteOnly ? <PublicIcon sx={{ fontSize: 14 }} /> : undefined}
+                      label={b.name}
+                      sx={{
+                        height: 24,
+                        fontSize: "0.72rem",
+                        fontWeight: 500,
+                        color: ios.label1,
+                        background: alpha(ios.blue, 0.12),
+                        border: `1px solid ${alpha(ios.blue, 0.25)}`,
+                        "& .MuiChip-icon": { color: ios.teal, ml: 0.75 },
+                        "&:hover": { background: alpha(ios.blue, 0.2) },
+                      }}
+                    />
+                  </Tooltip>
+                ))}
+              </Stack>
+            </Box>
+          )}
         </CardContent>
       </Card>
 
@@ -401,13 +593,20 @@ export default function SearchPage() {
 
       {!scraping && jobs.length === 0 && progress === "done-empty" && (
         <Alert severity="warning" sx={{ mb: 3 }}>
-          No jobs found. Try broader keywords, set skill level to <strong>Any</strong>, or enable <strong>Deep Search</strong>.
+          No jobs found. Try broader keywords, set skill level to <strong>Any</strong>, turn on{" "}
+          <strong>Remote only</strong> to reach the worldwide boards, or enable <strong>Deep Search</strong>.
         </Alert>
       )}
 
       {jobs.length > 0 && (
         <>
-          <JobFilterBar sources={Array.from(new Set(jobs.map((j) => j.source))).sort()} filters={filters} onChange={setFilters} />
+          <JobFilterBar
+            sources={Array.from(new Set(jobs.map((j) => j.source))).sort()}
+            countries={resultCountries}
+            countryNames={countryOptions}
+            filters={filters}
+            onChange={setFilters}
+          />
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontWeight: 500 }}>
             {filteredJobs.length === jobs.length
               ? `${jobs.length} results`
@@ -477,4 +676,3 @@ export default function SearchPage() {
     </Box>
   );
 }
-

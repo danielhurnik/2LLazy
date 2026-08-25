@@ -1,0 +1,68 @@
+{
+  "apiVersion": "2.0",
+  "documentationUrl": "https://jobicy.com/jobs-rss-feed",
+  "friendlyNotice": "Hand-authored fixture, not a live capture.",
+  "jobCount": 4,
+  "jobs": [
+    {
+      "id": 2200001,
+      "url": "https://jobicy.com/jobs/2200001-senior-react-developer",
+      "jobSlug": "2200001-senior-react-developer",
+      "jobTitle": "Senior React Developer",
+      "companyName": "Northwind Labs",
+      "companyLogo": "https://jobicy.com/logo/northwind.png",
+      "jobIndustry": ["Software Engineering"],
+      "jobType": ["full-time"],
+      "jobGeo": "Europe",
+      "jobLevel": "Senior",
+      "jobExcerpt": "Own our React component library.",
+      "jobDescription": "<p>You will own our <strong>React</strong> component library &amp; design system.</p>",
+      "pubDate": "2026-08-18 09:14:00",
+      "annualSalaryMin": 60000,
+      "annualSalaryMax": 90000,
+      "salaryCurrency": "EUR"
+    },
+    {
+      "id": 2200002,
+      "url": "https://jobicy.com/jobs/2200002-react-native-engineer",
+      "jobSlug": "2200002-react-native-engineer",
+      "jobTitle": "React Native Engineer",
+      "companyName": "Helios",
+      "companyLogo": null,
+      "jobIndustry": ["Software Engineering"],
+      "jobType": ["contract"],
+      "jobGeo": "USA",
+      "jobLevel": "Mid",
+      "jobExcerpt": "Ship iOS and Android from one codebase.",
+      "jobDescription": null,
+      "pubDate": "2026-08-17 11:00:00",
+      "annualSalaryMin": null,
+      "annualSalaryMax": null,
+      "salaryCurrency": null
+    },
+    {
+      "id": 2200003,
+      "url": "https://jobicy.com/jobs/2200003-frontend-engineer",
+      "jobSlug": "2200003-frontend-engineer",
+      "jobTitle": "Frontend Engineer",
+      "companyName": null,
+      "companyLogo": null,
+      "jobIndustry": [],
+      "jobType": [],
+      "jobGeo": null,
+      "jobLevel": null,
+      "jobExcerpt": "",
+      "jobDescription": "<div>Work on our web client.</div>",
+      "pubDate": null,
+      "annualSalaryMin": "0",
+      "annualSalaryMax": "0",
+      "salaryCurrency": "USD"
+    },
+    {
+      "id": 2200004,
+      "url": "https://jobicy.com/jobs/2200004-broken",
+      "companyName": "Broken Payload Inc",
+      "jobDescription": "This entry has no jobTitle and must be dropped before mapping."
+    }
+  ]
+}

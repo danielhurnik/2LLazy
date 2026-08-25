@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   Box,
   Chip,
@@ -42,8 +42,16 @@ export function DashboardFilterBar({
     value: DashboardFilters[K],
   ) => onChange({ ...filters, [key]: value });
 
+  // The text filter commits on blur/Enter, so it keeps a local draft. When the
+  // parent replaces the filters the draft is re-derived during render — comparing
+  // against the last prop we saw — rather than in an effect, which would trigger
+  // a cascading re-render.
   const [positionInput, setPositionInput] = useState(filters.position);
-  useEffect(() => setPositionInput(filters.position), [filters.position]);
+  const [lastPosition, setLastPosition] = useState(filters.position);
+  if (lastPosition !== filters.position) {
+    setLastPosition(filters.position);
+    setPositionInput(filters.position);
+  }
 
   const commitPosition = () => set("position", positionInput);
 

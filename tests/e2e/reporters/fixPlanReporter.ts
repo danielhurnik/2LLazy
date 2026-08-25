@@ -53,7 +53,7 @@ function categorise(testTitle: string, errorMessage: string): { category: string
         category: "Scraper Timeout",
         suggestedFix:
           "1. Check the dev server logs for [scrape] errors.\n" +
-          "2. Verify OPENAI_API_KEY is set in .env.\n" +
+          "2. Verify DATABASE_URL is set in .env and the database is reachable.\n" +
           "3. Check network connectivity to job board sites.\n" +
           "4. Increase PLAYWRIGHT_TIMEOUT in playwright.config.ts if scraping is just slow.",
         priority: "high",
@@ -63,7 +63,7 @@ function categorise(testTitle: string, errorMessage: string): { category: string
       category: "General Timeout",
       suggestedFix:
         "1. Ensure the dev server is running on http://localhost:3000.\n" +
-        "2. Check that all .env variables (DATABASE_URL, OPENAI_API_KEY) are set.\n" +
+        "2. Check that all .env variables (DATABASE_URL, AUTH_SECRET) are set.\n" +
         "3. Increase timeout for this specific test if it's a known slow path.",
       priority: "high",
     };

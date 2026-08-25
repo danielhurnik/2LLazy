@@ -1,0 +1,76 @@
+# 2LLazy job ingestion, for a bare-metal install (no Docker).
+#
+# This is a batch job, not a service: it starts, crawls for a few minutes, and
+# exits. 2llazy-ingest.timer decides when. Nothing here should be enabled with
+# `systemctl enable` — enable the timer instead.
+#
+#   sudo cp deploy/2llazy-ingest.{service,timer} /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now 2llazy-ingest.timer
+#
+# Run one by hand and watch it:
+#   sudo systemctl start 2llazy-ingest.service
+#   journalctl -u 2llazy-ingest.service -f
+#
+# ── REPLACE: the user, the paths, and the countries on the ExecStart lines ──
+
+[Unit]
+Description=2LLazy job ingestion
+Documentation=https://github.com/danielhurnik/2llazy/blob/main/docs/SELF_HOSTING.md
+# postgresql.service is ignored if Postgres is not a local package.
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=2llazy
+Group=2llazy
+WorkingDirectory=/opt/2llazy
+
+# DATABASE_URL, and anything optional such as ADZUNA_APP_ID. Keep it out of the
+# repository, owned by root, mode 0640, group-readable by the service user:
+#   sudo install -d -m 0750 -o root -g 2llazy /etc/2llazy
+#   sudo install -m 0640 -o root -g 2llazy /dev/null /etc/2llazy/ingest.env
+EnvironmentFile=/etc/2llazy/ingest.env
+
+# One line per country, run in order. Sequential is the point: the worldwide
+# boards (Remotive, RemoteOK and friends) are shared between countries, and
+# they should see one crawler at a time, not four. Add or remove lines to suit.
+#
+# tsx is invoked directly rather than through npx so the path is absolute and
+# nothing is resolved from the network at run time.
+ExecStart=/opt/2llazy/node_modules/.bin/tsx scripts/ingest.ts --country CZ
+ExecStart=/opt/2llazy/node_modules/.bin/tsx scripts/ingest.ts --country DE
+
+# A crawl of several boards takes minutes; an hour each is generous headroom.
+# Without this, systemd's default start timeout would kill a slow run.
+TimeoutStartSec=2h
+
+# Politeness towards the rest of the machine: the web app answering searches
+# matters more than a background crawl finishing three minutes sooner.
+Nice=10
+IOSchedulingClass=idle
+
+# A failed run is not worth a restart loop — the timer will come round again,
+# and the next run picks up where this one stopped.
+Restart=no
+
+# Hardening. The ingester reads the source tree and writes only to Postgres.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+# tsx may cache transpiled output here. The leading "-" means "if it exists".
+ReadWritePaths=-/opt/2llazy/node_modules/.cache
+
+[Install]
+# Present so `systemctl enable` does not fail outright, but enable the timer,
+# not this. Enabling this unit would run a crawl on every boot.
+WantedBy=multi-user.target

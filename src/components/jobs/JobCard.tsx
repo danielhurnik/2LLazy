@@ -20,7 +20,7 @@ import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import BookmarkIcon from "@mui/icons-material/Bookmark";
 import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";
 import type { JobItem } from "@/types";
-import { SOURCE_COLOR } from "@/types";
+import { jobScore, sourceColor } from "@/types";
 import { ios } from "@/theme/theme";
 
 interface JobCardProps {
@@ -42,9 +42,21 @@ export function JobCard({
   onToggleFavourite,
   onViewCoverLetter,
 }: JobCardProps) {
-  const matchPct = job.similarity != null ? Math.round(job.similarity * 100) : null;
+  const score = jobScore(job);
+  const matchPct = score > 0 ? Math.round(score * 100) : null;
+  const matched = job.matched ?? [];
+  const reasons = job.reasons ?? [];
   const [expanded, setExpanded] = useState(false);
   const longDesc = (job.description?.length ?? 0) > 200;
+
+  // The percentage on its own is opaque, so the tooltip always says where it
+  // came from — the ranker's own reasons when it sent any, the matched terms
+  // otherwise.
+  const matchExplanation = reasons.length
+    ? reasons
+    : matched.length
+      ? [`Matched: ${matched.join(", ")}`]
+      : ["Ranked on how well the posting matches your search terms."];
 
   return (
     <Card>
@@ -77,8 +89,19 @@ export function JobCard({
           {/* Badges */}
           <Stack direction="row" spacing={0.75} alignItems="center" flexShrink={0}>
             {matchPct !== null && matchPct > 0 && (
+              <Tooltip
+                title={
+                  <Box component="ul" sx={{ m: 0, pl: 2, py: 0.25 }}>
+                    {matchExplanation.map((r) => (
+                      <li key={r}>{r}</li>
+                    ))}
+                  </Box>
+                }
+                placement="top"
+                arrow
+              >
               <Chip
-                label={`${matchPct}%`}
+                label={`${matchPct}% match`}
                 size="small"
                 sx={{
                   background: matchPct >= 80
@@ -101,8 +124,10 @@ export function JobCard({
                   fontWeight: 700,
                   fontSize: "0.7rem",
                   height: 22,
+                  cursor: "help",
                 }}
               />
+              </Tooltip>
             )}
             {job.isNew && (
               <Chip
@@ -128,7 +153,7 @@ export function JobCard({
             <Chip
               label={job.source}
               size="small"
-              color={SOURCE_COLOR[job.source] ?? "default"}
+              color={sourceColor(job.source)}
               variant="filled"
             />
           </Stack>
@@ -146,6 +171,32 @@ export function JobCard({
           >
             {job.salary}
           </Typography>
+        )}
+
+        {matched.length > 0 && (
+          <Stack direction="row" sx={{ mt: 1, flexWrap: "wrap", gap: 0.5 }}>
+            {matched.slice(0, 6).map((term) => (
+              <Chip
+                key={term}
+                label={term}
+                size="small"
+                variant="outlined"
+                sx={{
+                  height: 20,
+                  fontSize: "0.68rem",
+                  color: ios.teal,
+                  borderColor: alpha(ios.teal, 0.35),
+                  background: alpha(ios.teal, 0.08),
+                  "& .MuiChip-label": { px: 0.75 },
+                }}
+              />
+            ))}
+            {matched.length > 6 && (
+              <Typography variant="caption" sx={{ color: ios.label3, alignSelf: "center" }}>
+                +{matched.length - 6} more
+              </Typography>
+            )}
+          </Stack>
         )}
 
         <Box onClick={() => longDesc && setExpanded((v) => !v)} sx={longDesc ? { cursor: "pointer" } : undefined}>

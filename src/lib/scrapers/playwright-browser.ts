@@ -10,8 +10,8 @@
  * Falls back gracefully to plain-fetch (rawFetch) when disabled or unavailable.
  */
 
-import * as cheerio from "cheerio";
 import type { Browser, Route } from "playwright";
+import { parseDocument, rawFetch, type FetchedPage } from "./fetcher";
 
 const ENABLED = process.env.PLAYWRIGHT_ENABLED === "true";
 
@@ -75,20 +75,39 @@ const BLOCKED_DOMAINS = [
  *
  * Falls back to rawFetch if PLAYWRIGHT_ENABLED is not set.
  */
+export interface PwFetchOptions {
+  /** CSS selector to wait for before reading the DOM (fast path for SPAs). */
+  waitSelector?: string;
+  signal?: AbortSignal;
+  /** Preferred content language, e.g. `"cs,en-US,en;q=0.9"`. */
+  acceptLanguage?: string;
+}
+
+/**
+ * Renders a URL with Playwright Chromium, blocks unnecessary resources for
+ * speed, waits for the DOM to settle, then returns the rendered HTML plus the
+ * text and links parsed from it.
+ *
+ * Falls back to `rawFetch` if PLAYWRIGHT_ENABLED is not set.
+ */
 export async function pwFetch(
   url: string,
-  waitSelector?: string,
-): Promise<{ text: string; links: Array<{ text: string; url: string }> }> {
+  options: PwFetchOptions | string = {},
+): Promise<FetchedPage> {
+  // Legacy call sites pass the wait selector positionally.
+  const opts: PwFetchOptions = typeof options === "string" ? { waitSelector: options } : options;
+
   // Read env var dynamically so a server restart isn't needed after adding it to .env.local
   const enabled = process.env.PLAYWRIGHT_ENABLED === "true";
   if (!enabled) {
-    console.warn(`[pwFetch] PLAYWRIGHT_ENABLED is not set — falling back to rawFetch for ${url}. SPA sites will return empty results.`);
-    const { rawFetch } = await import("./fetcher");
-    return rawFetch(url);
+    return rawFetch(url, { signal: opts.signal, acceptLanguage: opts.acceptLanguage });
   }
 
   const browser = await getBrowser();
   const page = await browser.newPage();
+
+  const onAbort = () => void page.close().catch(() => { });
+  opts.signal?.addEventListener("abort", onAbort, { once: true });
 
   try {
     // Block heavy / tracking resources
@@ -107,42 +126,24 @@ export async function pwFetch(
     });
 
     await page.setExtraHTTPHeaders({
-      "Accept-Language": "cs,en-US,en;q=0.9",
+      "Accept-Language": opts.acceptLanguage ?? "en-US,en;q=0.9",
       "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     });
 
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
 
     // If a specific selector is expected, wait for it (fast path) — otherwise wait briefly for JS
-    if (waitSelector) {
-      await page.waitForSelector(waitSelector, { timeout: 8_000 }).catch(() => { });
+    if (opts.waitSelector) {
+      await page.waitForSelector(opts.waitSelector, { timeout: 8_000 }).catch(() => { });
     } else {
       // Small JS-settle pause — avoids full networkidle (which is very slow)
       await page.waitForTimeout(1_500);
     }
 
     const html = await page.content();
-    const $ = cheerio.load(html);
-    $("script, style, nav, footer, header, noscript, svg").remove();
-    const text = $("body").text().replace(/\s+/g, " ").trim();
-
-    const base = new URL(url);
-    const links: Array<{ text: string; url: string }> = [];
-    $("a[href]").each((_, el) => {
-      const href = $(el).attr("href") ?? "";
-      const linkText = $(el).text().trim();
-      try {
-        const resolved = new URL(href, base).href;
-        if (resolved.startsWith("http")) {
-          links.push({ text: linkText, url: resolved });
-        }
-      } catch {
-        // skip unparseable
-      }
-    });
-
-    return { text, links };
+    return { ...parseDocument(html, page.url() || url), status: response?.status() ?? 200 };
   } finally {
+    opts.signal?.removeEventListener("abort", onAbort);
     await page.close().catch(() => { });
   }
 }
