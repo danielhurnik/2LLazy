@@ -27,9 +27,13 @@ import { jobicyBoard } from "./boards/jobicy";
 import { himalayasBoard } from "./boards/himalayas";
 import { weWorkRemotelyBoard } from "./boards/weworkremotely";
 import { adzunaBoard } from "./boards/adzuna";
+import { ATS_BOARDS } from "./boards/ats";
 
 /** Every board known to the app, in no particular order. */
 const BOARDS: BoardDefinition[] = [
+  // Employers' own ATS boards. Highest-quality postings in the app: straight
+  // from the company, usually the day the role opens, and no key required.
+  ...ATS_BOARDS,
   // Worldwide, API-backed, no key required — the baseline for every country.
   remotiveBoard,
   remoteOkBoard,

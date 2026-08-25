@@ -18,7 +18,11 @@ import { PrismaClient, ApplicationStatus } from "@prisma/client";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL?.includes("neon.tech") ? { rejectUnauthorized: false } : false,
+  // TLS is opt-in through the connection string (`?sslmode=require`),
+  // exactly like any other PostgreSQL client.
+  ssl: /sslmode=(require|verify-ca|verify-full)/.test(process.env.DATABASE_URL ?? "")
+    ? { rejectUnauthorized: false }
+    : false,
 });
 const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
 

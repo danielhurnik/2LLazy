@@ -14,11 +14,11 @@ export const maxDuration = 300;
  * How long the live pass may spend on boards before it stops and falls back to
  * the database.
  *
- * Netlify caps functions at 26 seconds (netlify.toml), and being killed
- * mid-stream loses everything already found. Stopping deliberately at 18s
- * leaves room to finish the cache pass and close the stream cleanly, so the
- * user always gets results — the freshest ones the boards managed plus
- * everything the ingest script collected earlier.
+ * A search should feel immediate, and a slow board must never hold the page
+ * open waiting for it. Stopping deliberately at 18s leaves room to finish the
+ * cache pass and close the stream cleanly, so the user always gets results —
+ * the freshest ones the boards managed, plus everything scripts/ingest.ts
+ * collected earlier. Bulk collection is that script's job, not this route's.
  */
 const LIVE_SCRAPE_BUDGET_MS = 18_000;
 
@@ -99,8 +99,10 @@ export async function POST(req: NextRequest) {
   const userId = session.user.id;
 
   // Rate limiting
-  // NOTE: x-forwarded-for is set by Netlify's CDN and trusted in this deployment.
-  // On other infrastructure this header is spoofable — use a proxy-trusted IP extraction instead.
+  // NOTE: x-forwarded-for is only trustworthy when a reverse proxy you control
+  // sets it (Caddy and nginx both do — see docs/SELF_HOSTING.md). Exposed
+  // directly to the internet this header is spoofable and the limit is
+  // bypassable, so do not run the app without a proxy in front.
   const ip = req.headers.get("x-forwarded-for") ?? req.headers.get("x-real-ip") ?? "unknown";
   const last = rateMap.get(ip) ?? 0;
   if (Date.now() - last < RATE_LIMIT_MS) {

@@ -79,10 +79,10 @@ function fromGeoValue(value: string | null): string | null {
 }
 
 /**
- * Netlify ships geo data as base64-encoded JSON in `x-nf-geo`. Every step can
+ * Some CDNs ship geo data as base64-encoded JSON in `x-nf-geo`. Every step can
  * fail on a truncated or forged header, so the whole thing is best-effort.
  */
-function fromNetlifyGeo(raw: string | null): string | null {
+function fromEncodedGeoHeader(raw: string | null): string | null {
   if (!raw) return null;
   try {
     const json = raw.trimStart().startsWith("{") ? raw : decodeBase64(raw);
@@ -119,7 +119,7 @@ export function countryFromHeaders(headers: Headers): string | null {
     const code = fromGeoValue(readHeader(headers, name));
     if (code) return code;
   }
-  return fromNetlifyGeo(readHeader(headers, "x-nf-geo"));
+  return fromEncodedGeoHeader(readHeader(headers, "x-nf-geo"));
 }
 
 /**

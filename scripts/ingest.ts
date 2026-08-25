@@ -1,16 +1,15 @@
 /**
  * Job ingestion — the scraper that runs outside a web request.
  *
- * Why this exists: a search that scrapes live cannot work in a serverless
- * function. Netlify caps functions at 26 seconds (netlify.toml), and a polite
- * multi-board crawl takes minutes, so the request either times out or the
- * crawl has to be rushed hard enough to get rate limited. Both are bad, and no
- * amount of tuning fixes either.
+ * Why this exists: a polite multi-board crawl takes minutes, and a web request
+ * has to answer in seconds. Scraping inside the request means either timing
+ * out or rushing the crawl hard enough to get rate limited — and no amount of
+ * tuning escapes that, on any host.
  *
- * So scraping moves here. This script has no deadline, paces itself per host,
+ * So scraping lives here. This script has no deadline, paces itself per host,
  * and writes into Postgres. The web app then answers searches out of the
- * database, which is instant and cannot time out. Run it from cron, from a
- * GitHub Actions schedule (see .github/workflows/ingest.yml), or by hand.
+ * database, which is instant. Run it from a systemd timer, from cron, from the
+ * bundled GitHub Actions schedule, or by hand — see docs/SELF_HOSTING.md.
  *
  * Nothing here needs a browser: boards that render their listings in
  * JavaScript are walked through their sitemaps instead. See
