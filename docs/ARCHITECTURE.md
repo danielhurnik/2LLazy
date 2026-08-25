@@ -61,9 +61,9 @@ person reading the results.
 ## Two paths: live search and ingestion
 
 Scraping does not happen inside a web request, and the reason is arithmetic.
-Netlify caps functions at 26 seconds (`netlify.toml`); a crawl polite enough
-not to be rate limited takes minutes. Anything that fits in the request budget
-is too aggressive to be sustainable.
+A crawl polite enough not to be rate limited takes minutes; a web request has
+to answer in seconds. Anything that fits in a request budget is too aggressive
+to be sustainable — that holds on any host, self-run or otherwise.
 
 So there are two paths:
 
@@ -143,7 +143,7 @@ wins:
 |---|---|---|
 | 1 | `explicit` | `country` in the request body |
 | 2 | `profile` | the country saved on the user's profile |
-| 3 | `geo-header` | `x-vercel-ip-country`, `cf-ipcountry`, `x-country-code`, `x-geo-country`, `x-appengine-country`, then Netlify's base64 `x-nf-geo` |
+| 3 | `geo-header` | `x-vercel-ip-country`, `cf-ipcountry`, `x-country-code`, `x-geo-country`, then a base64 `x-nf-geo` payload if a CDN sets one |
 | 4 | `accept-language` | region subtag (`cs-CZ` → CZ), or a language spoken in essentially one country (`cs` → CZ) |
 | 5 | `default` | `DEFAULT_COUNTRY` in `src/lib/geo/countries.ts`, which is `US` |
 

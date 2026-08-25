@@ -39,18 +39,18 @@ npm run dev           # http://localhost:3000
 
 ### A note on the database
 
-Migrations (`prisma.config.ts`) and the seed script (`prisma/seed.ts`, via
-`pg`) talk to Postgres over ordinary TCP and work against any server, local
-included.
+Everything — migrations, the seed script and the running app — talks to
+PostgreSQL over ordinary TCP with the standard `pg` driver. Any server works: a
+container, a package on your machine, or one across the network. There is no
+hosted-database requirement and no vendor driver.
 
-The running app does not. `src/lib/prisma.ts` builds its client with
-`@prisma/adapter-neon`, which speaks Neon's serverless WebSocket protocol. A
-Neon connection string works as-is; a plain local `postgresql://localhost:5432/…`
-will let you migrate and seed but the app itself will fail to connect. Either
-use a free Neon database for development, or run a WebSocket proxy in front of
-your local Postgres. If you would rather the app worked against a plain local
-server, that is a real and useful contribution — open an issue first so we can
-agree on the approach.
+If `npm run db:migrate` fails on the `vector` extension, an old migration still
+creates it even though nothing uses vectors any more. Skip the history instead:
+
+```bash
+npx prisma db push     # builds the current schema directly
+npm run db:indexes     # adds the two search indexes db push cannot create
+```
 
 ### Signing in locally
 

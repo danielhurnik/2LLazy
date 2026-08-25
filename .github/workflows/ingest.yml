@@ -1,9 +1,13 @@
 name: Ingest jobs
 
-# Scraping runs here rather than in a web request. Netlify caps functions at 26
-# seconds, so a polite multi-board crawl cannot finish inside one — and rushing
-# it hard enough to fit is what gets a scraper rate limited. An Actions job has
-# no such limit, costs nothing on a public repository, and can take its time.
+# Scraping runs here rather than in a web request: a polite multi-board crawl
+# takes minutes, and rushing it into a request budget is what gets a scraper
+# rate limited. An Actions job has no such limit and costs nothing on a public
+# repository.
+#
+# This is the zero-infrastructure option. If you self-host (docs/SELF_HOSTING.md),
+# a systemd timer or cron on your own server does the same job and keeps the
+# database off the public internet.
 #
 # Requires one secret: DATABASE_URL. No browser, no API key.
 

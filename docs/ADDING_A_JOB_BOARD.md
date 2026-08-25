@@ -21,6 +21,47 @@ Check for a feed first: `/api/jobs`, `/jobs.json`, `/feed`, `/rss`. An API board
 is one request instead of forty, it does not break when the site is restyled,
 and it needs no browser.
 
+## The fastest contribution: add an employer
+
+Before writing a board, check whether the company already uses an applicant
+tracking system. If it does, you do not need a scraper at all — one line in
+`src/lib/scrapers/boards/ats/employers.ts` adds every job they publish.
+
+Open the company's careers page and read the URL:
+
+| Careers URL | `ats` value |
+|---|---|
+| `boards.greenhouse.io/SLUG` | `"greenhouse"` |
+| `jobs.lever.co/SLUG` | `"lever"` |
+| `jobs.ashbyhq.com/SLUG` | `"ashby"` |
+| `jobs.smartrecruiters.com/SLUG` | `"smartrecruiters"` |
+| `SLUG.recruitee.com` | `"recruitee"` |
+| `apply.workable.com/SLUG` | `"workable"` |
+
+Then add the entry:
+
+```ts
+{ slug: "productboard", name: "Productboard", ats: "greenhouse",
+  countries: ["CZ"], remote: true },
+```
+
+`countries` decides who is offered the board; `remote: true` additionally
+offers it to every country. An employer with neither would never be selected,
+and a test catches that.
+
+Check it before opening a pull request:
+
+```bash
+npm run verify:employers -- --ats greenhouse --verbose
+npm run verify:employers -- --prune    # prints only the entries that resolved
+```
+
+These APIs are public and unauthenticated because that is how the company's own
+careers page renders — you are reading what they publish for syndication. All
+six adapters live in `src/lib/scrapers/boards/ats/adapters.ts` if you need to
+add a seventh platform.
+
+
 ## The `BoardDefinition`
 
 Every board exports one object of this shape

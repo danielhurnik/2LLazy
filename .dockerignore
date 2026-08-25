@@ -1,0 +1,61 @@
+# Everything the image does not need, kept out of the build context.
+#
+# Two rules matter more than the rest: node_modules must never be copied in
+# (the image installs its own, for the right platform), and .env* must never be
+# copied in (secrets belong in the environment, not in a layer).
+
+# Dependencies — reinstalled inside the image from package-lock.json
+node_modules
+.pnp
+.pnp.*
+.yarn
+
+# Build output — the image builds its own
+.next
+out
+build
+*.tsbuildinfo
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+.cookies.txt
+
+# Version control and CI
+.git
+.gitignore
+.github
+
+# Tests and their artefacts. Excluded on purpose: tsconfig.json globs
+# **/*.ts, so shipping them into the builder would type-check the test suite
+# as part of `next build`.
+tests
+playwright.config.ts
+vitest.config.ts
+playwright-report
+test-results
+coverage
+
+# Editor, agent and local tooling
+.vscode
+.idea
+.claude
+.claude-flow
+.mcp.json
+.DS_Store
+
+# Documentation and project meta — nothing in src/ reads a file from disk
+docs
+deploy
+*.md
+
+# Runtime data that belongs in a volume, not in the image
+uploads
+
+# Logs and containers
+*.log
+Dockerfile
+.dockerignore
+docker-compose.yml

@@ -96,8 +96,8 @@ export const jobsCzBoard: BoardDefinition = {
 
 `boardsForCountry("DE")` returns the German-capable boards plus every worldwide
 board, local ones first. The user's country comes from an explicit choice, then
-their profile, then request geo headers (`x-vercel-ip-country`, `cf-ipcountry`,
-Netlify's `x-nf-geo`), then `Accept-Language`. Jooble alone contributes a local
+their profile, then request geo headers your proxy sets (`x-country-code`,
+`cf-ipcountry` and friends), then `Accept-Language`. Jooble alone contributes a local
 site in roughly sixty countries.
 
 Adding a board is one file and one registry line — no migration, because

@@ -22,6 +22,10 @@ your laptop as it does on a server.
   you are: local boards where they exist, plus worldwide remote boards
   everywhere. A developer in Nairobi and a developer in Prague both get
   results.
+- **Reads employers' own job boards.** Greenhouse, Lever, Ashby,
+  SmartRecruiters, Recruitee and Workable all publish their customers' boards
+  as public JSON, so postings arrive straight from the company — usually the
+  day the role opens, before any aggregator has it.
 - **Reads job pages properly.** Most boards publish
   [`schema.org/JobPosting`](https://schema.org/JobPosting) structured data.
   The extractor reads that first, then microdata, then meta tags, then falls
@@ -93,7 +97,6 @@ Optional — everything still works without these:
 | `PLAYWRIGHT_ENABLED=true` | Adds live keyword search on JavaScript-heavy boards. Not needed for ingestion, which reaches them through their sitemaps |
 | `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` | Adzuna's free tier, adding local boards in ~19 countries |
 | `DEFAULT_COUNTRY` | Fallback country when yours cannot be detected |
-| `DATABASE_DRIVER` | Force `pg` or `neon` instead of detecting from the URL |
 
 See [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) for the full annotated list.
 
@@ -125,6 +128,13 @@ npx tsx scripts/scrape.ts react --country DE
 npx tsx scripts/scrape.ts "node.js" --country CZ --board jobscz --deep
 npx tsx scripts/scrape.ts --list --country BR
 ```
+
+## Self-hosting
+
+The app is meant to run on your own machine and your own domain — there is no
+hosting provider in the loop and no managed database. `docker compose up` gets
+you the app and PostgreSQL together; [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md)
+covers TLS, the reverse proxy, scheduling the ingester and backups.
 
 ## Routes
 

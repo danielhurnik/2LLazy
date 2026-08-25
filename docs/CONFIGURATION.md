@@ -25,10 +25,9 @@ Every variable listed here is read somewhere in `src/`, `prisma/` or `scripts/`
 #   prisma/seed.ts     - via a plain `pg` Pool
 #   src/lib/prisma.ts  - the app's runtime client
 #
-# src/lib/prisma.ts picks the driver from the connection string: a Neon
-# endpoint uses Neon's serverless WebSocket driver, anything else uses the
-# standard `pg` pool. A plain local PostgreSQL server works as-is. Set
-# DATABASE_DRIVER to "neon" or "pg" to override the choice.
+# Any PostgreSQL 14+ server: a container, a local package, or one across the
+# network. The app connects with the standard `pg` driver. TLS is opt-in
+# through the connection string, e.g. `?sslmode=require`.
 DATABASE_URL="postgresql://postgres:postgres@localhost:5432/twollazy?schema=public"
 
 # Secret used by next-auth (Auth.js v5) to sign and encrypt session tokens.
