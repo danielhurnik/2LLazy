@@ -67,20 +67,16 @@ ENV NODE_ENV=production
 RUN npm run build
 
 # ── runtime-deps ─────────────────────────────────────────────────────────────
-# Production dependencies for the worker stage, plus three CLIs it cannot work
-# without. tsx runs the TypeScript scripts, prisma applies migrations, and
-# dotenv is imported by prisma.config.ts. tsx and dotenv are not declared in
-# package.json today (see docs/SELF_HOSTING.md), so they are pinned here
-# instead of being picked up by npm ci.
+# Production dependencies for the worker stage. tsx (runs the TypeScript
+# scripts) and dotenv (imported by prisma.config.ts) are declared as real
+# dependencies, so `npm ci --omit=dev` brings them. The Prisma CLI is a
+# devDependency but the worker needs it for `migrate deploy`, so it is added at
+# the version the lockfile already pins.
 FROM base AS runtime-deps
-ARG TSX_VERSION=4
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund \
  && PRISMA_VERSION="$(node -p "require('./package.json').devDependencies.prisma")" \
- && npm install --omit=dev --no-save --no-audit --no-fund \
-      "tsx@${TSX_VERSION}" \
-      "dotenv@^16" \
-      "prisma@${PRISMA_VERSION}" \
+ && npm install --omit=dev --no-save --no-audit --no-fund "prisma@${PRISMA_VERSION}" \
  && npm cache clean --force
 
 # ── worker ───────────────────────────────────────────────────────────────────
