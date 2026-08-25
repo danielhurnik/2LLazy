@@ -249,7 +249,7 @@ User=2llazy
 Group=2llazy
 WorkingDirectory=/opt/2llazy
 EnvironmentFile=/etc/2llazy/app.env
-ExecStart=/usr/bin/node node_modules/next/dist/bin/next start
+ExecStart=/opt/2llazy/node_modules/.bin/next start --port 3000 --hostname 127.0.0.1
 Restart=on-failure
 RestartSec=5s
 
@@ -257,27 +257,32 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/2llazy/.next /opt/2llazy/uploads
+ReadWritePaths=/opt/2llazy/.next -/opt/2llazy/uploads
 
 [Install]
 WantedBy=multi-user.target
 ```
 
+It binds to loopback: the reverse proxy is the only thing that should reach it.
 `.next` and `uploads` are writable because several pages revalidate on a timer
-and cache the result, and CV uploads land on disk.
+and cache the result, and CV uploads land on disk. `uploads` is not in the
+repository, so create it before starting — the leading `-` only stops systemd
+refusing to start if it is still missing:
 
 ```bash
+sudo -u 2llazy mkdir -p /opt/2llazy/uploads
 sudo systemctl daemon-reload
 sudo systemctl enable --now 2llazy
 journalctl -u 2llazy -f
 ```
 
-Create the first account the same way as the Docker path, without the
-container wrapper:
+Create the first account with the same script as the Docker path, run through
+`node -e` directly instead of `docker compose run --rm --entrypoint node ingest -e`:
 
 ```bash
 cd /opt/2llazy
-sudo -u 2llazy env $(cat /etc/2llazy/app.env | xargs) node -e '...same script as above...' \
+sudo -u 2llazy DATABASE_URL="$(grep '^DATABASE_URL=' /etc/2llazy/app.env | cut -d= -f2-)" \
+  node -e '…the script from step 4, unchanged…' \
   you@example.com 'a-long-password-you-chose'
 ```
 
@@ -424,19 +429,25 @@ Nightly, as `/etc/cron.d/2llazy-backup`:
 
 The `%` needs escaping in a crontab; that is not a typo.
 
-Restore into an empty database:
+Restore into an empty database. Stop the app first — `dropdb` refuses while
+something is connected:
 
 ```bash
 # Docker
-docker compose up -d db
+docker compose stop app
 docker compose exec -T db dropdb   -U twollazy --if-exists twollazy
 docker compose exec -T db createdb -U twollazy twollazy
 docker compose exec -T db pg_restore -U twollazy -d twollazy --no-owner < 2llazy-2026-08-24.dump
 docker compose up -d
 
 # Bare metal
+sudo systemctl stop 2llazy
 sudo -u postgres pg_restore -d twollazy --clean --no-owner 2llazy-2026-08-24.dump
+sudo systemctl start 2llazy
 ```
+
+`-U twollazy` is `POSTGRES_USER` from your `.env`; change both if you changed
+that.
 
 Uploaded CV files also live on disk — in the `app-uploads` Docker volume, or in
 `/opt/2llazy/uploads` on bare metal. Copy that directory alongside the dump if
@@ -452,10 +463,11 @@ git pull
 docker compose up -d --build          # rebuilds, re-runs migrations, restarts
 
 # Bare metal
-sudo -u 2llazy npm ci
-sudo -u 2llazy npx prisma generate
-sudo -u 2llazy npm run build
-sudo -u 2llazy env $(cat /etc/2llazy/app.env | xargs) npx prisma migrate deploy
+sudo -u 2llazy sh -c 'set -a; . /etc/2llazy/app.env; set +a
+  npm ci
+  npx prisma generate
+  npm run build
+  npx prisma migrate deploy'
 sudo systemctl restart 2llazy
 ```
 
