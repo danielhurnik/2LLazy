@@ -39,11 +39,13 @@ services:
   # Not published to the host: only the app and the batch jobs talk to it, over
   # the compose network. Add a ports entry below if you want psql from outside.
   db:
-    # postgres:16-alpine has no pgvector, and one old migration still creates
-    # that extension. Set POSTGRES_IMAGE=pgvector/pgvector:pg16 in .env if you
-    # want `prisma migrate deploy` to apply the full history — see
+    # Defaults to the pgvector image because one old migration still runs
+    # `CREATE EXTENSION vector`, even though nothing in the app uses vectors any
+    # more — stock postgres:16-alpine cannot apply the migration history.
+    # Set POSTGRES_IMAGE=postgres:16-alpine to use stock PostgreSQL and bring
+    # the schema up with the `db-push` profile instead. See
     # docs/SELF_HOSTING.md, "Migrations fail on the vector extension".
-    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg16}
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-twollazy}

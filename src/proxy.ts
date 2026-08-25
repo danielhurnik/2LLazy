@@ -5,8 +5,10 @@ export default auth((req) => {
   const isLoggedIn = !!req.auth;
   const isAuthRoute = req.nextUrl.pathname.startsWith("/api/auth");
   const isLoginPage = req.nextUrl.pathname === "/login";
+  // Container and load-balancer probes must not depend on auth configuration.
+  const isHealthCheck = req.nextUrl.pathname === "/api/health";
 
-  if (isAuthRoute) return NextResponse.next();
+  if (isAuthRoute || isHealthCheck) return NextResponse.next();
 
   if (!isLoggedIn && !isLoginPage) {
     return NextResponse.redirect(new URL("/login", req.url));

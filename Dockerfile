@@ -125,11 +125,10 @@ RUN mkdir -p .next/cache uploads && chown -R node:node .next uploads
 USER node
 EXPOSE 3000
 
-# /login is the one page that renders without a session — everything else
-# redirects there (src/proxy.ts). Anything under 500 means the server is up;
-# redirects are not followed, so an AUTH_URL pointing at the public domain does
-# not send the check out over the internet.
+# /api/health is exempt from the session check and reports whether the app can
+# reach its database, so an unhealthy container means something is actually
+# wrong rather than the auth configuration being off.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-  CMD ["node", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/login',{redirect:'manual'}).then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+  CMD ["node", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 
 CMD ["node", "server.js"]

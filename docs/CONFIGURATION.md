@@ -41,6 +41,24 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:5432/twollazy?schema=publ
 AUTH_SECRET="replace-me-with-a-long-random-string"
 
 
+# Public URL the app is served from, e.g. https://jobs.example.com
+#
+# Read by next-auth itself, not by first-party code. Behind a reverse proxy the
+# app sees the proxy's host, not your domain, and Auth.js refuses to trust it —
+# every sign-in then fails with `UntrustedHost` and a "problem with the server
+# configuration" page. Setting AUTH_URL fixes that and is the correct answer in
+# production.
+#
+# AUTH_TRUST_HOST=true is the blunter alternative: it tells Auth.js to trust
+# whatever Host header arrives. Only safe when a proxy you control sets it,
+# which is exactly the self-hosted case — but AUTH_URL is more precise, so
+# prefer it and use AUTH_TRUST_HOST only when the public URL is not fixed.
+#
+# In development neither is needed: Auth.js trusts the host when
+# NODE_ENV !== "production".
+AUTH_URL="https://jobs.example.com"
+
+
 # --- Optional: more job boards -----------------------------------------------
 
 # Renders JavaScript-heavy boards with a real browser instead of a plain GET.
