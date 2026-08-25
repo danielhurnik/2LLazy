@@ -42,6 +42,34 @@ export function setConditionalStore(store: ConditionalStore): void {
   conditionalStore = store;
 }
 
+/**
+ * Counters for one run.
+ *
+ * Boards fail soft by design — a dead board returns `[]` and warns — which
+ * means a run against a broken network, or a board that changed its API, looks
+ * exactly like a run that legitimately found nothing. These totals are how the
+ * ingest script tells the difference and says so in its summary.
+ */
+export interface FetchStats {
+  requests: number;
+  failures: number;
+  throttled: number;
+  notModified: number;
+}
+
+const stats: FetchStats = { requests: 0, failures: 0, throttled: 0, notModified: 0 };
+
+export function getFetchStats(): FetchStats {
+  return { ...stats };
+}
+
+export function resetFetchStats(): void {
+  stats.requests = 0;
+  stats.failures = 0;
+  stats.throttled = 0;
+  stats.notModified = 0;
+}
+
 /** A fetched page in every form the extraction layer needs. */
 export interface FetchedPage {
   /** Final URL after redirects. */
@@ -87,6 +115,7 @@ async function fetchWithRetry(
   const cached = opts.conditional ? await conditionalStore.get(url) : null;
 
   for (let attempt = 1; attempt <= retries; attempt++) {
+    stats.requests++;
     try {
       const res = await withHostLimit(
         url,
@@ -110,6 +139,7 @@ async function fetchWithRetry(
       // 304: the board confirmed nothing changed. Replay the stored body so
       // callers never notice, and treat it as a successful, nearly free read.
       if (res.status === 304 && cached?.body != null) {
+        stats.notModified++;
         rewardHost(host);
         return new Response(cached.body, {
           status: 200,
@@ -133,6 +163,7 @@ async function fetchWithRetry(
       // Being throttled is not a failure to retry through — it is an
       // instruction. Pause the whole host for as long as it asked.
       if (THROTTLE_STATUSES.has(res.status)) {
+        stats.throttled++;
         const waitMs = penaliseHost(host, res.headers.get("retry-after"));
         if (attempt < retries) {
           await sleep(waitMs, opts.signal);
@@ -147,6 +178,7 @@ async function fetchWithRetry(
       if (opts.signal?.aborted) throw err;
       const isLast = attempt === retries;
       if (isLast) {
+        stats.failures++;
         if (err instanceof Error) throw err;
         throw new Error(`Fetch failed for ${url}: ${String(err)}`);
       }

@@ -1,0 +1,54 @@
+# 2LLazy behind Caddy — TLS, HTTP/2 and compression, with nothing to renew.
+#
+# Caddy fetches and renews a Let's Encrypt certificate on its own, as long as
+# the domain's A/AAAA record points at this machine and ports 80 and 443 are
+# open. There is no certbot step and no cron job for renewal.
+#
+#   sudo cp deploy/Caddyfile /etc/caddy/Caddyfile
+#   sudo caddy validate --config /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# REPLACE jobs.example.com WITH YOUR OWN DOMAIN — in this file, and in AUTH_URL
+# in your .env. They must agree, or sign-in redirects land on the wrong host.
+# ─────────────────────────────────────────────────────────────────────────────
+
+jobs.example.com {
+	encode zstd gzip
+
+	# CV uploads are capped at 10 MB by the app, and server actions at 10 MB
+	# (next.config.ts). This leaves room for multipart overhead and rejects
+	# anything larger before it reaches Node.
+	request_body {
+		max_size 12MB
+	}
+
+	reverse_proxy 127.0.0.1:3000 {
+		# The search page streams progress over server-sent events
+		# (/api/scrape, /api/cover-letter/stream, /api/cv-adjust/stream).
+		# -1 flushes every write straight to the client instead of buffering,
+		# so results appear as each board reports in rather than all at once.
+		flush_interval -1
+	}
+
+	# Caddy already sets X-Forwarded-For, X-Forwarded-Proto and X-Forwarded-Host
+	# on proxied requests, which is what Auth.js needs to build correct callback
+	# URLs. Setting AUTH_URL on the app is still required — see docs/SELF_HOSTING.md.
+
+	# Uncomment once you are sure HTTPS works and you will not need plain HTTP
+	# on this hostname again. Browsers remember this for a year.
+	# header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+	log {
+		output file /var/log/caddy/2llazy.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+	}
+}
+
+# If the app runs in Docker and Caddy runs on the host, 127.0.0.1:3000 is
+# right: docker-compose.yml publishes the app on loopback only.
+#
+# If Caddy itself runs as a container on the same compose network, replace the
+# upstream with the service name and its internal port: `reverse_proxy app:3000`.

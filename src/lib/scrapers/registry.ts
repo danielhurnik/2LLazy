@@ -134,6 +134,8 @@ export interface BoardStatus {
   enabled: boolean;
   /** Why it would not run, in words a user can act on. */
   disabledReason: string | null;
+  /** True when the ingest script can collect this board without a browser. */
+  ingestable: boolean;
   note?: string;
 }
 
@@ -154,7 +156,12 @@ export function boardStatus(country: CountryCode): BoardStatus[] {
     if (!servesCountry) disabledReason = `Does not cover ${code}`;
     else if (missingEnv.length > 0) disabledReason = `Set ${missingEnv.join(" and ")} to enable`;
     else if (board.requiresBrowser && !playwright) {
-      disabledReason = "Needs PLAYWRIGHT_ENABLED=true (renders JavaScript-heavy pages)";
+      // A browser is only needed for *keyword search*. If the board can be
+      // walked in bulk, the ingest script still collects it, and saying
+      // "disabled" would badly misrepresent that.
+      disabledReason = board.ingest
+        ? "Live search needs PLAYWRIGHT_ENABLED=true; collected by the ingest script either way"
+        : "Needs PLAYWRIGHT_ENABLED=true (renders JavaScript-heavy pages)";
     }
 
     return {
@@ -166,6 +173,7 @@ export function boardStatus(country: CountryCode): BoardStatus[] {
       requiresBrowser: board.requiresBrowser,
       enabled: disabledReason === null,
       disabledReason,
+      ingestable: typeof board.ingest === "function",
       note: board.note,
     };
   }).sort((a, b) => Number(b.enabled) - Number(a.enabled) || a.name.localeCompare(b.name));

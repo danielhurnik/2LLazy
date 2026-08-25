@@ -22,7 +22,7 @@
  */
 import { allBoards, ingestBoardsForCountry } from "../src/lib/scrapers/registry";
 import { classifyQueryIntent } from "../src/lib/matching";
-import { setConditionalStore } from "../src/lib/scrapers/fetcher";
+import { getFetchStats, resetFetchStats, setConditionalStore } from "../src/lib/scrapers/fetcher";
 import { createMemoryStore } from "../src/lib/scrapers/http/cache";
 import { setGlobalConcurrency } from "../src/lib/scrapers/http/limiter";
 import { alreadyFresh, lastScrapedAt, persistJobs } from "../src/lib/scrapers/persist";
@@ -270,6 +270,7 @@ async function main(): Promise<void> {
   // can be in flight while each individual host is still politely paced.
   setGlobalConcurrency(args.concurrency);
   setConditionalStore(createMemoryStore());
+  resetFetchStats();
 
   const controller = new AbortController();
   installSignalHandler(controller);
@@ -316,10 +317,28 @@ async function main(): Promise<void> {
   );
 
   console.error("─".repeat(78));
+  const http = getFetchStats();
   console.error(
     `${totals.found} postings collected, ${totals.created} new, ` +
     `${totals.failed} board(s) failed, ${elapsed}s total.`,
   );
+  console.error(
+    `${http.requests} requests — ${http.failures} failed, ${http.throttled} throttled, ` +
+    `${http.notModified} unchanged.`,
+  );
+
+  // Boards fail soft, so "found nothing" and "could not reach anything" look
+  // identical in the table above. Say which one this was.
+  if (totals.found === 0 && http.failures > 0) {
+    console.error(
+      `\nEvery request failed. Check network access to the boards, or run one ` +
+      `board with --boards <id> to see the error.`,
+    );
+  } else if (http.throttled > http.requests / 4) {
+    console.error(
+      `\nA quarter of requests were throttled. Lower --concurrency, or run less often.`,
+    );
+  }
 
   // A run where every board failed is a failure worth a non-zero exit, so cron
   // and CI notice. Partial success is normal and must not page anyone.

@@ -245,6 +245,8 @@ export interface BoardStatus {
   enabled: boolean;
   /** Why the board is skipped, e.g. "ADZUNA_APP_ID is not set". */
   disabledReason: string | null;
+  /** True when the ingest script collects this board even without a browser. */
+  ingestable?: boolean;
   note?: string;
 }
 

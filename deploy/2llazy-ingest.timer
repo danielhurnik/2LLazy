@@ -1,0 +1,40 @@
+# When to collect jobs.
+#
+# Three passes a day, not a continuous loop. Ingestion is incremental: a repeat
+# run only fetches postings the board says have changed since the last one, so
+# running it more often buys almost nothing and costs the boards bandwidth.
+#
+#   sudo systemctl enable --now 2llazy-ingest.timer
+#   systemctl list-timers 2llazy-ingest.timer     # when it next fires
+#
+# systemd will not start a second copy while one is still running: if a crawl
+# overruns the next trigger, that trigger is folded into the run in progress.
+# That is the guarantee that matters here — the ingester is safe to run beside
+# the web app, but two of it at once would only contend on the same rows and
+# hit every board twice.
+
+[Unit]
+Description=Run 2LLazy job ingestion a few times a day
+Documentation=https://github.com/danielhurnik/2llazy/blob/main/docs/SELF_HOSTING.md
+
+[Timer]
+# 05:20, 13:20 and 21:20, in the machine's local time zone.
+OnCalendar=*-*-* 05,13,21:20:00
+
+# Boards notice a crawler that arrives on the same second every day. Spread the
+# start over the following three quarters of an hour.
+RandomizedDelaySec=45m
+
+# Keeps that random offset stable per machine instead of jumping around each
+# day, so the crawl lands at roughly the same time. Needs systemd 247 or newer;
+# drop this line on anything older.
+FixedRandomDelay=true
+
+# If the machine was asleep or off when a run was due, do it once on the next
+# boot rather than waiting for the next scheduled time.
+Persistent=true
+
+Unit=2llazy-ingest.service
+
+[Install]
+WantedBy=timers.target

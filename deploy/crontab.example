@@ -1,0 +1,58 @@
+# 2LLazy job ingestion from cron — the alternative to the systemd timer in
+# deploy/2llazy-ingest.timer. Use one or the other, not both.
+#
+# Install as a system crontab (note the user column, which a personal
+# `crontab -e` file does not have):
+#
+#   sudo cp deploy/crontab.example /etc/cron.d/2llazy
+#   sudo chmod 0644 /etc/cron.d/2llazy
+#
+# Then pick ONE of the two blocks below and delete the other.
+#
+# ── REPLACE: the paths, the user, the countries, and MAILTO ─────────────────
+#
+# Notes that apply to both:
+#
+#   * Three runs a day is right. Ingestion is incremental — a repeat run only
+#     fetches what the board says has changed — so running it hourly costs the
+#     boards bandwidth and gains you almost nothing.
+#   * :17 rather than :00. Every cron on every machine fires on the hour.
+#   * flock is what keeps two runs from overlapping. The ingester is safe to
+#     run beside the web app; it is not safe to run beside itself, because two
+#     copies contend on the same rows and crawl every board twice.
+#   * Countries run one after another inside the same lock, for the same
+#     reason: the worldwide boards are shared between them.
+
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# Cron mails anything the job writes to stdout or stderr. The ingester prints a
+# per-board summary, which is worth reading. Blank it out to stay quiet.
+MAILTO=you@example.com
+
+# ── Block 1: Docker ─────────────────────────────────────────────────────────
+# Runs the `ingest` service from docker-compose.yml, which reads .env from the
+# same directory. Needs a user in the docker group (or root).
+
+17 5,13,21 * * *  root  cd /opt/2llazy && flock -n /run/lock/2llazy-ingest.lock sh -c 'docker compose run --rm ingest --country CZ; docker compose run --rm ingest --country DE' >> /var/log/2llazy/ingest.log 2>&1
+
+# ── Block 2: bare metal ─────────────────────────────────────────────────────
+# `set -a` exports what the env file defines, so DATABASE_URL reaches the
+# script. The env file is the same one deploy/2llazy-ingest.service reads.
+
+# 17 5,13,21 * * *  2llazy  cd /opt/2llazy && set -a && . /etc/2llazy/ingest.env && set +a && flock -n /run/lock/2llazy-ingest.lock sh -c './node_modules/.bin/tsx scripts/ingest.ts --country CZ; ./node_modules/.bin/tsx scripts/ingest.ts --country DE' >> /var/log/2llazy/ingest.log 2>&1
+
+# ── The log file ────────────────────────────────────────────────────────────
+# Create it before the first run, or cron writes nothing and says nothing:
+#
+#   sudo install -d -o 2llazy -g 2llazy /var/log/2llazy
+#
+# And rotate it, as /etc/logrotate.d/2llazy:
+#
+#   /var/log/2llazy/ingest.log {
+#       weekly
+#       rotate 8
+#       compress
+#       missingok
+#       notifempty
+#       copytruncate
+#   }

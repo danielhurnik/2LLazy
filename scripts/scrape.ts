@@ -120,10 +120,11 @@ async function main(): Promise<void> {
       const mark = b.enabled ? "✔" : "✖";
       const tags = [
         b.remoteOnly ? "remote-only" : null,
-        b.requiresBrowser ? "needs-browser" : null,
+        b.requiresBrowser ? "browser-for-search" : null,
+        b.ingestable ? "ingestable" : null,
       ].filter(Boolean).join(", ");
       console.log(
-        `  ${mark} ${b.id.padEnd(16)} ${b.name.padEnd(18)} ${tags ? `[${tags}] ` : ""}` +
+        `  ${mark} ${b.id.padEnd(21)} ${b.name.padEnd(23)} ${tags ? `[${tags}] ` : ""}` +
         `${b.disabledReason ?? ""}`,
       );
     }
