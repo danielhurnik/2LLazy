@@ -49,6 +49,11 @@ confirm them — `npm run ingest -- --boards <id> --dry-run` is the check.
 | Cocuma | CZ | HTML | no | Unverified | |
 | Jobstack | CZ | HTML | no | Unverified | |
 | Skilleto | CZ | sitemap | no | Unverified | Indexed by technology |
+| HN "Who is hiring?" | worldwide | RSS | no | Documented | Monthly thread via hnrss.org; onsite roles too |
+| Working Nomads | worldwide remote | JSON | no | Documented | `exposed_jobs` endpoint, newest ~100 |
+| Jobspresso | worldwide remote | RSS | no | Documented | WP Job Manager feed with keyword filter |
+| SEEK | AU | sitemap | no | Unverified | Largest Australian board; live search needs a browser |
+| CareerOne | AU | sitemap | no | Unverified | Ingest-only |
 
 > ⚠️ **Remotive needs re-checking before you rely on it.** Multiple 2026
 > reviews report that its free tier now exposes roughly 0.4% of active
@@ -68,10 +73,7 @@ Ordered by value for effort. Everything here is free and needs no browser.
 
 | Source | Countries | Access | Why it is worth it |
 |---|---|---|---|
-| **Hacker News "Who is hiring?"** | worldwide | JSON / RSS | Monthly thread, heavily used by startups. `hnrss.org` proxies the official Algolia search and supports keyword filtering. High signal, tiny implementation. |
 | **EURES** | 31 EEA countries | sitemap | The EU's official portal — reportedly 2M+ postings across every member state plus Iceland, Liechtenstein, Norway and Switzerland. Single biggest coverage win available for Europe. |
-| **Jobspresso** | worldwide remote | RSS | Curated, hand-reviewed remote listings. |
-| **Working Nomads** | worldwide remote | RSS | Remote roles across industries. |
 | **NoDesk** | worldwide remote | RSS | Remote-first companies. |
 | **Remote.co** | worldwide remote | RSS | Established remote board. |
 | **JustRemote** | worldwide remote | sitemap | Filters by job origin. |
@@ -110,6 +112,11 @@ worth their time in their own market.
 | US | Wellfound (was AngelList) | sitemap | Startup roles |
 | US | Built In | sitemap | Tech hubs, city-scoped |
 | US | Dice | sitemap | Long-running US tech board |
+| AU | SEEK | sitemap | **Implemented** (unverified) — see above |
+| AU | CareerOne | sitemap | **Implemented** (unverified) — see above |
+| AU | Workforce Australia | sitemap | Government employment service, was JobSearch |
+| AU | EthicalJobs | sitemap | Not-for-profit and community sector |
+| AU | Jora | hostile? | SEEK-owned aggregator; check `robots.txt` first |
 
 ---
 

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:job_listing="https://jobspresso.co">
+  <channel>
+    <title>Jobspresso Job Feed</title>
+    <link>https://jobspresso.co/</link>
+    <item>
+      <title>React Native Developer</title>
+      <link>https://jobspresso.co/job/react-native-developer-driftwood/</link>
+      <description>&lt;p&gt;Driftwood is hiring a &lt;em&gt;React Native&lt;/em&gt; developer for our travel app. Fully remote.&lt;/p&gt;</description>
+      <pubDate>Sun, 24 Aug 2026 10:00:00 +0000</pubDate>
+      <job_listing:location>Worldwide</job_listing:location>
+      <job_listing:job_type>Full Time</job_listing:job_type>
+      <job_listing:company>Driftwood</job_listing:company>
+    </item>
+    <item>
+      <title>Marketing Manager</title>
+      <link>https://jobspresso.co/job/marketing-manager-lumen/</link>
+      <description>&lt;p&gt;Lumen seeks a marketing manager. Remote in the US.&lt;/p&gt;</description>
+      <pubDate>Sat, 23 Aug 2026 09:00:00 +0000</pubDate>
+      <job_listing:location>United States</job_listing:location>
+      <job_listing:job_type>Full Time</job_listing:job_type>
+      <job_listing:company>Lumen</job_listing:company>
+    </item>
+    <item>
+      <title>Frontend Engineer (React)</title>
+      <link>https://jobspresso.co/job/frontend-engineer-react-tidepool/</link>
+      <description>&lt;p&gt;Tidepool needs a React frontend engineer.&lt;/p&gt;</description>
+      <pubDate>Fri, 22 Aug 2026 08:00:00 +0000</pubDate>
+    </item>
+  </channel>
+</rss>

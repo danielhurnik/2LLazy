@@ -375,6 +375,9 @@ const { himalayasBoard } = await import("@/lib/scrapers/boards/himalayas");
 const { arbeitnowBoard } = await import("@/lib/scrapers/boards/arbeitnow");
 const { weWorkRemotelyBoard } = await import("@/lib/scrapers/boards/weworkremotely");
 const { adzunaBoard } = await import("@/lib/scrapers/boards/adzuna");
+const { whoIsHiringBoard, buildWhoIsHiringUrl, parseHnTitle } = await import("@/lib/scrapers/boards/whoishiring");
+const { workingNomadsBoard } = await import("@/lib/scrapers/boards/workingnomads");
+const { jobspressoBoard, buildJobspressoUrl } = await import("@/lib/scrapers/boards/jobspresso");
 
 const FEED_BOARDS = [
   remotiveBoard,
@@ -384,6 +387,9 @@ const FEED_BOARDS = [
   weWorkRemotelyBoard,
   arbeitnowBoard,
   adzunaBoard,
+  whoIsHiringBoard,
+  workingNomadsBoard,
+  jobspressoBoard,
 ];
 
 describe("feed board metadata", () => {
@@ -429,6 +435,9 @@ describe("feed board metadata", () => {
 
   it("marks the worldwide boards remote-only and the regional ones not", () => {
     for (const board of FEED_BOARDS) {
+      // The HN thread is worldwide but carries onsite roles too — the one
+      // legitimate exception to "worldwide implies remote-only".
+      if (board.id === "whoishiring") continue;
       expect(board.remoteOnly, board.id).toBe(board.countries.includes("*"));
     }
   });
@@ -462,5 +471,141 @@ describe("dedupeByUrl", () => {
       job("https://board.example/job/1"),
     ]);
     expect(jobs).toHaveLength(1);
+  });
+});
+
+// ─── HN Who is hiring? / Working Nomads / Jobspresso ─────────────────────────
+
+const readTextFixture = (name: string) => readFileSync(`${FEEDS}${name}`, "utf8");
+const WHOISHIRING_XML = readTextFixture("whoishiring.xml");
+const WORKINGNOMADS = readFixture("workingnomads.json");
+const JOBSPRESSO_XML = readTextFixture("jobspresso.xml");
+
+describe("Who is hiring URL construction", () => {
+  it("passes the query to hnrss for server-side filtering", () => {
+    const url = new URL(buildWhoIsHiringUrl(query({ query: "react" })));
+    expect(url.hostname).toBe("hnrss.org");
+    expect(url.searchParams.get("q")).toBe("react");
+    expect(url.searchParams.get("count")).toBe("100");
+  });
+});
+
+describe("Who is hiring title parsing", () => {
+  it("splits the conventional pipe-separated first line", () => {
+    const parsed = parseHnTitle("Acme Robotics | Senior React Developer | Remote (EU) | €70-90k");
+    expect(parsed.company).toBe("Acme Robotics");
+    expect(parsed.title).toBe("Senior React Developer");
+    expect(parsed.location).toBe("Remote (EU)");
+    expect(parsed.salary).toBe("€70-90k");
+  });
+
+  it("keeps a free-form line whole rather than guessing", () => {
+    const parsed = parseHnTitle("We are hiring a react dev, email me");
+    expect(parsed.company).toBe("");
+    expect(parsed.title).toBe("We are hiring a react dev, email me");
+  });
+});
+
+describe("Who is hiring mapping", () => {
+  it("maps the fixture thread and filters to the query", async () => {
+    serve(() => WHOISHIRING_XML);
+    const jobs = await whoIsHiringBoard.scrape(query({ query: "react" }));
+
+    const acme = jobs.find((j) => j.sourceUrl.endsWith("id=45000001"));
+    expect(acme).toBeDefined();
+    expect(acme!.company).toBe("Acme Robotics");
+    expect(acme!.title).toBe("Senior React Developer");
+    expect(acme!.workType).toBe("Remote");
+    expect(acme!.salary).toBe("€70-90k");
+    expect(acme!.source).toBe("WHOISHIRING");
+    expectPlainText(acme!.description);
+
+    // The Python and blacksmith postings say nothing about react.
+    expect(jobs.map((j) => j.sourceUrl)).not.toContain("https://news.ycombinator.com/item?id=45000002");
+    expect(jobs.map((j) => j.sourceUrl)).not.toContain("https://news.ycombinator.com/item?id=45000004");
+  });
+
+  it("returns nothing between threads without warning", async () => {
+    const warn = captureWarn();
+    serve(() => "<?xml version=\"1.0\"?><rss><channel></channel></rss>");
+    expect(await whoIsHiringBoard.scrape(query())).toEqual([]);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("fails soft when the feed is unreachable", async () => {
+    const warn = captureWarn();
+    serve(fails("HTTP 503"));
+    expect(await whoIsHiringBoard.scrape(query())).toEqual([]);
+    expect(warn).toHaveBeenCalled();
+  });
+});
+
+describe("Working Nomads mapping", () => {
+  it("maps the fixture and filters to the query", async () => {
+    serve(json(WORKINGNOMADS));
+    const jobs = await workingNomadsBoard.scrape(query({ query: "react" }));
+
+    expect(jobs).toHaveLength(1);
+    const job = jobs[0];
+    expect(job.title).toBe("Senior React Engineer");
+    expect(job.company).toBe("Nimbus Analytics");
+    expect(job.workType).toBe("Remote");
+    expect(job.source).toBe("WORKINGNOMADS");
+    expect(job.postedAt).toBeInstanceOf(Date);
+    expectPlainText(job.description);
+  });
+
+  it("skips rows missing required fields instead of failing", async () => {
+    serve(json(WORKINGNOMADS));
+    const jobs = await workingNomadsBoard.scrape(query({ query: "content writer kubernetes react" }));
+    // The fourth fixture row has no url and must be dropped silently.
+    expect(jobs.every((j) => j.sourceUrl.startsWith("https://"))).toBe(true);
+  });
+
+  it("fails soft on a non-array payload", async () => {
+    const warn = captureWarn();
+    serve(json({ error: "gone" }));
+    expect(await workingNomadsBoard.scrape(query())).toEqual([]);
+    expect(warn).toHaveBeenCalled();
+  });
+});
+
+describe("Jobspresso URL construction", () => {
+  it("asks the WP Job Manager feed to filter by keyword", () => {
+    const url = new URL(buildJobspressoUrl(query({ query: "react" })));
+    expect(url.hostname).toBe("jobspresso.co");
+    expect(url.searchParams.get("feed")).toBe("job_feed");
+    expect(url.searchParams.get("search_keywords")).toBe("react");
+  });
+});
+
+describe("Jobspresso mapping", () => {
+  it("reads the namespaced company and location elements", async () => {
+    serve(() => JOBSPRESSO_XML);
+    const jobs = await jobspressoBoard.scrape(query({ query: "react" }));
+
+    const driftwood = jobs.find((j) => j.company === "Driftwood");
+    expect(driftwood).toBeDefined();
+    expect(driftwood!.title).toBe("React Native Developer");
+    expect(driftwood!.location).toBe("Worldwide");
+    expect(driftwood!.workType).toBe("Remote");
+    expect(driftwood!.source).toBe("JOBSPRESSO");
+    expectPlainText(driftwood!.description);
+  });
+
+  it("falls back gracefully when the namespaced fields are missing", async () => {
+    serve(() => JOBSPRESSO_XML);
+    const jobs = await jobspressoBoard.scrape(query({ query: "react" }));
+    const tidepool = jobs.find((j) => j.title === "Frontend Engineer (React)");
+    expect(tidepool).toBeDefined();
+    expect(tidepool!.company).toBe("Unknown");
+    expect(tidepool!.location).toBe("Remote");
+  });
+
+  it("fails soft when the feed is unreachable", async () => {
+    const warn = captureWarn();
+    serve(fails("HTTP 500"));
+    expect(await jobspressoBoard.scrape(query())).toEqual([]);
+    expect(warn).toHaveBeenCalled();
   });
 });

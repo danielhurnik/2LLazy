@@ -78,6 +78,14 @@ export const EMPLOYERS: Employer[] = [
   { slug: "brainly", name: "Brainly", ats: "greenhouse", countries: ["PL"], remote: true },
   { slug: "uipath", name: "UiPath", ats: "greenhouse", countries: ["RO", "US"], remote: true },
 
+  // ── Australia ─────────────────────────────────────────────────────────────
+  { slug: "canva", name: "Canva", ats: "greenhouse", countries: ["AU"], remote: true },
+  { slug: "cultureamp", name: "Culture Amp", ats: "greenhouse", countries: ["AU", "US", "GB"] },
+  { slug: "airwallex", name: "Airwallex", ats: "lever", countries: ["AU", "SG", "US"] },
+  { slug: "safetyculture", name: "SafetyCulture", ats: "lever", countries: ["AU", "US", "GB"] },
+  { slug: "linktree", name: "Linktree", ats: "lever", countries: ["AU"], remote: true },
+  { slug: "immutable", name: "Immutable", ats: "lever", countries: ["AU"], remote: true },
+
   // ── Remote-first, worldwide ───────────────────────────────────────────────
   { slug: "gitlab", name: "GitLab", ats: "greenhouse", countries: [], remote: true },
   { slug: "automattic", name: "Automattic", ats: "greenhouse", countries: [], remote: true },

@@ -69,8 +69,14 @@ AUTH_URL="https://jobs.example.com"
 #
 # When it is off, every board with `requiresBrowser: true` is skipped and the
 # Settings page says so. Turning it on adds the boards that need rendering -
-# Jooble (local sites in ~60 countries), StartupJobs, Jobs.cz and others.
+# Jooble (local sites in ~60 countries), StartupJobs, Jobs.cz, SEEK and others.
 # Requires `npx playwright install chromium` once.
+#
+# The dashboard's Auto-apply button also needs this: with it off the button
+# simply opens the posting for a manual application. Auto-apply currently
+# fills StartupJobs forms only; every other board opens the posting instead.
+# Set APPLY_HEADFUL="true" to watch the form being filled in a visible
+# browser window (useful on a dev machine, meaningless on a server).
 PLAYWRIGHT_ENABLED="false"
 
 # Adzuna free API tier - adds a local aggregated board in 19 countries

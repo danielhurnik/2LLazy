@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>Hacker News: Who Is Hiring?</title>
+    <link>https://news.ycombinator.com/item?id=45000000</link>
+    <item>
+      <title>Acme Robotics | Senior React Developer | Remote (EU) | €70-90k</title>
+      <link>https://news.ycombinator.com/item?id=45000001</link>
+      <description>&lt;p&gt;Acme Robotics | Senior React Developer | Remote (EU) | €70-90k&lt;/p&gt;&lt;p&gt;We build warehouse robots and need a &lt;b&gt;React&lt;/b&gt; expert for our fleet dashboard. TypeScript, GraphQL. Apply at jobs@acme.example&lt;/p&gt;</description>
+      <pubDate>Mon, 25 Aug 2026 14:00:00 +0000</pubDate>
+      <dc:creator>acme_cto</dc:creator>
+    </item>
+    <item>
+      <title>Beacon Health | Backend Engineer (Python) | New York, NY | Onsite</title>
+      <link>https://news.ycombinator.com/item?id=45000002</link>
+      <description>&lt;p&gt;Beacon Health | Backend Engineer (Python) | New York, NY | Onsite&lt;/p&gt;&lt;p&gt;Django and Postgres in a clinical data platform.&lt;/p&gt;</description>
+      <pubDate>Mon, 25 Aug 2026 15:30:00 +0000</pubDate>
+      <dc:creator>beacon_eng</dc:creator>
+    </item>
+    <item>
+      <title>We are hiring a react dev, email me</title>
+      <link>https://news.ycombinator.com/item?id=45000003</link>
+      <description>&lt;p&gt;We are hiring a react dev, email me at founder@startup.example&lt;/p&gt;</description>
+      <pubDate>Mon, 25 Aug 2026 16:00:00 +0000</pubDate>
+      <dc:creator>solofounder</dc:creator>
+    </item>
+    <item>
+      <title>Quiet Iron Foundry | Blacksmith Apprentice | Sheffield, UK</title>
+      <link>https://news.ycombinator.com/item?id=45000004</link>
+      <description>&lt;p&gt;Quiet Iron Foundry | Blacksmith Apprentice | Sheffield, UK&lt;/p&gt;&lt;p&gt;Hand-forged ironwork, no computers involved.&lt;/p&gt;</description>
+      <pubDate>Mon, 25 Aug 2026 17:00:00 +0000</pubDate>
+      <dc:creator>ironworks</dc:creator>
+    </item>
+  </channel>
+</rss>

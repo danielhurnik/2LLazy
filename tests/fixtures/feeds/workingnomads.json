@@ -1,0 +1,36 @@
+[
+  {
+    "url": "https://www.workingnomads.com/jobs/senior-react-engineer-nimbus",
+    "title": "Senior React Engineer",
+    "company_name": "Nimbus Analytics",
+    "category_name": "Development",
+    "tags": "react,typescript,graphql",
+    "description": "<p>Build our analytics front-end in <strong>React</strong> and TypeScript.</p>",
+    "location": "Anywhere",
+    "pub_date": "2026-08-24T09:00:00"
+  },
+  {
+    "url": "https://www.workingnomads.com/jobs/devops-engineer-harbor",
+    "title": "DevOps Engineer",
+    "company_name": "Harbor Cloud",
+    "category_name": "System Administration",
+    "tags": "kubernetes,terraform,aws",
+    "description": "<p>Own our Kubernetes platform.</p>",
+    "location": "USA",
+    "pub_date": "2026-08-23T18:00:00"
+  },
+  {
+    "url": "https://www.workingnomads.com/jobs/content-writer-inkwell",
+    "title": "Content Writer",
+    "company_name": "Inkwell Media",
+    "category_name": "Writing",
+    "tags": "content,seo",
+    "description": "<p>Write long-form articles about travel.</p>",
+    "location": "Europe",
+    "pub_date": "2026-08-22T12:00:00"
+  },
+  {
+    "title": "Broken row without a url",
+    "company_name": "Nowhere Inc"
+  }
+]

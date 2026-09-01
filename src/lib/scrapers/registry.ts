@@ -20,12 +20,17 @@ import { skilletoBoard } from "./boards/skilleto";
 import { noFluffJobsBoard } from "./boards/nofluffjobs";
 import { jobsCzBoard } from "./boards/jobscz";
 import { joobleBoard } from "./boards/jooble";
+import { seekBoard } from "./boards/seek";
+import { careerOneBoard } from "./boards/careerone";
 import { remotiveBoard } from "./boards/remotive";
 import { remoteOkBoard } from "./boards/remoteok";
 import { arbeitnowBoard } from "./boards/arbeitnow";
 import { jobicyBoard } from "./boards/jobicy";
 import { himalayasBoard } from "./boards/himalayas";
 import { weWorkRemotelyBoard } from "./boards/weworkremotely";
+import { whoIsHiringBoard } from "./boards/whoishiring";
+import { workingNomadsBoard } from "./boards/workingnomads";
+import { jobspressoBoard } from "./boards/jobspresso";
 import { adzunaBoard } from "./boards/adzuna";
 import { ATS_BOARDS } from "./boards/ats";
 
@@ -40,6 +45,9 @@ const BOARDS: BoardDefinition[] = [
   jobicyBoard,
   himalayasBoard,
   weWorkRemotelyBoard,
+  whoIsHiringBoard,
+  workingNomadsBoard,
+  jobspressoBoard,
   // Regional, API-backed.
   arbeitnowBoard,
   adzunaBoard,
@@ -51,6 +59,8 @@ const BOARDS: BoardDefinition[] = [
   noFluffJobsBoard,
   jobsCzBoard,
   joobleBoard,
+  seekBoard,
+  careerOneBoard,
 ];
 
 export function allBoards(): BoardDefinition[] {
