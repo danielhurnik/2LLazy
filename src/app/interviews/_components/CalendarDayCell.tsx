@@ -1,4 +1,5 @@
 import { Box, Stack, Typography, Chip } from "@mui/material";
+import { ios } from "@/theme/theme";
 import dayjs from "dayjs";
 import type { CalendarEntry } from "@/types";
 
@@ -25,8 +26,8 @@ export function CalendarDayCell({
       sx={{
         minHeight: 80,
         p: 0.5,
-        borderRight: "1px solid rgba(255,255,255,0.04)",
-        borderBottom: "1px solid rgba(255,255,255,0.04)",
+        borderRight: `1px solid ${ios.separator}`,
+        borderBottom: `1px solid ${ios.separator}`,
         cursor: isCurrentMonth ? "pointer" : "default",
         "&:hover": isCurrentMonth ? { bgcolor: "rgba(99,102,241,0.08)" } : {},
       }}

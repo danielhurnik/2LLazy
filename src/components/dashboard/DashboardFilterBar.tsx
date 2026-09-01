@@ -1,4 +1,5 @@
 "use client";
+import { ios } from "@/theme/theme";
 
 import { useState } from "react";
 import {
@@ -68,9 +69,9 @@ export function DashboardFilterBar({
           onClick={() => set("status", "ALL")}
           sx={{
             ...(filters.status === "ALL" && {
-              background: "rgba(255,255,255,0.15)",
-              color: "#fff",
-              borderColor: "rgba(255,255,255,0.25)",
+              background: ios.label1,
+              color: ios.surface1,
+              borderColor: ios.label1,
             }),
           }}
         />

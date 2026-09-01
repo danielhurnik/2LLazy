@@ -1,4 +1,5 @@
 import { Box, Card, CardContent, Typography } from "@mui/material";
+import { ios } from "@/theme/theme";
 import dayjs from "dayjs";
 import { CalendarDayCell } from "./CalendarDayCell";
 import type { CalendarEntry } from "@/types";
@@ -32,7 +33,7 @@ export function CalendarGrid({ currentMonth, entries, onEntryClick, onDayDoubleC
           sx={{
             display: "grid",
             gridTemplateColumns: "repeat(7, 1fr)",
-            borderBottom: "1px solid rgba(255,255,255,0.08)",
+            borderBottom: `1px solid ${ios.separator}`,
           }}
         >
           {DAYS_OF_WEEK.map((d) => (

@@ -227,11 +227,7 @@ export function ApplicationCard({
                 startIcon={autoApplying ? <CircularProgress size={13} color="inherit" /> : <RocketLaunchIcon fontSize="small" />}
                 onClick={handleAutoApply}
                 disabled={autoApplying}
-                sx={{
-                  background: alpha(ios.indigo, 0.85),
-                  "&:hover": { background: ios.indigo },
-                  "&.Mui-disabled": { opacity: 0.5 },
-                }}
+                sx={{ "&.Mui-disabled": { opacity: 0.5 } }}
               >
                 {autoApplying ? "Applying…" : "Auto Apply"}
               </Button>
@@ -287,10 +283,10 @@ export function ApplicationCard({
               startIcon={<NotesIcon fontSize="small" />}
               onClick={() => setNotesOpen((v) => !v)}
               sx={notesOpen ? {
-                background: alpha(ios.indigo, 0.25),
-                color: ios.indigo,
-                borderColor: alpha(ios.indigo, 0.4),
-                "&:hover": { background: alpha(ios.indigo, 0.35) },
+                background: ios.surface2,
+                color: ios.label1,
+                borderColor: ios.separatorOpaque,
+                "&:hover": { background: ios.separator },
               } : undefined}
             >
               Notes
@@ -304,7 +300,7 @@ export function ApplicationCard({
               href={app.job.sourceUrl}
               target="_blank"
               rel="noopener noreferrer"
-              sx={{ ml: "auto", color: ios.label2, "&:hover": { color: "#fff" } }}
+              sx={{ ml: "auto", color: ios.label2, "&:hover": { color: ios.label1 } }}
             >
               <OpenInNewIcon fontSize="small" />
             </IconButton>

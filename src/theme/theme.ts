@@ -2,39 +2,55 @@
 
 import { createTheme, alpha } from "@mui/material/styles";
 
-// iOS system colors — dark mode palette
+/**
+ * Paper-and-ink design system.
+ *
+ * Warm paper surfaces, near-black ink for text and primary actions, serif
+ * display headings, hairline borders. One rule above all: no gradients, no
+ * glow, no blur — colour is reserved for status (green/amber/red), and the
+ * interface earns hierarchy through type and spacing instead.
+ *
+ * The export is still named `ios` from the previous iOS-dark theme; every
+ * component references these keys, so the name stays while the values moved.
+ * `blue` is the accent slot (now ink), `label1..3` are the three text tiers.
+ */
 export const ios = {
-  blue:       "#007AFF",
-  indigo:     "#5856D6",
-  green:      "#34C759",
-  orange:     "#FF9F0A",
-  red:        "#FF453A",
-  teal:       "#5AC8FA",
-  purple:     "#BF5AF2",
+  // Accent slots — the primary accent is ink itself.
+  blue:       "#23211C",
+  indigo:     "#5A5788",
+  green:      "#467A3C",
+  orange:     "#A8742C",
+  red:        "#A94438",
+  teal:       "#3E7C8A",
+  purple:     "#7A5C8E",
   // Backgrounds
-  bg:         "#000000",
-  surface1:   "rgba(28,28,30,0.95)",
-  surface2:   "rgba(44,44,46,0.9)",
+  bg:         "#F6F3EC",
+  surface1:   "#FCFBF7",
+  surface2:   "#F0ECE1",
   // Labels
-  label1:     "#FFFFFF",
-  label2:     "rgba(235,235,245,0.6)",
-  label3:     "rgba(235,235,245,0.3)",
+  label1:     "#22201B",
+  label2:     "#6E695F",
+  label3:     "#A29C8F",
   // Separator
-  separator:  "rgba(84,84,88,0.45)",
-  separatorOpaque: "#38383A",
+  separator:  "#E3DED1",
+  separatorOpaque: "#D9D3C4",
 };
 
-const spring = "cubic-bezier(0.34,1.2,0.64,1)";
-const smooth = "cubic-bezier(0.22,0.1,0.36,1)";
+/** Serif stack for display type — system faces only, no webfont to load. */
+const serif =
+  "'Charter', 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Georgia, 'Times New Roman', serif";
+
+const sans =
+  "system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
 
 export const theme = createTheme({
   palette: {
-    mode: "dark",
+    mode: "light",
     primary: {
       main: ios.blue,
-      light: alpha(ios.blue, 0.8),
-      dark: "#0066CC",
-      contrastText: "#ffffff",
+      light: "#4A463D",
+      dark: "#121110",
+      contrastText: "#FCFBF7",
     },
     secondary: {
       main: ios.indigo,
@@ -53,17 +69,19 @@ export const theme = createTheme({
     divider: ios.separator,
   },
   typography: {
-    fontFamily:
-      "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Inter', system-ui, sans-serif",
-    h4: { fontWeight: 700, letterSpacing: "-0.025em", lineHeight: 1.15 },
-    h5: { fontWeight: 600, letterSpacing: "-0.02em",  lineHeight: 1.25 },
-    h6: { fontWeight: 600, letterSpacing: "-0.015em", lineHeight: 1.35 },
-    body1: { lineHeight: 1.6,  letterSpacing: "-0.01em" },
-    body2: { lineHeight: 1.5,  letterSpacing: "-0.005em" },
-    caption: { letterSpacing: "0em" },
-    button: { fontWeight: 600, letterSpacing: "0em", textTransform: "none" as const },
+    fontFamily: sans,
+    h1: { fontFamily: serif, fontWeight: 600 },
+    h2: { fontFamily: serif, fontWeight: 600 },
+    h3: { fontFamily: serif, fontWeight: 600, letterSpacing: "-0.01em" },
+    h4: { fontFamily: serif, fontWeight: 600, letterSpacing: "-0.01em", lineHeight: 1.2 },
+    h5: { fontFamily: serif, fontWeight: 600, letterSpacing: "-0.005em", lineHeight: 1.3 },
+    h6: { fontFamily: serif, fontWeight: 600, letterSpacing: "0em", lineHeight: 1.35 },
+    body1: { lineHeight: 1.6 },
+    body2: { lineHeight: 1.55 },
+    caption: { letterSpacing: "0.01em" },
+    button: { fontWeight: 600, letterSpacing: "0.01em", textTransform: "none" as const },
   },
-  shape: { borderRadius: 12 },
+  shape: { borderRadius: 6 },
   components: {
     // ─── Buttons ────────────────────────────────────────────────────────────
     MuiButton: {
@@ -71,46 +89,31 @@ export const theme = createTheme({
         root: {
           textTransform: "none",
           fontWeight: 600,
-          borderRadius: 10,
-          padding: "8px 18px",
+          borderRadius: 6,
+          padding: "7px 16px",
           lineHeight: 1.5,
           boxShadow: "none",
-          transition: `all 0.18s ${spring}`,
-          position: "relative",
-          overflow: "hidden",
-          "&:hover": {
-            boxShadow: "none",
-            transform: "translateY(-1px)",
-          },
-          "&:active": {
-            transform: "scale(0.96)",
-            transition: `transform 0.08s ease`,
-          },
-          "&.Mui-disabled": {
-            opacity: 0.4,
-          },
+          "&:hover": { boxShadow: "none" },
+          "&.Mui-disabled": { opacity: 0.45 },
         },
         containedPrimary: {
-          background: `linear-gradient(160deg, #1a8fff 0%, ${ios.blue} 60%, #0060df 100%)`,
-          boxShadow: `0 2px 10px ${alpha(ios.blue, 0.35)}`,
-          "&:hover": {
-            background: `linear-gradient(160deg, #2a9fff 0%, #1a8fff 60%, ${ios.blue} 100%)`,
-            boxShadow: `0 4px 16px ${alpha(ios.blue, 0.45)}`,
-          },
+          background: ios.label1,
+          color: ios.surface1,
+          "&:hover": { background: "#3A372F" },
         },
         outlined: {
-          borderColor: ios.separator,
-          background: "rgba(255,255,255,0.05)",
-          backdropFilter: "blur(8px)",
+          borderColor: ios.separatorOpaque,
+          color: ios.label1,
+          background: ios.surface1,
           "&:hover": {
-            borderColor: "rgba(255,255,255,0.2)",
-            background: "rgba(255,255,255,0.09)",
+            borderColor: ios.label3,
+            background: ios.surface2,
           },
         },
         sizeSmall: {
-          padding: "6px 14px",
+          padding: "5px 12px",
           fontSize: "0.8125rem",
-          borderRadius: 8,
+          borderRadius: 5,
         },
       },
     },
@@ -120,16 +123,12 @@ export const theme = createTheme({
         root: {
           backgroundImage: "none",
           background: ios.surface1,
-          backdropFilter: "blur(20px) saturate(160%)",
-          WebkitBackdropFilter: "blur(20px) saturate(160%)",
-          borderRadius: 16,
+          borderRadius: 8,
           border: `1px solid ${ios.separator}`,
-          boxShadow: "0 2px 12px rgba(0,0,0,0.3), 0 1px 3px rgba(0,0,0,0.2)",
-          transition: `transform 0.22s ${spring}, box-shadow 0.22s ${smooth}, border-color 0.18s ease`,
+          boxShadow: "0 1px 2px rgba(34,32,27,0.04)",
+          transition: "border-color 0.15s ease",
           "&:hover": {
-            borderColor: "rgba(255,255,255,0.14)",
-            boxShadow: "0 8px 28px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.25)",
-            transform: "translateY(-2px)",
+            borderColor: ios.separatorOpaque,
           },
         },
       },
@@ -146,9 +145,7 @@ export const theme = createTheme({
     MuiDrawer: {
       styleOverrides: {
         paper: {
-          background: "rgba(12,12,14,0.88)",
-          backdropFilter: "blur(36px) saturate(180%)",
-          WebkitBackdropFilter: "blur(36px) saturate(180%)",
+          background: ios.bg,
           borderRight: `1px solid ${ios.separator}`,
         },
       },
@@ -157,12 +154,10 @@ export const theme = createTheme({
     MuiDialog: {
       styleOverrides: {
         paper: {
-          borderRadius: 20,
+          borderRadius: 10,
           border: `1px solid ${ios.separator}`,
-          background: "rgba(28,28,30,0.97)",
-          backdropFilter: "blur(40px) saturate(180%)",
-          WebkitBackdropFilter: "blur(40px) saturate(180%)",
-          boxShadow: "0 24px 64px rgba(0,0,0,0.6)",
+          background: ios.surface1,
+          boxShadow: "0 16px 48px rgba(34,32,27,0.18)",
         },
       },
     },
@@ -171,23 +166,18 @@ export const theme = createTheme({
       styleOverrides: {
         root: {
           "& .MuiOutlinedInput-root": {
-            borderRadius: 10,
-            background: "rgba(118,118,128,0.12)",
-            transition: `background 0.15s ease, box-shadow 0.15s ease`,
+            borderRadius: 6,
+            background: "#FFFFFF",
             "& fieldset": {
-              borderColor: "transparent",
+              borderColor: ios.separatorOpaque,
               transition: "border-color 0.15s ease",
             },
-            "&:hover": {
-              background: "rgba(118,118,128,0.16)",
-              "& fieldset": { borderColor: ios.separator },
-            },
+            "&:hover fieldset": { borderColor: ios.label3 },
             "&.Mui-focused": {
-              background: "rgba(118,118,128,0.18)",
-              boxShadow: `0 0 0 3px ${alpha(ios.blue, 0.18)}`,
+              boxShadow: `0 0 0 3px ${alpha(ios.label1, 0.08)}`,
               "& fieldset": {
-                borderColor: ios.blue,
-                borderWidth: "1.5px",
+                borderColor: ios.label1,
+                borderWidth: "1px",
               },
             },
           },
@@ -197,75 +187,75 @@ export const theme = createTheme({
     // ─── Select ─────────────────────────────────────────────────────────────
     MuiSelect: {
       styleOverrides: {
-        root: { borderRadius: 10 },
+        root: { borderRadius: 6, background: "#FFFFFF" },
       },
     },
     MuiOutlinedInput: {
       styleOverrides: {
-        root: { borderRadius: 10 },
+        root: {
+          borderRadius: 6,
+          "& fieldset": { borderColor: ios.separatorOpaque },
+        },
       },
     },
     // ─── Menu ───────────────────────────────────────────────────────────────
     MuiMenu: {
       styleOverrides: {
         paper: {
-          borderRadius: 14,
+          borderRadius: 8,
           border: `1px solid ${ios.separator}`,
-          background: "rgba(30,30,32,0.97)",
-          backdropFilter: "blur(20px)",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+          background: ios.surface1,
+          boxShadow: "0 8px 24px rgba(34,32,27,0.12)",
         },
       },
     },
     MuiMenuItem: {
       styleOverrides: {
         root: {
-          borderRadius: 8,
+          borderRadius: 5,
           margin: "1px 4px",
-          padding: "8px 12px",
+          padding: "7px 12px",
           fontSize: "0.875rem",
-          transition: `background 0.12s ease`,
-          "&:hover": { background: "rgba(255,255,255,0.07)" },
+          "&:hover": { background: ios.surface2 },
           "&.Mui-selected": {
-            background: alpha(ios.blue, 0.2),
-            "&:hover": { background: alpha(ios.blue, 0.26) },
+            background: ios.surface2,
+            "&:hover": { background: ios.separator },
           },
         },
       },
     },
     // ─── Chips ──────────────────────────────────────────────────────────────
+    // Quiet by default: paper fill, ink text, hairline. Colour only carries
+    // status, and even then muted — a chip is metadata, not a highlight.
     MuiChip: {
       styleOverrides: {
         root: {
-          borderRadius: 8,
-          fontWeight: 600,
+          borderRadius: 4,
+          fontWeight: 500,
           fontSize: "0.75rem",
-          height: 24,
-          transition: `all 0.15s ${spring}`,
-          "&:hover": { transform: "translateY(-1px)" },
-          "&:active": { transform: "scale(0.95)" },
+          height: 22,
           "&.MuiChip-colorDefault": {
-            background: alpha(ios.blue, 0.14),
-            color: ios.blue,
-            border: `1px solid ${alpha(ios.blue, 0.28)}`,
+            background: ios.surface2,
+            color: ios.label2,
+            border: `1px solid ${ios.separator}`,
           },
           "&.MuiChip-colorSuccess": {
-            background: alpha(ios.green, 0.14),
+            background: alpha(ios.green, 0.1),
             color: ios.green,
-            border: `1px solid ${alpha(ios.green, 0.25)}`,
+            border: `1px solid ${alpha(ios.green, 0.28)}`,
           },
           "&.MuiChip-colorWarning": {
-            background: alpha(ios.orange, 0.14),
+            background: alpha(ios.orange, 0.1),
             color: ios.orange,
-            border: `1px solid ${alpha(ios.orange, 0.25)}`,
+            border: `1px solid ${alpha(ios.orange, 0.28)}`,
           },
           "&.MuiChip-colorError": {
-            background: alpha(ios.red, 0.14),
+            background: alpha(ios.red, 0.08),
             color: ios.red,
             border: `1px solid ${alpha(ios.red, 0.25)}`,
           },
           "&.MuiChip-colorSecondary": {
-            background: alpha(ios.indigo, 0.14),
+            background: alpha(ios.indigo, 0.08),
             color: ios.indigo,
             border: `1px solid ${alpha(ios.indigo, 0.25)}`,
           },
@@ -279,9 +269,7 @@ export const theme = createTheme({
     MuiListItemButton: {
       styleOverrides: {
         root: {
-          borderRadius: 12,
-          transition: `all 0.15s ${spring}`,
-          "&:active": { transform: "scale(0.97)" },
+          borderRadius: 6,
         },
       },
     },
@@ -295,13 +283,13 @@ export const theme = createTheme({
     MuiLinearProgress: {
       styleOverrides: {
         root: {
-          borderRadius: 4,
+          borderRadius: 2,
           height: 3,
-          background: "rgba(255,255,255,0.06)",
+          background: ios.separator,
         },
         bar: {
-          borderRadius: 4,
-          background: `linear-gradient(90deg, ${ios.blue}, ${ios.teal})`,
+          borderRadius: 2,
+          background: ios.label1,
         },
       },
     },
@@ -309,43 +297,42 @@ export const theme = createTheme({
     MuiSkeleton: {
       styleOverrides: {
         root: {
-          background: "rgba(255,255,255,0.06)",
-          borderRadius: 12,
+          background: ios.surface2,
+          borderRadius: 6,
           "&::after": {
-            background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent)",
+            background: "linear-gradient(90deg, transparent, rgba(34,32,27,0.03), transparent)",
           },
         },
       },
     },
-    // ─── Switch (iOS toggle style) ──────────────────────────────────────────
+    // ─── Switch ─────────────────────────────────────────────────────────────
     MuiSwitch: {
       styleOverrides: {
         root: {
-          width: 44,
-          height: 26,
+          width: 40,
+          height: 24,
           padding: 0,
           "& .MuiSwitch-switchBase": {
             padding: 3,
-            transition: `transform 0.22s ${spring}`,
             "&.Mui-checked": {
-              transform: "translateX(18px)",
+              transform: "translateX(16px)",
               "& + .MuiSwitch-track": {
-                background: ios.green,
+                background: ios.label1,
                 opacity: 1,
                 border: "none",
               },
-              "& .MuiSwitch-thumb": { background: "#fff" },
+              "& .MuiSwitch-thumb": { background: ios.surface1 },
             },
           },
           "& .MuiSwitch-thumb": {
-            width: 20,
-            height: 20,
-            background: "#fff",
-            boxShadow: "0 2px 4px rgba(0,0,0,0.3), 0 0 1px rgba(0,0,0,0.2)",
+            width: 18,
+            height: 18,
+            background: "#FFFFFF",
+            boxShadow: "0 1px 2px rgba(34,32,27,0.25)",
           },
           "& .MuiSwitch-track": {
-            borderRadius: 13,
-            background: "rgba(120,120,128,0.32)",
+            borderRadius: 12,
+            background: ios.separatorOpaque,
             opacity: 1,
           },
         },
@@ -355,25 +342,25 @@ export const theme = createTheme({
     MuiAlert: {
       styleOverrides: {
         root: {
-          borderRadius: 12,
-          backdropFilter: "blur(10px)",
+          borderRadius: 6,
           border: "1px solid",
         },
         standardInfo: {
-          background: alpha(ios.blue, 0.1),
-          borderColor: alpha(ios.blue, 0.25),
+          background: ios.surface2,
+          borderColor: ios.separatorOpaque,
+          color: ios.label1,
         },
         standardWarning: {
-          background: alpha(ios.orange, 0.1),
-          borderColor: alpha(ios.orange, 0.25),
+          background: alpha(ios.orange, 0.08),
+          borderColor: alpha(ios.orange, 0.3),
         },
         standardError: {
-          background: alpha(ios.red, 0.1),
-          borderColor: alpha(ios.red, 0.25),
+          background: alpha(ios.red, 0.07),
+          borderColor: alpha(ios.red, 0.3),
         },
         standardSuccess: {
-          background: alpha(ios.green, 0.1),
-          borderColor: alpha(ios.green, 0.25),
+          background: alpha(ios.green, 0.08),
+          borderColor: alpha(ios.green, 0.3),
         },
       },
     },
@@ -381,9 +368,9 @@ export const theme = createTheme({
     MuiTooltip: {
       styleOverrides: {
         tooltip: {
-          background: "rgba(50,50,55,0.95)",
-          backdropFilter: "blur(12px)",
-          borderRadius: 8,
+          background: ios.label1,
+          color: ios.surface1,
+          borderRadius: 5,
           fontSize: "0.75rem",
           fontWeight: 500,
           padding: "5px 10px",
@@ -394,9 +381,8 @@ export const theme = createTheme({
     MuiIconButton: {
       styleOverrides: {
         root: {
-          transition: `all 0.15s ${spring}`,
-          "&:hover": { transform: "scale(1.08)" },
-          "&:active": { transform: "scale(0.92)" },
+          borderRadius: 6,
+          "&:hover": { background: ios.surface2 },
         },
       },
     },

@@ -655,11 +655,11 @@ export default function SearchPage() {
       {staleJobs.length > 0 && (
         <>
           <Box sx={{ mt: 3, mb: 1.5, display: "flex", alignItems: "center", gap: 1.5 }}>
-            <Box sx={{ flex: 1, height: "1px", background: "rgba(255,255,255,0.08)" }} />
+            <Box sx={{ flex: 1, height: "1px", background: ios.separator }} />
             <Typography variant="caption" sx={{ color: ios.label3, fontWeight: 600, letterSpacing: "0.05em", whiteSpace: "nowrap" }}>
               PREVIOUSLY FOUND ({staleJobs.length})
             </Typography>
-            <Box sx={{ flex: 1, height: "1px", background: "rgba(255,255,255,0.08)" }} />
+            <Box sx={{ flex: 1, height: "1px", background: ios.separator }} />
           </Box>
           <Stack spacing={1.5}>
             {staleJobs.map((job) => (

@@ -119,7 +119,7 @@ export function JobCard({
                       ? alpha(ios.green, 0.3)
                       : matchPct >= 60
                         ? alpha(ios.orange, 0.3)
-                        : "rgba(255,255,255,0.12)"
+                        : ios.separatorOpaque
                   }`,
                   fontWeight: 700,
                   fontSize: "0.7rem",
@@ -303,7 +303,7 @@ export function JobCard({
             href={job.sourceUrl}
             target="_blank"
             rel="noopener noreferrer"
-            sx={{ color: ios.label2, "&:hover": { color: "#fff" } }}
+            sx={{ color: ios.label2, "&:hover": { color: ios.label1 } }}
           >
             <OpenInNewIcon fontSize="small" />
           </IconButton>

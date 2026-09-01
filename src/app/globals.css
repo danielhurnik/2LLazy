@@ -11,19 +11,19 @@ html, body {
   margin: 0;
   padding: 0;
   height: 100%;
-  background-color: #000000;
-  color: #ffffff;
+  background-color: #F6F3EC;
+  color: #22201B;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-synthesis: none;
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
-    "Inter", system-ui, sans-serif;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, sans-serif;
 }
 
-/* ── iOS-style thin scrollbar ───────────────────────────────────────────── */
+/* ── Thin scrollbar ───────────────────────────────────────────── */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -32,12 +32,12 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(84, 84, 88, 0.55);
+  background: rgba(110, 105, 95, 0.4);
   border-radius: 10px;
   transition: background 0.2s ease;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(120, 120, 128, 0.75);
+  background: rgba(110, 105, 95, 0.6);
 }
 
 /* ── Smooth scroll ─────────────────────────────────────────────────────── */
@@ -47,8 +47,7 @@ body {
 
 /* ── Text selection ────────────────────────────────────────────────────── */
 ::selection {
-  background: rgba(0, 122, 255, 0.35);
-  color: #fff;
+  background: rgba(34, 32, 27, 0.16);
 }
 
 /* ── Remove default focus outlines (MUI handles focus) ─────────────────── */

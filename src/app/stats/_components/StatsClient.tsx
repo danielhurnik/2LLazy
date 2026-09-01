@@ -42,20 +42,20 @@ const SOURCE_COLORS: Record<string, string> = {
 const CHART_STYLE = {
   background: "transparent",
   fontSize: 12,
-  color: "rgba(235,235,245,0.6)",
+  color: ios.label2,
 };
 
-const AXIS_STYLE = { fill: "rgba(235,235,245,0.45)", fontSize: 11 };
-const GRID_STYLE = { stroke: "rgba(255,255,255,0.06)" };
+const AXIS_STYLE = { fill: ios.label3, fontSize: 11 };
+const GRID_STYLE = { stroke: ios.separator };
 const TOOLTIP_STYLE = {
   contentStyle: {
-    background: "rgba(28,28,30,0.97)",
+    background: ios.surface1,
     border: `1px solid ${ios.separator}`,
     borderRadius: 10,
     fontSize: 12,
   },
-  labelStyle: { color: "rgba(235,235,245,0.8)" },
-  itemStyle: { color: "rgba(235,235,245,0.6)" },
+  labelStyle: { color: ios.label1 },
+  itemStyle: { color: ios.label2 },
 };
 
 function StatCard({ label, value, color }: { label: string; value: string | number; color?: string }) {
@@ -67,7 +67,7 @@ function StatCard({ label, value, color }: { label: string; value: string | numb
         </Typography>
         <Typography
           variant="h4"
-          sx={{ fontWeight: 700, color: color ?? "#fff", letterSpacing: "-0.03em" }}
+          sx={{ fontWeight: 600, color: color ?? ios.label1 }}
         >
           {value}
         </Typography>
@@ -178,7 +178,7 @@ export function StatsClient({ byStatus, bySource, weekly, totalApplications, int
                   <Tooltip {...TOOLTIP_STYLE} />
                   <Legend
                     formatter={(value) => (
-                      <span style={{ color: "rgba(235,235,245,0.6)", fontSize: 12 }}>{value}</span>
+                      <span style={{ color: ios.label2, fontSize: 12 }}>{value}</span>
                     )}
                   />
                 </PieChart>

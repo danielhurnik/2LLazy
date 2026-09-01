@@ -70,33 +70,33 @@ export function AppShell({ children }: { children: ReactNode }) {
             sx={{
               width: 34,
               height: 34,
-              borderRadius: "10px",
-              background: `linear-gradient(145deg, #1a8fff, ${ios.blue} 45%, #0060df)`,
+              borderRadius: "8px",
+              background: ios.label1,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              boxShadow: `0 4px 14px ${alpha(ios.blue, 0.5)}, 0 0 0 1px ${alpha(ios.blue, 0.3)}`,
               flexShrink: 0,
             }}
           >
-            <BoltIcon sx={{ color: "#fff", fontSize: 18 }} />
+            <BoltIcon sx={{ color: ios.surface1, fontSize: 18 }} />
           </Box>
           <Box>
             <Typography sx={{
-              color: "#fff",
-              fontSize: 15,
-              fontWeight: 700,
+              color: ios.label1,
+              fontFamily: "'Charter', 'Iowan Old Style', Georgia, serif",
+              fontSize: 17,
+              fontWeight: 600,
               lineHeight: 1.2,
-              letterSpacing: "-0.02em",
+              letterSpacing: "0em",
             }}>
-              2LLAZY
+              2LLazy
             </Typography>
             <Typography sx={{
               color: ios.label3,
               fontSize: 11,
               fontWeight: 400,
               lineHeight: 1.2,
-              letterSpacing: "0em",
+              letterSpacing: "0.02em",
             }}>
               Job Tracker
             </Typography>
@@ -117,28 +117,23 @@ export function AppShell({ children }: { children: ReactNode }) {
                 href={item.href}
                 selected={active}
                 sx={{
-                  borderRadius: "12px",
-                  mb: 0.5,
-                  py: 1.1,
+                  borderRadius: "6px",
+                  mb: 0.25,
+                  py: 1,
                   px: 1.5,
-                  border: "1px solid transparent",
-                  transition: "all 0.18s cubic-bezier(0.34,1.2,0.64,1)",
+                  transition: "background 0.12s ease",
                   ...(active ? {
-                    background: `linear-gradient(135deg, ${alpha(ios.blue, 0.28)} 0%, ${alpha(ios.blue, 0.14)} 100%)`,
-                    borderColor: alpha(ios.blue, 0.35),
-                    backdropFilter: "blur(8px)",
-                    "&:hover": {
-                      background: `linear-gradient(135deg, ${alpha(ios.blue, 0.32)} 0%, ${alpha(ios.blue, 0.18)} 100%)`,
+                    background: ios.surface2,
+                    "&:hover": { background: ios.surface2 },
+                    "&.Mui-selected": {
+                      background: ios.surface2,
+                      "&:hover": { background: ios.surface2 },
                     },
                   } : {
-                    "&:hover": {
-                      background: "rgba(255,255,255,0.05)",
-                      borderColor: "rgba(255,255,255,0.06)",
-                    },
+                    "&:hover": { background: alpha(ios.surface2, 0.6) },
                   }),
-                  "&:active": { transform: "scale(0.97)" },
                   "& .MuiListItemIcon-root": {
-                    color: active ? ios.blue : "rgba(235,235,245,0.45)",
+                    color: active ? ios.label1 : ios.label3,
                     minWidth: 34,
                     transition: "color 0.15s ease",
                   },
@@ -150,20 +145,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                   primaryTypographyProps={{
                     fontSize: 14,
                     fontWeight: active ? 600 : 400,
-                    color: active ? "#fff" : "rgba(235,235,245,0.65)",
-                    letterSpacing: "-0.01em",
+                    color: active ? ios.label1 : ios.label2,
                   }}
                 />
-                {active && (
-                  <Box sx={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: "50%",
-                    background: ios.blue,
-                    boxShadow: `0 0 8px ${ios.blue}`,
-                    flexShrink: 0,
-                  }} />
-                )}
               </ListItemButton>
             );
           })}
@@ -182,7 +166,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 {session.user.name?.[0]?.toUpperCase()}
               </Avatar>
               <Typography sx={{
-                color: "rgba(235,235,245,0.75)",
+                color: ios.label2,
                 fontSize: 13,
                 fontWeight: 500,
                 letterSpacing: "-0.01em",
@@ -197,18 +181,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           <ListItemButton
             onClick={() => signOut({ callbackUrl: "/login" })}
             sx={{
-              borderRadius: "12px",
-              py: 1.1,
+              borderRadius: "6px",
+              py: 1,
               px: 1.5,
-              border: "1px solid transparent",
-              transition: "all 0.18s cubic-bezier(0.34,1.2,0.64,1)",
-              "&:hover": {
-                background: alpha(ios.red, 0.1),
-                borderColor: alpha(ios.red, 0.22),
-              },
-              "&:active": { transform: "scale(0.97)" },
+              transition: "background 0.12s ease",
+              "&:hover": { background: alpha(ios.red, 0.07) },
               "& .MuiListItemIcon-root": {
-                color: alpha(ios.red, 0.7),
+                color: ios.label3,
                 minWidth: 34,
               },
             }}
@@ -221,8 +200,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               primaryTypographyProps={{
                 fontSize: 14,
                 fontWeight: 400,
-                color: alpha(ios.red, 0.8),
-                letterSpacing: "-0.01em",
+                color: ios.label2,
               }}
             />
           </ListItemButton>
@@ -236,10 +214,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           flexGrow: 1,
           overflow: "auto",
           minHeight: "100vh",
-          background:
-            "radial-gradient(ellipse at 15% 0%, rgba(0,122,255,0.07) 0%, transparent 55%)," +
-            "radial-gradient(ellipse at 85% 100%, rgba(88,86,214,0.05) 0%, transparent 55%)," +
-            "#000000",
+          background: ios.bg,
           position: "relative",
         }}
       >

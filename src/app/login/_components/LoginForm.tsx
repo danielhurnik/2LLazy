@@ -6,7 +6,6 @@ import {
   Divider,
   TextField,
   Typography,
-  alpha,
 } from "@mui/material";
 import BoltIcon from "@mui/icons-material/Bolt";
 import GoogleIcon from "@mui/icons-material/Google";
@@ -45,20 +44,16 @@ export function LoginForm({ error }: { error?: string }) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background:
-          "radial-gradient(ellipse at 50% 0%, rgba(0,122,255,0.12) 0%, transparent 60%)," +
-          "#000000",
+        background: ios.bg,
       }}
     >
       <Box
         sx={{
           p: 4,
-          background: "rgba(28,28,30,0.92)",
-          backdropFilter: "blur(30px) saturate(180%)",
-          WebkitBackdropFilter: "blur(30px) saturate(180%)",
-          borderRadius: "20px",
+          background: ios.surface1,
+          borderRadius: "10px",
           border: `1px solid ${ios.separator}`,
-          boxShadow: "0 24px 64px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3)",
+          boxShadow: "0 2px 8px rgba(34,32,27,0.06)",
           width: "100%",
           maxWidth: 360,
           display: "flex",
@@ -72,18 +67,17 @@ export function LoginForm({ error }: { error?: string }) {
           <Box sx={{
             width: 56,
             height: 56,
-            borderRadius: "16px",
-            background: `linear-gradient(145deg, #1a8fff, ${ios.blue} 45%, #0060df)`,
+            borderRadius: "12px",
+            background: ios.label1,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            boxShadow: `0 8px 20px ${alpha(ios.blue, 0.45)}, 0 0 0 1px ${alpha(ios.blue, 0.3)}`,
           }}>
-            <BoltIcon sx={{ color: "#fff", fontSize: 28 }} />
+            <BoltIcon sx={{ color: ios.surface1, fontSize: 28 }} />
           </Box>
           <Box sx={{ textAlign: "center" }}>
-            <Typography sx={{ color: "#fff", fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.2 }}>
-              2LLAZY
+            <Typography sx={{ color: ios.label1, fontFamily: "'Charter', 'Iowan Old Style', Georgia, serif", fontSize: 24, fontWeight: 600, lineHeight: 1.2 }}>
+              2LLazy
             </Typography>
             <Typography sx={{ color: ios.label2, fontSize: 13, mt: 0.25 }}>
               Job Tracker
@@ -99,7 +93,7 @@ export function LoginForm({ error }: { error?: string }) {
         </Typography>
 
         {error && (
-          <Typography sx={{ color: "#ff453a", fontSize: 13, textAlign: "center" }}>
+          <Typography sx={{ color: ios.red, fontSize: 13, textAlign: "center" }}>
             Sign-in failed. Please try again.
           </Typography>
         )}
@@ -113,9 +107,10 @@ export function LoginForm({ error }: { error?: string }) {
             mt: 0.5,
             py: 1.1,
             fontSize: "0.9375rem",
-            background: "#fff",
-            color: "#1f1f1f",
-            "&:hover": { background: "#f5f5f5" },
+            background: "#FFFFFF",
+            color: ios.label1,
+            border: `1px solid ${ios.separatorOpaque}`,
+            "&:hover": { background: ios.surface2 },
           }}
         >
           Continue with Google
@@ -136,7 +131,7 @@ export function LoginForm({ error }: { error?: string }) {
             required
             inputProps={{ "data-testid": "credentials-email" }}
             sx={{
-              "& .MuiOutlinedInput-root": { borderRadius: "10px", color: "#fff" },
+              "& .MuiOutlinedInput-root": { borderRadius: "6px" },
               "& .MuiInputLabel-root": { color: ios.label2 },
               "& .MuiOutlinedInput-notchedOutline": { borderColor: ios.separator },
             }}
@@ -151,13 +146,13 @@ export function LoginForm({ error }: { error?: string }) {
             required
             inputProps={{ "data-testid": "credentials-password" }}
             sx={{
-              "& .MuiOutlinedInput-root": { borderRadius: "10px", color: "#fff" },
+              "& .MuiOutlinedInput-root": { borderRadius: "6px" },
               "& .MuiInputLabel-root": { color: ios.label2 },
               "& .MuiOutlinedInput-notchedOutline": { borderColor: ios.separator },
             }}
           />
           {(credError || error) && (
-            <Typography sx={{ color: "#ff453a", fontSize: 13, textAlign: "center" }}>
+            <Typography sx={{ color: ios.red, fontSize: 13, textAlign: "center" }}>
               {credError || "Sign-in failed. Please try again."}
             </Typography>
           )}
