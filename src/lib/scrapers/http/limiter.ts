@@ -90,16 +90,20 @@ const globalWaiters: Array<() => void> = [];
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   if (ms <= 0) return Promise.resolve();
+  if (signal?.aborted) return Promise.reject(signal.reason ?? new Error("Aborted"));
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        reject(signal.reason ?? new Error("Aborted"));
-      },
-      { once: true },
-    );
+    // The listener must come off again on normal completion: an ingest run
+    // passes one shared signal into thousands of requests, and {once} only
+    // removes a listener when the abort actually fires.
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal!.reason ?? new Error("Aborted"));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
 }
 
@@ -123,7 +127,12 @@ function jitterUp(ms: number): number {
 async function acquireGlobalSlot(signal?: AbortSignal): Promise<void> {
   while (inFlightTotal >= globalConcurrency) {
     await new Promise<void>((resolve) => globalWaiters.push(resolve));
-    if (signal?.aborted) throw signal.reason ?? new Error("Aborted");
+    if (signal?.aborted) {
+      // This waiter was woken for a free slot it will never take; hand the
+      // wake to the next waiter or the slot is lost for good.
+      globalWaiters.shift()?.();
+      throw signal.reason ?? new Error("Aborted");
+    }
   }
   inFlightTotal++;
 }
@@ -139,7 +148,11 @@ async function acquireHostSlot(host: string, signal?: AbortSignal): Promise<void
 
   while (state.inFlight >= policy.concurrency) {
     await new Promise<void>((resolve) => state.waiters.push(resolve));
-    if (signal?.aborted) throw signal.reason ?? new Error("Aborted");
+    if (signal?.aborted) {
+      // Pass the wake on — see acquireGlobalSlot.
+      state.waiters.shift()?.();
+      throw signal.reason ?? new Error("Aborted");
+    }
   }
   state.inFlight++;
 
@@ -148,7 +161,15 @@ async function acquireHostSlot(host: string, signal?: AbortSignal): Promise<void
   const now = Date.now();
   const startAt = Math.max(now, state.nextAvailableAt);
   state.nextAvailableAt = startAt + spacing + policy.minDelayMs;
-  await sleep(startAt - now, signal);
+  try {
+    await sleep(startAt - now, signal);
+  } catch (err) {
+    // The slot is held from the increment above; an abort during the pacing
+    // sleep escapes before withHostLimit's finally exists, so release here or
+    // the host is one slot poorer for the life of the process.
+    releaseHostSlot(host);
+    throw err;
+  }
 }
 
 function releaseHostSlot(host: string): void {

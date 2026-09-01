@@ -35,6 +35,13 @@ const REQUEST_TIMEOUT_MS = 30_000;
 /** Statuses that mean "you are going too fast", as opposed to a hard failure. */
 const THROTTLE_STATUSES = new Set([429, 503]);
 
+/**
+ * A response that will not change on a retry — a 404 employer slug, a 403,
+ * a 401. Retrying one only re-asks a question the server already answered,
+ * and with backoff sleeps in between it triples the cost of every dead URL.
+ */
+class PermanentHttpError extends Error {}
+
 /** Store used for conditional requests. Swapped by the ingest script. */
 let conditionalStore: ConditionalStore = NO_STORE;
 
@@ -68,6 +75,16 @@ export function resetFetchStats(): void {
   stats.failures = 0;
   stats.throttled = 0;
   stats.notModified = 0;
+}
+
+/**
+ * Counts a browser navigation in the same run totals, so requests made through
+ * Playwright are not invisible to the ingest summary.
+ */
+export function recordBrowserRequest(status: number): void {
+  stats.requests++;
+  if (THROTTLE_STATUSES.has(status)) stats.throttled++;
+  else if (status >= 400) stats.failures++;
 }
 
 /** A fetched page in every form the extraction layer needs. */
@@ -172,10 +189,20 @@ async function fetchWithRetry(
         throw new Error(`HTTP ${res.status} for ${url} (rate limited, gave up after ${retries} attempts)`);
       }
 
+      // A client error other than throttling (handled above) or a request
+      // timeout is permanent: the server has answered, retrying changes nothing.
+      if (res.status >= 400 && res.status < 500 && res.status !== 408) {
+        throw new PermanentHttpError(`HTTP ${res.status} for ${url}`);
+      }
+
       throw new Error(`HTTP ${res.status} for ${url}`);
     } catch (err) {
       // An aborted request is a deliberate cancellation — never retry it.
       if (opts.signal?.aborted) throw err;
+      if (err instanceof PermanentHttpError) {
+        stats.failures++;
+        throw err;
+      }
       const isLast = attempt === retries;
       if (isLast) {
         stats.failures++;
@@ -189,16 +216,19 @@ async function fetchWithRetry(
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(signal.reason ?? new Error("Aborted"));
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        reject(signal.reason ?? new Error("Aborted"));
-      },
-      { once: true },
-    );
+    // Removed again on normal completion — a shared ingest signal would
+    // otherwise accumulate one dead listener per retry sleep for a whole run.
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal!.reason ?? new Error("Aborted"));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
 }
 

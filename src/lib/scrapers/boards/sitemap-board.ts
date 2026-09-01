@@ -112,26 +112,39 @@ export async function* ingestViaSitemap(
   }
 
   let entries: SitemapEntry[] = [];
+  let staleTotal = 0;
   for (const candidate of sitemapCandidates(opts, rules)) {
     if (ctx.signal?.aborted) return;
     if (!isAllowed(rules, candidate)) continue;
+    let stale = 0;
     try {
-      entries = await discoverFromSitemap(candidate, {
+      ({ entries, stale } = await discoverFromSitemap(candidate, {
         urlPattern: opts.urlPattern,
         sitemapPattern: opts.sitemapPattern,
         since: ctx.since,
         limit: ctx.limit,
         signal: ctx.signal,
         fetchXml: (url) => fetchXml(url, { signal: ctx.signal, acceptLanguage: opts.acceptLanguage }),
-      });
+      }));
     } catch {
       continue;
     }
+    staleTotal += stale;
     if (entries.length > 0) break;
+    // The sitemap matched job URLs, all older than `since`: it is healthy and
+    // nothing changed. Probing the remaining candidates would spend a request
+    // per guess to rediscover the same quiet day.
+    if (stale > 0) break;
   }
 
   if (entries.length === 0) {
-    warn(`no job URLs discovered from ${opts.origin} — sitemap missing or pattern too narrow`);
+    if (staleTotal > 0) {
+      ctx.onProgress?.(
+        `${opts.id}: nothing changed since ${ctx.since?.toISOString() ?? "the last run"}`,
+      );
+    } else {
+      warn(`no job URLs discovered from ${opts.origin} — sitemap missing or pattern too narrow`);
+    }
     return;
   }
 

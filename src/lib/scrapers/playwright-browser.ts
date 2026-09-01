@@ -11,9 +11,8 @@
  */
 
 import type { Browser, Route } from "playwright";
-import { parseDocument, rawFetch, type FetchedPage } from "./fetcher";
-
-const ENABLED = process.env.PLAYWRIGHT_ENABLED === "true";
+import { parseDocument, rawFetch, recordBrowserRequest, type FetchedPage } from "./fetcher";
+import { hostOf, penaliseHost, withHostLimit } from "./http/limiter";
 
 // ── Singleton browser ────────────────────────────────────────────────────────
 let browserPromise: Promise<Browser> | null = null;
@@ -130,7 +129,19 @@ export async function pwFetch(
       "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     });
 
-    const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    // A rendered navigation is still a request to somebody's server: it goes
+    // through the same per-host pacing as every plain fetch, is counted in the
+    // run totals, and a throttle response penalises the host like any other.
+    const response = await withHostLimit(
+      url,
+      () => page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 }),
+      opts.signal,
+    );
+    const status = response?.status() ?? 200;
+    recordBrowserRequest(status);
+    if (status === 429 || status === 503) {
+      penaliseHost(hostOf(url), response?.headers()["retry-after"] ?? null);
+    }
 
     // If a specific selector is expected, wait for it (fast path) — otherwise wait briefly for JS
     if (opts.waitSelector) {
@@ -141,7 +152,7 @@ export async function pwFetch(
     }
 
     const html = await page.content();
-    return { ...parseDocument(html, page.url() || url), status: response?.status() ?? 200 };
+    return { ...parseDocument(html, page.url() || url), status };
   } finally {
     opts.signal?.removeEventListener("abort", onAbort);
     await page.close().catch(() => { });

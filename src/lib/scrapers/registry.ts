@@ -76,8 +76,6 @@ export function missingEnvFor(board: BoardDefinition): string[] {
 }
 
 export interface BoardSelectionOptions {
-  /** Drop boards that also list non-remote roles. */
-  remoteOnly?: boolean;
   /**
    * Only boards that can answer a keyword search inside a web request. The
    * search route sets this; the ingest script does not, because it can walk
@@ -93,6 +91,10 @@ export interface BoardSelectionOptions {
 /**
  * Boards that should run for a search in `country`, country-specific first so
  * local results start streaming before the worldwide remote boards catch up.
+ *
+ * A remote-only search deliberately does NOT narrow this selection: a general
+ * board still returns remote roles, so every board runs and the individual
+ * boards and the ranker honour `ScrapeQuery.remoteOnly`.
  */
 export function boardsForCountry(
   country: CountryCode,
@@ -106,10 +108,6 @@ export function boardsForCountry(
     if (missingEnvFor(board).length > 0) return false;
     if (opts.liveSearchOnly && board.supportsLiveSearch === false) return false;
     if (board.requiresBrowser && !playwright) return false;
-    if (opts.remoteOnly && !board.remoteOnly) {
-      // A general board can still return remote roles; keep it, the ranker
-      // filters. Only drop boards that cannot serve the country at all.
-    }
     return isWorldwide(board) || board.countries.includes(code);
   });
 

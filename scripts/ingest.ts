@@ -170,11 +170,15 @@ async function runBoard(board: BoardDefinition, args: Args, signal: AbortSignal)
     batch = [];
   };
 
+  // A dry run is promised to work without DATABASE_URL, so the freshness
+  // reads below must be skipped when there is no database to read.
+  const canReadDb = !args.dryRun || Boolean(process.env.DATABASE_URL?.trim());
+
   try {
     if (board.ingest) {
       // Incremental by default: only postings the board says changed since the
       // last run. This is what keeps a daily crawl small enough to stay polite.
-      const since = args.full ? null : await lastScrapedAt(board.source);
+      const since = args.full || !canReadDb ? null : await lastScrapedAt(board.source);
       if (since) log(`incremental since ${since.toISOString()}`);
 
       for await (const job of board.ingest({
@@ -212,8 +216,11 @@ async function runBoard(board: BoardDefinition, args: Args, signal: AbortSignal)
 
         // Skip anything already stored recently — the common case on a re-run,
         // and the cheapest request is the one never made.
-        const current = await alreadyFresh(fresh.map((j) => j.sourceUrl), FRESHNESS_WINDOW_MS);
-        const due = args.full ? fresh : fresh.filter((job) => !current.has(job.sourceUrl));
+        const skipFreshCheck = args.full || !canReadDb;
+        const current = skipFreshCheck
+          ? new Set<string>()
+          : await alreadyFresh(fresh.map((j) => j.sourceUrl), FRESHNESS_WINDOW_MS);
+        const due = skipFreshCheck ? fresh : fresh.filter((job) => !current.has(job.sourceUrl));
         result.skipped += fresh.length - due.length;
         result.found += due.length;
 

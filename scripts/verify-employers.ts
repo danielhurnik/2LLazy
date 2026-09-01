@@ -15,6 +15,7 @@
  *
  * Needs no database and no API key — only network access to the ATS vendors.
  */
+import { AsyncLocalStorage } from "node:async_hooks";
 import { adapterFor, ATS_ADAPTERS } from "../src/lib/scrapers/boards/ats/adapters";
 import { EMPLOYERS, employersForCountry } from "../src/lib/scrapers/boards/ats/employers";
 import { setGlobalConcurrency } from "../src/lib/scrapers/http/limiter";
@@ -72,6 +73,22 @@ interface Check {
   ms: number;
 }
 
+/**
+ * Routes each check's console.warn output to that check alone.
+ *
+ * Checks run concurrently, so console.warn is patched exactly once and each
+ * warning lands in the capture list of whichever async context emitted it.
+ * (Patching per check would corrupt the restore chain: worker B saves worker
+ * A's capture function as "the original" and restores it after A has finished.)
+ */
+const warnCapture = new AsyncLocalStorage<string[]>();
+const originalWarn = console.warn;
+console.warn = (...parts: unknown[]) => {
+  const captured = warnCapture.getStore();
+  if (captured) captured.push(parts.map(String).join(" "));
+  else originalWarn(...parts);
+};
+
 async function check(employer: Employer): Promise<Check> {
   const started = Date.now();
   const adapter = adapterFor(employer.ats);
@@ -83,21 +100,14 @@ async function check(employer: Employer): Promise<Check> {
   // the signal here. That conflates "board closed" with "no open roles", which
   // is why the summary says "no postings" rather than "broken".
   const captured: string[] = [];
-  const originalWarn = console.warn;
-  console.warn = (...parts: unknown[]) => captured.push(parts.map(String).join(" "));
-
-  try {
-    const postings = await adapter.fetchPostings(employer);
-    return {
-      employer,
-      ok: postings.length > 0,
-      count: postings.length,
-      reason: postings.length > 0 ? "" : captured[0] ?? "no postings returned",
-      ms: Date.now() - started,
-    };
-  } finally {
-    console.warn = originalWarn;
-  }
+  const postings = await warnCapture.run(captured, () => adapter.fetchPostings(employer));
+  return {
+    employer,
+    ok: postings.length > 0,
+    count: postings.length,
+    reason: postings.length > 0 ? "" : captured[0] ?? "no postings returned",
+    ms: Date.now() - started,
+  };
 }
 
 async function main(): Promise<void> {

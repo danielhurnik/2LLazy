@@ -137,7 +137,7 @@ async function main(): Promise<void> {
   const intent = classifyQueryIntent(args.query, args.seniority ?? "");
   const selected = args.boardIds.length
     ? allBoards().filter((b) => args.boardIds.includes(b.id))
-    : boardsForCountry(country, { remoteOnly: args.remoteOnly });
+    : boardsForCountry(country);
 
   if (selected.length === 0) {
     console.error(`No boards matched. Try --list to see what is available for ${country}.`);

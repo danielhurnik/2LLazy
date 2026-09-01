@@ -9,6 +9,7 @@
  */
 import * as cheerio from "cheerio";
 import { z } from "zod";
+import { canonicaliseUrl } from "../parse/listing";
 import type { CountryCode, ScrapeQuery, ScrapedJob, WorkType } from "../types";
 
 /** Descriptions are stored verbatim, so cap them before they reach the DB. */
@@ -385,12 +386,19 @@ export function sortByLocationPreference<T extends ScrapedJob>(jobs: T[], q: Scr
 
 // ─── Result plumbing ──────────────────────────────────────────────────────────
 
-/** Keeps the first posting per source URL, preserving order. */
+/**
+ * Keeps the first posting per source URL, preserving order.
+ *
+ * Keyed on the canonical URL — tracking parameters stripped, the rest kept.
+ * The query string can be the whole identity of a posting (Greenhouse boards
+ * embedded in career sites use `?gh_jid=…`), so discarding it wholesale would
+ * collapse every posting from such an employer into one.
+ */
 export function dedupeByUrl<T extends ScrapedJob>(jobs: T[]): T[] {
   const seen = new Set<string>();
   const out: T[] = [];
   for (const job of jobs) {
-    const key = job.sourceUrl.split("?")[0];
+    const key = canonicaliseUrl(job.sourceUrl);
     if (!key || seen.has(key)) continue;
     seen.add(key);
     out.push(job);
@@ -407,15 +415,17 @@ export function pageBudget(deepSearch: boolean, normal = 2, deep = 4): number {
 export function delay(ms: number, signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) return Promise.resolve();
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        resolve();
-      },
-      { once: true },
-    );
+    // Removed on normal completion so a long-lived signal does not collect a
+    // listener per paged request.
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
 }
 

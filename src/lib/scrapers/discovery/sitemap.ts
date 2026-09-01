@@ -95,6 +95,19 @@ export interface DiscoverOptions {
 const DEFAULT_LIMIT = 300;
 const DEFAULT_MAX_SITEMAPS = 12;
 
+export interface DiscoveryResult {
+  /** Job URLs to fetch, newest first. */
+  entries: SitemapEntry[];
+  /**
+   * Evidence of job content older than `since`: matching URLs whose `lastmod`
+   * predates it, plus child sitemaps skipped for the same reason. Zero entries
+   * with a non-zero stale count means the sitemap is fine and nothing changed
+   * — a healthy outcome an incremental caller must not treat as "no sitemap
+   * found".
+   */
+  stale: number;
+}
+
 /**
  * Walks a sitemap (or sitemap index, one level deep) and returns the job URLs.
  *
@@ -104,16 +117,20 @@ const DEFAULT_MAX_SITEMAPS = 12;
 export async function discoverFromSitemap(
   rootUrl: string,
   opts: DiscoverOptions,
-): Promise<SitemapEntry[]> {
+): Promise<DiscoveryResult> {
   const limit = opts.limit ?? DEFAULT_LIMIT;
   const maxSitemaps = opts.maxSitemaps ?? DEFAULT_MAX_SITEMAPS;
   const seen = new Set<string>();
   const found: SitemapEntry[] = [];
+  let stale = 0;
 
   const keep = (entry: SitemapEntry): void => {
     if (seen.has(entry.url) || !opts.urlPattern.test(entry.url)) return;
-    if (opts.since && entry.lastModified && entry.lastModified < opts.since) return;
     seen.add(entry.url);
+    if (opts.since && entry.lastModified && entry.lastModified < opts.since) {
+      stale++;
+      return;
+    }
     found.push(entry);
   };
 
@@ -121,15 +138,21 @@ export async function discoverFromSitemap(
   try {
     root = parseSitemap(await opts.fetchXml(rootUrl));
   } catch {
-    return [];
+    return { entries: [], stale: 0 };
   }
 
   for (const entry of root.urls) keep(entry);
 
   // Open child sitemaps newest-first, and only those that could hold jobs.
-  const children = root.sitemaps
-    .filter((child) => !opts.sitemapPattern || opts.sitemapPattern.test(child.url))
-    .filter((child) => !opts.since || !child.lastModified || child.lastModified >= opts.since)
+  const relevant = root.sitemaps.filter(
+    (child) => !opts.sitemapPattern || opts.sitemapPattern.test(child.url),
+  );
+  const current = relevant.filter(
+    (child) => !opts.since || !child.lastModified || child.lastModified >= opts.since,
+  );
+  // Children skipped purely for age are still proof the sitemap holds jobs.
+  stale += relevant.length - current.length;
+  const children = current
     .sort((a, b) => (b.lastModified?.getTime() ?? 0) - (a.lastModified?.getTime() ?? 0))
     .slice(0, maxSitemaps);
 
@@ -146,7 +169,7 @@ export async function discoverFromSitemap(
   }
 
   found.sort((a, b) => (b.lastModified?.getTime() ?? 0) - (a.lastModified?.getTime() ?? 0));
-  return found.slice(0, limit);
+  return { entries: found.slice(0, limit), stale };
 }
 
 /** Conventional sitemap locations, tried when robots.txt advertises none. */

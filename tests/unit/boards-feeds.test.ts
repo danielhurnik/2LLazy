@@ -433,3 +433,34 @@ describe("feed board metadata", () => {
     }
   });
 });
+
+const { dedupeByUrl } = await import("@/lib/scrapers/boards/shared");
+
+describe("dedupeByUrl", () => {
+  const job = (sourceUrl: string) => ({
+    title: "Engineer",
+    company: "Acme",
+    location: "Remote",
+    description: "",
+    sourceUrl,
+    source: "test",
+  });
+
+  it("keeps postings whose identity lives in the query string", () => {
+    // Greenhouse boards embedded in career sites address jobs as ?gh_jid=…
+    const jobs = dedupeByUrl([
+      job("https://careers.acme.com/jobs?gh_jid=111"),
+      job("https://careers.acme.com/jobs?gh_jid=222"),
+    ]);
+    expect(jobs).toHaveLength(2);
+  });
+
+  it("still collapses the same posting seen with different tracking params", () => {
+    const jobs = dedupeByUrl([
+      job("https://board.example/job/1?utm_source=feed"),
+      job("https://board.example/job/1?utm_source=newsletter"),
+      job("https://board.example/job/1"),
+    ]);
+    expect(jobs).toHaveLength(1);
+  });
+});

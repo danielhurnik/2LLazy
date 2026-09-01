@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { detectCountry } from "@/lib/geo";
 import { classifyQueryIntent, scoreJob, buildCorpusStats, RELEVANCE_THRESHOLD } from "@/lib/matching";
 import { boardsForCountry } from "@/lib/scrapers/registry";
+import { persistJob } from "@/lib/scrapers/persist";
 import { dedupeRepeatedText } from "@/lib/scrapers/parse/html";
 import type { ScrapedJob, ScrapeQuery, Seniority } from "@/lib/scrapers/types";
 
@@ -143,7 +144,7 @@ export async function POST(req: NextRequest) {
   // Only boards that can answer a query inside a request. The rest — the ones
   // whose listings need JavaScript — are collected by scripts/ingest.ts and
   // reach the user through the cache pass below.
-  const boards = boardsForCountry(detected.country, { remoteOnly, liveSearchOnly: true });
+  const boards = boardsForCountry(detected.country, { liveSearchOnly: true });
 
   const encoder = new TextEncoder();
   const stream = new TransformStream<Uint8Array, Uint8Array>();
@@ -369,31 +370,6 @@ function cleanJob(job: ScrapedJob): ScrapedJob {
     company: dedupeRepeatedText(job.company).trim(),
     location: dedupeRepeatedText(job.location ?? "").trim(),
   };
-}
-
-/**
- * Upsert by `sourceUrl`. `firstSeenAt` is deliberately never updated so the
- * "new" badge keeps meaning "first appeared in the last 24 hours".
- */
-async function persistJob(job: ScrapedJob, searchCountry: string) {
-  const data = {
-    title: job.title,
-    company: job.company || "Unknown",
-    location: job.location || null,
-    country: job.country ?? searchCountry,
-    description: job.description,
-    source: job.source,
-    salary: job.salary ?? null,
-    workType: job.workType || null,
-    postedAt: job.postedAt ?? null,
-    scrapedAt: new Date(),
-  };
-
-  return prisma.jobPosting.upsert({
-    where: { sourceUrl: job.sourceUrl },
-    create: { ...data, sourceUrl: job.sourceUrl },
-    update: data,
-  });
 }
 
 interface CachedRow {
