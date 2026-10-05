@@ -39,7 +39,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # `secrets` is not readable in a job-level `if`, so this job answers the one
+  # question the ingest job needs before it spends a runner: is there a
+  # database to write to? Until DATABASE_URL is set, the schedule skips with a
+  # warning instead of failing twice a day. A manual run still fails, because
+  # someone pressing the button wants to hear that it cannot work.
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -n "$DATABASE_URL" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "configured=false" >> "$GITHUB_OUTPUT"
+          msg="DATABASE_URL secret is not set, so there is nowhere to write jobs. Add it under Settings > Secrets and variables > Actions."
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "::error title=Ingest not configured::$msg"
+            exit 1
+          fi
+          echo "::warning title=Ingest skipped::$msg"
+
   ingest:
+    needs: preflight
+    if: needs.preflight.outputs.configured == 'true'
     runs-on: ubuntu-latest
     # Generous, but bounded: a run that has not finished in an hour has hit
     # something worth looking at rather than something worth waiting for.
