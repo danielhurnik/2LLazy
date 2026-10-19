@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { loadApplyInput, runApply, type ApplyInput } from "@/lib/apply/runner";
 import type { ApplyEvent } from "@/lib/apply/types";
+import { isRecord } from "@/lib/guards";
 
 export const runtime = "nodejs";
 export const maxDuration = 600;
@@ -41,7 +42,7 @@ export async function POST(req: NextRequest) {
   if (!userId) return jsonError("Unauthorized", 401);
 
   const body: unknown = await req.json().catch(() => null);
-  const fields = typeof body === "object" && body !== null ? (body as { applicationId?: unknown; dryRun?: unknown }) : {};
+  const fields = isRecord(body) ? body : {};
   const applicationId = typeof fields.applicationId === "string" ? fields.applicationId : "";
   if (!APPLICATION_ID.test(applicationId)) return jsonError("Missing applicationId", 400);
 

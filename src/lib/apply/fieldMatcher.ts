@@ -1,4 +1,5 @@
 import type { ApplyFile, ApplyProfile } from "./types";
+import { normalizeText } from "@/lib/text";
 
 export type ProfileKey =
   | "fullName"
@@ -19,7 +20,7 @@ export type ProfileKey =
   | "consent"
   | "marketing";
 
-export interface FieldOption {
+interface FieldOption {
   value: string;
   text: string;
 }
@@ -43,7 +44,7 @@ export interface FieldDescriptor {
   options: FieldOption[];
 }
 
-export interface FieldScore {
+interface FieldScore {
   key: ProfileKey;
   score: number;
 }
@@ -69,19 +70,10 @@ export interface FillPlan {
   confidence: number;
 }
 
-export const MIN_FIELD_SCORE = 0.45;
+const MIN_FIELD_SCORE = 0.45;
 export const AUTO_SUBMIT_CONFIDENCE = 0.8;
 
 const IGNORED_INPUT_TYPES = new Set(["hidden", "submit", "button", "reset", "image", "search", "password"]);
-
-export function normalizeText(text: string): string {
-  return text
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
 
 function containsPhrase(haystack: string, phrase: string): boolean {
   if (!haystack || !phrase) return false;
@@ -289,7 +281,7 @@ const COUNTRY_NAMES: Record<string, string[]> = {
   NL: ["nizozemsko", "netherlands", "nederland", "nl"],
 };
 
-export function countryDisplayName(code: string): string {
+function countryDisplayName(code: string): string {
   const names = COUNTRY_NAMES[code.toUpperCase()];
   return names ? names[0].replace(/\b\w/g, (c) => c.toUpperCase()) : code;
 }

@@ -1,5 +1,6 @@
 import type { Frame, Locator, Page } from "playwright";
 import type { FieldDescriptor } from "./fieldMatcher";
+import { errorMessage } from "@/lib/guards";
 
 export interface ButtonDescriptor {
   frameIndex: number;
@@ -10,7 +11,7 @@ export interface ButtonDescriptor {
   visible: boolean;
 }
 
-export interface PageSignals {
+interface PageSignals {
   url: string;
   title: string;
   captcha: string | null;
@@ -248,7 +249,7 @@ export async function scanPage(page: Page): Promise<PageScan> {
     try {
       result = await frame.evaluate(enumerateFrame);
     } catch (err) {
-      errors.push(`frame ${frameIndex} ${frame.url().slice(0, 80)}: ${(err as Error).message.split("\n")[0].slice(0, 200)}`);
+      errors.push(`frame ${frameIndex} ${frame.url().slice(0, 80)}: ${errorMessage(err).split("\n")[0].slice(0, 200)}`);
       continue;
     }
     for (const field of result.fields) fields.push({ ...field, frameIndex });

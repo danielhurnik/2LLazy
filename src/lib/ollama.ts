@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { isRecord } from "@/lib/guards";
+import { MS_PER_MINUTE } from "@/lib/time";
 
 const OLLAMA_URL = (process.env.OLLAMA_URL ?? "http://127.0.0.1:11434").replace(/\/$/, "");
 const DEFAULT_MODEL = process.env.OLLAMA_MODEL ?? "gemma3:4b";
@@ -12,7 +14,7 @@ export interface OllamaMessage {
   images?: string[];
 }
 
-export interface OllamaChatOptions {
+interface OllamaChatOptions {
   model?: string;
   numCtx?: number;
   temperature?: number;
@@ -48,18 +50,20 @@ export async function ollamaAvailable(): Promise<boolean> {
   }
 }
 
-export async function ollamaModels(): Promise<string[]> {
+async function ollamaModels(): Promise<string[]> {
   try {
-    const res = await fetch(`${OLLAMA_URL}/api/tags`, { signal: AbortSignal.timeout(15_000) });
+    const res = await fetch(`${OLLAMA_URL}/api/tags`, { signal: AbortSignal.timeout(MODEL_LIST_TIMEOUT_MS) });
     if (!res.ok) return [];
-    const data = (await res.json()) as { models?: Array<{ name?: string }> };
-    return (data.models ?? []).map((m) => m.name ?? "").filter(Boolean);
+    const data: unknown = await res.json();
+    const models = isRecord(data) && Array.isArray(data.models) ? data.models : [];
+    return models.flatMap((model) => (isRecord(model) && typeof model.name === "string" && model.name ? [model.name] : []));
   } catch {
     return [];
   }
 }
 
-const MODEL_CHOICE_TTL_MS = 5 * 60_000;
+const MODEL_LIST_TIMEOUT_MS = 15_000;
+const MODEL_CHOICE_TTL_MS = 5 * MS_PER_MINUTE;
 const modelChoices = new Map<string, { model: string; at: number }>();
 
 export async function ollamaPickModel(preferred: string[]): Promise<string> {

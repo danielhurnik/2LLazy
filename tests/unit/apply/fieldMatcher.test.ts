@@ -2,13 +2,13 @@ import { describe, it, expect } from "vitest";
 import {
   AUTO_SUBMIT_CONFIDENCE,
   findCountryOption,
-  normalizeText,
   planFill,
   resolveValue,
   scoreField,
   type FieldDescriptor,
 } from "@/lib/apply/fieldMatcher";
 import type { ApplyProfile } from "@/lib/apply/types";
+import { normalizeText } from "@/lib/text";
 
 const PROFILE: ApplyProfile = {
   name: "Jana Nováková",

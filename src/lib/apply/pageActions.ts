@@ -2,11 +2,11 @@ import type { BrowserContext, Page } from "playwright";
 import { findButton, scanPage, type ButtonDescriptor, type PageScan } from "./fieldScanner";
 import { locatorFor } from "./fieldScanner";
 
-export const APPLY_BUTTON = /(reagovat|odpov[eě]d[eě]t|odpov[eě]d na inzer[aá]t|m[aá]m z[aá]jem|chci se p[rř]ihl[aá]sit|p[rř]ihl[aá]sit se na pozici|zaslat (životopis|cv)|poslat (životopis|cv)|^apply( now| for this job)?$|apply|reaguj|respond|\breply\b|i'm interested|odeslat z[aá]jem|send (my )?(cv|resume)|uch[aá]zet se|po[zž][aá]dat( o tuto pr[aá]ci)?|apply for this job)/i;
+const APPLY_BUTTON = /(reagovat|odpov[eě]d[eě]t|odpov[eě]d na inzer[aá]t|m[aá]m z[aá]jem|chci se p[rř]ihl[aá]sit|p[rř]ihl[aá]sit se na pozici|zaslat (životopis|cv)|poslat (životopis|cv)|^apply( now| for this job)?$|apply|reaguj|respond|\breply\b|i'm interested|odeslat z[aá]jem|send (my )?(cv|resume)|uch[aá]zet se|po[zž][aá]dat( o tuto pr[aá]ci)?|apply for this job)/i;
 export const SUBMIT_BUTTON = /^(odeslat( z[aá]jem| žádost| reakci| formul[aá][rř])?|odeslat a dokončit|submit( application)?|send( application)?|apply( now)?|reagovat|dokon[cč]it|potvrdit|confirm)\b/i;
 export const NEXT_BUTTON = /^(pokra[cč]ovat|dal[sš][ií]( krok)?|next( step)?|continue|forward)\b/i;
-export const REJECT_CONSENT = /^(odm[ií]tnout( v[sš]e| vše)?|odm[ií]t[aá]m|pouze nezbytn[eé]|p[rř]ijmout nezbytn[eé]|jen nezbytn[eé]|nezbytn[eé]( cookies)?|reject( all)?|decline|necessary only|only necessary|essential only|accept necessary|accept essential)/i;
-export const CONFIRMATION_TEXT = /(d[eě]kujeme|děkujeme za (vaši|vaší|tvou)? ?(reakci|odpov[eě][dď]|zájem|žádost)|reakce byla odesl[aá]na|úspěšně odesl[aá]n|bylo odesl[aá]no|byla odesl[aá]na|thank you for (your )?(applying|application|interest)|application (was )?(sent|submitted|received)|successfully (sent|submitted|applied)|we have received your application)/i;
+const REJECT_CONSENT = /^(odm[ií]tnout( v[sš]e| vše)?|odm[ií]t[aá]m|pouze nezbytn[eé]|p[rř]ijmout nezbytn[eé]|jen nezbytn[eé]|nezbytn[eé]( cookies)?|reject( all)?|decline|necessary only|only necessary|essential only|accept necessary|accept essential)/i;
+const CONFIRMATION_TEXT = /(d[eě]kujeme|děkujeme za (vaši|vaší|tvou)? ?(reakci|odpov[eě][dď]|zájem|žádost)|reakce byla odesl[aá]na|úspěšně odesl[aá]n|bylo odesl[aá]no|byla odesl[aá]na|thank you for (your )?(applying|application|interest)|application (was )?(sent|submitted|received)|successfully (sent|submitted|applied)|we have received your application)/i;
 export const VALIDATION_TEXT = /(povinn[eéý]|toto pole|vypl[nň]te|neplatn[yýáé]|je vy[zž]adov[aá]n|required|invalid|must be|please (fill|enter|provide))/i;
 
 const CONSENT_CONTAINERS = [
@@ -30,7 +30,7 @@ export async function settle(page: Page, idleMs = 8_000): Promise<void> {
   await page.waitForTimeout(600);
 }
 
-export async function dismissConsent(page: Page): Promise<string | null> {
+async function dismissConsent(page: Page): Promise<string | null> {
   for (const frame of page.frames()) {
     const button = frame.getByRole("button", { name: REJECT_CONSENT }).first();
     if (await button.isVisible().catch(() => false)) {
@@ -58,7 +58,7 @@ export async function dismissConsent(page: Page): Promise<string | null> {
   return removed > 0 ? `removed ${removed} consent overlay element(s)` : null;
 }
 
-export interface ClickOutcome {
+interface ClickOutcome {
   page: Page;
   navigated: boolean;
 }

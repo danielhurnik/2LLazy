@@ -21,23 +21,24 @@ import {
   VALIDATION_TEXT,
 } from "./pageActions";
 import { ApplyAbort, type ApplyContext, type ApplyProfile, type ApplyResult } from "./types";
+import { errorMessage } from "@/lib/guards";
 
 const MAX_STEPS = 6;
 const UPLOAD_BUTTON = /(uploadnout|nahr[aá]t|p[rř]ilo[zž]it|p[rř][ií]lohu|p[rř][ií]loha|upload|attach|browse|vybrat soubor|choose file|životopis|zivotopis|resume|\bcv\b)/i;
 const PHONE_PREFIX = /^\+\d{1,3}$/;
 
-export interface GenericFlowOptions {
+interface GenericFlowOptions {
   entry?: RegExp;
   submit?: RegExp;
   upload?: RegExp;
 }
 
-export async function snap(ctx: ApplyContext, label: string): Promise<void> {
+async function snap(ctx: ApplyContext, label: string): Promise<void> {
   const file = await ctx.evidence.screenshot(ctx.page, label);
   if (file) ctx.emit({ type: "screenshot", url: ctx.evidence.urlFor(file) });
 }
 
-export function guardPage(scan: PageScan): void {
+function guardPage(scan: PageScan): void {
   if (scan.signals.captcha) {
     throw new ApplyAbort("NEEDS_MANUAL", `A CAPTCHA is blocking the form (${scan.signals.captcha}); solve it in the apply window and submit there`);
   }
@@ -56,11 +57,11 @@ function nationalPhone(phone: string | null, scan: PageScan): string | null {
   return match ? match[2] : phone;
 }
 
-export function profileForScan(profile: ApplyProfile, scan: PageScan): ApplyProfile {
+function profileForScan(profile: ApplyProfile, scan: PageScan): ApplyProfile {
   return { ...profile, phone: nationalPhone(profile.phone, scan) };
 }
 
-export async function buildPlan(ctx: ApplyContext, scan: PageScan): Promise<FillPlan> {
+async function buildPlan(ctx: ApplyContext, scan: PageScan): Promise<FillPlan> {
   const profile = profileForScan(ctx.profile, scan);
   const plan = planFill(scan.fields, profile);
   if (plan.unmatched.length > 0) {
@@ -171,7 +172,7 @@ async function isStillAttached(scan: PageScan, field: FieldDescriptor): Promise<
   return (await locatorFor(scan, field).count().catch(() => 0)) > 0;
 }
 
-export async function fillFields(ctx: ApplyContext, scan: PageScan, plan: FillPlan): Promise<Record<string, string>> {
+async function fillFields(ctx: ApplyContext, scan: PageScan, plan: FillPlan): Promise<Record<string, string>> {
   const payload: Record<string, string> = {};
   const failed: PlannedFill[] = [];
   let current = scan;
@@ -193,7 +194,7 @@ export async function fillFields(ctx: ApplyContext, scan: PageScan, plan: FillPl
       ctx.evidence.log(`filled ${label} <- ${fill.key} (${fill.score.toFixed(2)})`);
     } catch (err) {
       failed.push(fill);
-      ctx.evidence.log(`could not fill ${label} [frame ${fill.field.frameIndex} ${fill.field.selector}]: ${(err as Error).message.split("\n")[0]}`);
+      ctx.evidence.log(`could not fill ${label} [frame ${fill.field.frameIndex} ${fill.field.selector}]: ${errorMessage(err).split("\n")[0]}`);
     }
   }
   if (failed.length > 0) {
@@ -204,7 +205,7 @@ export async function fillFields(ctx: ApplyContext, scan: PageScan, plan: FillPl
   return payload;
 }
 
-export async function uploadViaChooser(ctx: ApplyContext, scan: PageScan, pattern: RegExp): Promise<string | null> {
+async function uploadViaChooser(ctx: ApplyContext, scan: PageScan, pattern: RegExp): Promise<string | null> {
   if (!ctx.profile.cv) return null;
   const button = findButton(scan, pattern, { kinds: ["button", "link"] });
   if (!button) return null;
@@ -219,7 +220,7 @@ export async function uploadViaChooser(ctx: ApplyContext, scan: PageScan, patter
     ctx.evidence.log(`uploaded ${cv.name} via "${button.text}"`);
     return button.text;
   } catch (err) {
-    ctx.evidence.log(`upload via "${button.text}" failed: ${(err as Error).message.split("\n")[0]}`);
+    ctx.evidence.log(`upload via "${button.text}" failed: ${errorMessage(err).split("\n")[0]}`);
     return null;
   }
 }
@@ -230,7 +231,7 @@ function selectorKey(field: FieldDescriptor): string {
 
 const NON_FORM_INPUT_TYPES = new Set(["email", "checkbox", "radio", "search", "hidden"]);
 
-export function looksLikeApplicationForm(fields: FieldDescriptor[]): boolean {
+function looksLikeApplicationForm(fields: FieldDescriptor[]): boolean {
   return fields.some((f) => f.tag === "textarea" || f.tag === "select" || f.type === "file" || (f.tag === "input" && !NON_FORM_INPUT_TYPES.has(f.type)));
 }
 

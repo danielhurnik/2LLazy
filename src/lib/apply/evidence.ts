@@ -1,6 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import type { Page } from "playwright";
+import { errorMessage } from "@/lib/guards";
 
 export const EVIDENCE_ROOT = path.resolve(process.cwd(), "uploads", "applications");
 const SAFE_ID = /^[a-z0-9]{10,40}$/i;
@@ -36,7 +37,7 @@ export class Evidence {
     try {
       await page.screenshot({ path: path.join(this.dir, file), fullPage: false });
     } catch (err) {
-      this.log(`screenshot failed: ${(err as Error).message}`);
+      this.log(`screenshot failed: ${errorMessage(err)}`);
       return null;
     }
     return file;

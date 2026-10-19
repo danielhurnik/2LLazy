@@ -42,7 +42,7 @@ async function launchContext(): Promise<BrowserContext> {
   return context;
 }
 
-export function getApplyContext(): Promise<BrowserContext> {
+function getApplyContext(): Promise<BrowserContext> {
   if (!hotReloadSafeGlobals.applyBrowserContext) {
     hotReloadSafeGlobals.applyBrowserContext = launchContext().catch((err) => {
       hotReloadSafeGlobals.applyBrowserContext = null;

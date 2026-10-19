@@ -15,7 +15,7 @@ export interface ApplyInput {
   profile: ApplyProfile;
 }
 
-export interface ApplyLoadError {
+interface ApplyLoadError {
   code: 404 | 409 | 422;
   message: string;
 }
@@ -31,11 +31,11 @@ const MIME_BY_EXTENSION: Record<string, string> = {
 
 const running = new Set<string>();
 
-export interface RunApplyOptions {
+interface RunApplyOptions {
   autoSubmit?: boolean;
 }
 
-export function isApplyRunning(applicationId: string): boolean {
+function isApplyRunning(applicationId: string): boolean {
   return running.has(applicationId);
 }
 

@@ -2,6 +2,8 @@ import { z } from "zod";
 import { ollamaAvailable, ollamaChat, ollamaChatJson, ollamaPickModel } from "@/lib/ollama";
 import { describeField, resolveValue, type FieldDescriptor, type FieldValue, type ProfileKey } from "./fieldMatcher";
 import type { ApplyJob, ApplyProfile } from "./types";
+import { errorMessage } from "@/lib/guards";
+import { foldDiacritics } from "@/lib/text";
 
 const MAPPABLE_KEYS = [
   "fullName",
@@ -34,19 +36,20 @@ const MappingSchema = z.object({
   ),
 });
 
-export interface OllamaMapping {
+interface OllamaMapping {
   field: FieldDescriptor;
   key: ProfileKey;
   score: number;
   value: FieldValue;
 }
 
-export interface OllamaMapResult {
+interface OllamaMapResult {
   mapped: OllamaMapping[];
   stillUnmatched: FieldDescriptor[];
   used: boolean;
 }
 
+const FIELD_MAPPING_TIMEOUT_MS = 60_000;
 const MIN_LLM_CONFIDENCE = 0.6;
 const LLM_SCORE_CAP = 0.7;
 
@@ -74,7 +77,7 @@ export async function mapFieldsWithOllama(fields: FieldDescriptor[], profile: Ap
   let parsed: z.infer<typeof MappingSchema>;
   try {
     const model = await ollamaPickModel(JSON_MODEL_PREFERENCE);
-    parsed = await ollamaChatJson([{ role: "user", content: prompt }], MappingSchema, { model, signal: AbortSignal.timeout(60_000) });
+    parsed = await ollamaChatJson([{ role: "user", content: prompt }], MappingSchema, { model, signal: AbortSignal.timeout(FIELD_MAPPING_TIMEOUT_MS) });
   } catch {
     return { mapped: [], stillUnmatched: fields, used: true };
   }
@@ -110,7 +113,7 @@ function excerpt(text: string | null | undefined, max: number): string {
   return cleaned.length > max ? `${cleaned.slice(0, max)}…` : cleaned;
 }
 
-export interface DraftResult {
+interface DraftResult {
   text: string;
   model: string;
 }
@@ -211,18 +214,14 @@ const YEARS_CLAIM = /(?<![\p{L}\d])(\d{1,2}|jeden|jednoho|dva|dvou|tři|tří|č
 
 function stemsOf(text: string): Set<string> {
   const out = new Set<string>();
-  for (const word of wordList(normalizeForStem(text))) {
+  for (const word of wordList(foldDiacritics(text))) {
     if (word.length >= STEM_LENGTH) out.add(word.slice(0, STEM_LENGTH));
   }
   return out;
 }
 
-function normalizeForStem(text: string): string {
-  return text.normalize("NFD").replace(/[̀-ͯ]/g, "");
-}
-
 function numberKey(raw: string): string {
-  const word = normalizeForStem(raw.toLowerCase());
+  const word = foldDiacritics(raw.toLowerCase());
   if (/^\d+$/.test(word)) return word;
   const table: Record<string, string> = { jed: "1", dva: "2", dvo: "2", tri: "3", cty: "4", pet: "5", ses: "6", sed: "7", osm: "8", dev: "9", des: "10", one: "1", two: "2", thr: "3", fou: "4", fiv: "5", six: "6", sev: "7", eig: "8", nin: "9", ten: "10" };
   return table[word.slice(0, 3)] ?? word;
@@ -243,7 +242,7 @@ export function findUnsupportedClaims(draft: string, cvText: string, jobDescript
   const cvNumbers = new Set([...cvText.matchAll(YEARS_CLAIM)].map((m) => numberKey(m[1])));
   const unsupported = new Map<string, string>();
   const flag = (term: string) => {
-    const key = normalizeForStem(term.toLowerCase());
+    const key = foldDiacritics(term.toLowerCase());
     if (!unsupported.has(key)) unsupported.set(key, term);
   };
   for (const sentence of claimClausesOf(draft)) {
@@ -253,7 +252,7 @@ export function findUnsupportedClaims(draft: string, cvText: string, jobDescript
       if (/^[A-Z][a-záčďéěíňóřšťúůýž]+$/.test(token) && sentence.startsWith(token)) continue;
       if (job.includes(lower) && !cv.includes(lower)) flag(token);
     }
-    for (const word of wordList(normalizeForStem(sentence))) {
+    for (const word of wordList(foldDiacritics(sentence))) {
       if (word.length < STEM_LENGTH) continue;
       const stem = word.slice(0, STEM_LENGTH);
       if (GENERIC_STEMS.has(stem) || allowStems.has(stem) || cvStems.has(stem) || !jobStems.has(stem)) continue;
@@ -359,7 +358,7 @@ export async function draftFreeText(
       const polished = czech ? await proofreadCzech(text, model) : text;
       return { text: enforceShape(polished, czech, profile.name), model };
     } catch (err) {
-      onReject(`${model} t=${temperature}: ${(err as Error).message.split("\n")[0]}`);
+      onReject(`${model} t=${temperature}: ${errorMessage(err).split("\n")[0]}`);
       return null;
     }
   }
