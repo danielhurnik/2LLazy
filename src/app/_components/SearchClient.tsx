@@ -35,7 +35,7 @@ import { ui, fonts } from "@/theme/tokens";
 const ANY_LEVEL = "Any";
 const SKILL_LEVELS = ["Junior", "Mid", "Senior", "Lead", ANY_LEVEL];
 const ALL_OPTION = "ALL";
-const BOARDS = "startupjobs.cz · jobs.cz · nofluffjobs.com · cocuma.cz · jobstack.it · skilleto.cz · jooble.org";
+const BOARDS = "startupjobs.cz · jobs.cz · nofluffjobs.com · cocuma.cz · jobstack.it · skilleto.cz · jooble.org · company career pages";
 const EXAMPLE_QUERIES = ["React developer", "Data engineer", "Java backend", "QA automation"];
 const SEARCH_SESSION_KEY = "job_search_session";
 const STORED_DESCRIPTION_LENGTH = 300;

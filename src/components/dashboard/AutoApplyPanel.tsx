@@ -177,7 +177,7 @@ export function AutoApplyConfirmDialog({ job, onCancel, onConfirm }: AutoApplyCo
           <Box component="span" sx={{ color: ui.textMuted }}> · {job.company}</Box>
         </Typography>
         <Typography variant="body2" sx={{ mt: 1.5, color: ui.textMuted }}>
-          Fills in the application form with your profile and main CV, then submits it. A browser
+          Fills in the application form with your profile and CV, then submits it. A browser
           window opens on this computer while it runs. Forms it can&apos;t fill with confidence stop
           before submitting, so you can finish them yourself.
         </Typography>

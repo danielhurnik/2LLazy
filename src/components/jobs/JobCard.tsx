@@ -98,6 +98,13 @@ interface MatchScoreProps {
   matchReasons?: string[];
 }
 
+const CV_REASON = /\bCV\b/;
+
+const cvReasonsFirst = (reasons: string[]) => [
+  ...reasons.filter((reason) => CV_REASON.test(reason)),
+  ...reasons.filter((reason) => !CV_REASON.test(reason)),
+];
+
 function MatchScore({ similarity, matchReasons }: MatchScoreProps) {
   if (similarity == null) return null;
 
@@ -107,7 +114,7 @@ function MatchScore({ similarity, matchReasons }: MatchScoreProps) {
 
   const tooltipContent = matchReasons?.length ? (
     <Box component="ul" sx={{ m: 0, pl: 2 }}>
-      {matchReasons.map((reason) => (
+      {cvReasonsFirst(matchReasons).map((reason) => (
         <li key={reason}>{reason}</li>
       ))}
     </Box>
