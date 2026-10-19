@@ -5,22 +5,39 @@ import {
   CardContent,
   Typography,
   Box,
-  Stack,
   Switch,
   FormControlLabel,
   Alert,
   Button,
 } from "@mui/material";
-import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import { useState, useTransition } from "react";
 import { toggleGoogleCalendarSync, checkCalendarAccess } from "@/lib/actions/settingsActions";
 
 const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
+const GOOGLE_OAUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 
 interface Props {
   enabled: boolean;
   hasCalendarAccess: boolean;
+}
+
+function redirectToCalendarConsent() {
+  const params = new URLSearchParams({
+    client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "",
+    redirect_uri: `${window.location.origin}/api/auth/callback/google`,
+    response_type: "code",
+    scope: `openid email profile ${CALENDAR_SCOPE}`,
+    access_type: "offline",
+    prompt: "consent",
+    include_granted_scopes: "true",
+  });
+  window.location.href = `${GOOGLE_OAUTH_URL}?${params}`;
+}
+
+function syncStatusLabel(hasAccess: boolean, syncing: boolean) {
+  if (!hasAccess) return "Grant calendar access first";
+  return syncing ? "Sync enabled" : "Sync disabled";
 }
 
 export function GoogleCalendarCard({ enabled, hasCalendarAccess: initialAccess }: Props) {
@@ -30,26 +47,10 @@ export function GoogleCalendarCard({ enabled, hasCalendarAccess: initialAccess }
   const [isPending, startTransition] = useTransition();
 
   const handleToggle = (checked: boolean) => {
-    if (checked && !hasAccess) {
-      // Need to request calendar scope — redirect to Google incremental auth
-      const params = new URLSearchParams({
-        client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "",
-        redirect_uri: `${window.location.origin}/api/auth/callback/google`,
-        response_type: "code",
-        scope: `openid email profile ${CALENDAR_SCOPE}`,
-        access_type: "offline",
-        prompt: "consent",
-        include_granted_scopes: "true",
-      });
-      window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
-      return;
-    }
-
     setSyncing(checked);
     setError(null);
     startTransition(async () => {
       try {
-        // Recheck access in case it was just granted
         if (checked) {
           const access = await checkCalendarAccess();
           setHasAccess(access);
@@ -67,32 +68,12 @@ export function GoogleCalendarCard({ enabled, hasCalendarAccess: initialAccess }
     });
   };
 
-  const handleGrantAccess = () => {
-    const params = new URLSearchParams({
-      client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "",
-      redirect_uri: `${window.location.origin}/api/auth/callback/google`,
-      response_type: "code",
-      scope: `openid email profile ${CALENDAR_SCOPE}`,
-      access_type: "offline",
-      prompt: "consent",
-      include_granted_scopes: "true",
-    });
-    window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
-  };
-
   return (
     <Card sx={{ mb: 2 }}>
       <CardContent>
-        <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 1.5 }}>
-          <CalendarMonthIcon sx={{ color: "primary.main" }} />
-          <Typography variant="h6" sx={{ fontSize: 15, fontWeight: 600 }}>
-            Google Calendar Sync
-          </Typography>
-        </Stack>
-
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Automatically mirror your scheduled interviews and calendar events to
-          your Google Calendar.
+        <Typography variant="h6">Google Calendar</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25, mb: 2 }}>
+          Copy the interviews and events you add here into your Google Calendar.
         </Typography>
 
         {error && (
@@ -110,7 +91,7 @@ export function GoogleCalendarCard({ enabled, hasCalendarAccess: initialAccess }
                 size="small"
                 color="inherit"
                 endIcon={<OpenInNewIcon fontSize="small" />}
-                onClick={handleGrantAccess}
+                onClick={redirectToCalendarConsent}
               >
                 Grant access
               </Button>
@@ -130,15 +111,7 @@ export function GoogleCalendarCard({ enabled, hasCalendarAccess: initialAccess }
                 color="primary"
               />
             }
-            label={
-              <Typography variant="body2">
-                {!hasAccess
-                  ? "Grant calendar access first"
-                  : syncing
-                    ? "Sync enabled"
-                    : "Sync disabled"}
-              </Typography>
-            }
+            label={<Typography variant="body2">{syncStatusLabel(hasAccess, syncing)}</Typography>}
           />
         </Box>
 

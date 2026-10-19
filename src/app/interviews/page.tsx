@@ -3,7 +3,6 @@ import { InterviewsClient } from "./_components/InterviewsClient";
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 
-// Revalidate every 60 s; server actions call revalidatePath so mutations are instant
 export const revalidate = 60;
 
 export default async function InterviewsPage({

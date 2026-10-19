@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import type { ChangeEvent, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   Typography,
@@ -11,31 +12,32 @@ import {
   Stack,
   Alert,
   CircularProgress,
-  FormControl,
-  InputLabel,
-  Select,
   MenuItem,
 } from "@mui/material";
 import { saveUserProfile } from "@/lib/actions/settingsActions";
+import { COUNTRY_NAMES, isSupportedCountry } from "@/lib/jobs/sources/types";
 import type { UserProfile } from "@/types";
 
-const LANGUAGES = [
-  "English",
-  "Dutch",
-  "French",
-  "German",
-  "Spanish",
-  "Portuguese",
-  "Italian",
-  "Polish",
-  "Czech",
-  "Swedish",
-  "Danish",
-  "Norwegian",
-] as const;
+const MESSAGE_VISIBLE_MS = 5000;
+const SUPPORTED_COUNTRIES = Object.keys(COUNTRY_NAMES).filter(isSupportedCountry);
+
+type EditableProfileField = Exclude<keyof UserProfile, "googleCalendarSync" | "country">
+
+interface StatusMessage {
+  type: "success" | "error";
+  text: string;
+}
 
 interface Props {
   profile: UserProfile;
+}
+
+function FieldRow({ children }: { children: ReactNode }) {
+  return (
+    <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+      {children}
+    </Stack>
+  );
 }
 
 export function UserProfileCard({ profile: initialProfile }: Props) {
@@ -43,12 +45,19 @@ export function UserProfileCard({ profile: initialProfile }: Props) {
   const [profile, setProfile] = useState<UserProfile>(initialProfile);
   const [saving, setSaving] = useState(false);
   const [, startTransition] = useTransition();
-  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [message, setMessage] = useState<StatusMessage | null>(null);
 
-  const showMessage = (type: "success" | "error", text: string) => {
+  const showMessage = (type: StatusMessage["type"], text: string) => {
     setMessage({ type, text });
-    setTimeout(() => setMessage(null), 5000);
+    setTimeout(() => setMessage(null), MESSAGE_VISIBLE_MS);
   };
+
+  const fieldProps = (field: EditableProfileField) => ({
+    size: "small" as const,
+    value: profile[field],
+    onChange: (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+      setProfile({ ...profile, [field]: e.target.value }),
+  });
 
   const handleSave = () => {
     setSaving(true);
@@ -66,13 +75,11 @@ export function UserProfileCard({ profile: initialProfile }: Props) {
   };
 
   return (
-    <Card sx={{ mb: 3 }}>
+    <Card sx={{ mb: 2 }}>
       <CardContent>
-        <Typography variant="h6" gutterBottom>
-          Your Profile
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Used to fill application forms automatically.
+        <Typography variant="h6">Profile</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25, mb: 2.5 }}>
+          Your contact details, kept in one place for applications.
         </Typography>
 
         {message && (
@@ -82,68 +89,45 @@ export function UserProfileCard({ profile: initialProfile }: Props) {
         )}
 
         <Stack spacing={2}>
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+          <FieldRow>
+            <TextField label="Full Name" {...fieldProps("name")} fullWidth />
+            <TextField label="Email" type="email" {...fieldProps("email")} fullWidth />
+          </FieldRow>
+          <FieldRow>
+            <TextField label="Phone" {...fieldProps("phone")} fullWidth />
+            <TextField label="LinkedIn URL" {...fieldProps("linkedInUrl")} fullWidth />
+          </FieldRow>
+          <FieldRow>
             <TextField
-              label="Full Name"
+              select
+              label="Country"
               size="small"
-              value={profile.name}
-              onChange={(e) => setProfile({ ...profile, name: e.target.value })}
-              fullWidth
-            />
-            <TextField
-              label="Email"
-              size="small"
-              type="email"
-              value={profile.email}
-              onChange={(e) => setProfile({ ...profile, email: e.target.value })}
-              fullWidth
-            />
-          </Stack>
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-            <TextField
-              label="Phone"
-              size="small"
-              value={profile.phone}
-              onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
-              fullWidth
-            />
-            <TextField
-              label="LinkedIn URL"
-              size="small"
-              value={profile.linkedInUrl}
-              onChange={(e) => setProfile({ ...profile, linkedInUrl: e.target.value })}
-              fullWidth
-            />
-          </Stack>
-          <TextField
-            label="GitHub URL"
-            size="small"
-            value={profile.githubUrl}
-            onChange={(e) => setProfile({ ...profile, githubUrl: e.target.value })}
-            sx={{ maxWidth: 400 }}
-          />
-          <FormControl size="small" sx={{ maxWidth: 260 }}>
-            <InputLabel id="cl-lang-label">Cover Letter Language</InputLabel>
-            <Select
-              labelId="cl-lang-label"
-              label="Cover Letter Language"
-              value={profile.coverLetterLanguage}
-              onChange={(e) => setProfile({ ...profile, coverLetterLanguage: e.target.value })}
+              value={profile.country}
+              onChange={(e) => {
+                const country = e.target.value;
+                if (isSupportedCountry(country)) setProfile({ ...profile, country });
+              }}
+              sx={{ minWidth: { sm: 200 } }}
             >
-              {LANGUAGES.map((lang) => (
-                <MenuItem key={lang} value={lang}>
-                  {lang}
-                </MenuItem>
+              {SUPPORTED_COUNTRIES.map((code) => (
+                <MenuItem key={code} value={code}>{COUNTRY_NAMES[code]}</MenuItem>
               ))}
-            </Select>
-          </FormControl>
+            </TextField>
+            <TextField
+              label="City"
+              {...fieldProps("city")}
+              helperText="Job search starts with this country and city."
+              fullWidth
+            />
+          </FieldRow>
+          <TextField label="GitHub URL" {...fieldProps("githubUrl")} sx={{ maxWidth: 400 }} />
           <Button
             variant="contained"
             onClick={handleSave}
             disabled={saving}
             sx={{ alignSelf: "flex-start" }}
           >
-            {saving ? <CircularProgress size={18} /> : "Save Profile"}
+            {saving ? <CircularProgress size={18} color="inherit" /> : "Save profile"}
           </Button>
         </Stack>
       </CardContent>

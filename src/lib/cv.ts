@@ -1,19 +1,27 @@
 import { prisma } from "@/lib/prisma";
 
+const NON_PRINTABLE_CHARACTERS = /[^\x20-\x7E\n]/g;
+
+function fileExtension(fileName: string): string | undefined {
+  return fileName.split(".").pop()?.toLowerCase();
+}
+
+async function extractPdfText(pdf: Buffer): Promise<string> {
+  const pdfParse = (await import("pdf-parse")).default;
+  const { text } = await pdfParse(pdf);
+  return text;
+}
+
 export async function readCvText(userId: string): Promise<string> {
-  const doc = await prisma.cvDocument.findFirst({
+  const latestCv = await prisma.cvDocument.findFirst({
     where: { userId },
     orderBy: { uploadedAt: "desc" },
   });
-  if (!doc) return "";
-  const ext = doc.originalName.split(".").pop()?.toLowerCase();
-  const buf = Buffer.from(doc.data);
-  if (ext === "txt") return buf.toString("utf-8");
-  if (ext === "pdf") {
-    const pdfParse = (await import("pdf-parse")).default;
-    const data = await pdfParse(buf);
-    return data.text;
-  }
-  return buf.toString("utf-8").replace(/[^\x20-\x7E\n]/g, " ");
-}
+  if (!latestCv) return "";
 
+  const content = Buffer.from(latestCv.data);
+  const extension = fileExtension(latestCv.originalName);
+  if (extension === "txt") return content.toString("utf-8");
+  if (extension === "pdf") return extractPdfText(content);
+  return content.toString("utf-8").replace(NON_PRINTABLE_CHARACTERS, " ");
+}

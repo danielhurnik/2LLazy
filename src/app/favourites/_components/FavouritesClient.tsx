@@ -2,9 +2,10 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Box, Typography } from "@mui/material";
-import { JobFilterBar, type JobFilters } from "@/components/jobs/JobFilterBar";
+import { Box } from "@mui/material";
+import { ALL_OPTION, JobFilterBar, type JobFilters } from "@/components/jobs/JobFilterBar";
 import { ErrorAlertList } from "@/components/ui/ErrorAlertList";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { toggleFavourite, trackJob } from "@/lib/actions/jobActions";
 import { FavouritesJobList } from "./FavouritesJobList";
 import type { JobItem } from "@/types";
@@ -15,6 +16,22 @@ interface Props {
   sources: string[];
 }
 
+interface JobActionOptions {
+  setBusyJobId: (jobId: string | null) => void;
+  run: () => Promise<unknown>;
+  describeFailure: (error: unknown) => string;
+}
+
+const FAVOURITES_PATH = "/favourites";
+
+function favouritesHref({ source, position, hasSalary }: JobFilters): string {
+  const params = new URLSearchParams();
+  if (source !== ALL_OPTION) params.set("source", source);
+  if (position) params.set("position", position);
+  if (hasSalary) params.set("hasSalary", "true");
+  return params.size > 0 ? `${FAVOURITES_PATH}?${params.toString()}` : FAVOURITES_PATH;
+}
+
 export function FavouritesClient({ jobs, filters, sources }: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -23,66 +40,59 @@ export function FavouritesClient({ jobs, filters, sources }: Props) {
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
 
-  const handleFilterChange = (newFilters: JobFilters) => {
-    const params = new URLSearchParams();
-    if (newFilters.source !== "ALL") params.set("source", newFilters.source);
-    if (newFilters.position) params.set("position", newFilters.position);
-    if (newFilters.hasSalary) params.set("hasSalary", "true");
-    router.replace(`/favourites${params.size > 0 ? `?${params.toString()}` : ""}`);
-  };
+  const addError = (message: string) => setErrors((previous) => [...previous, message]);
+  const dismissError = (index: number) =>
+    setErrors((previous) => previous.filter((_, errorIndex) => errorIndex !== index));
 
-  const handleToggle = (job: JobItem) => {
-    setTogglingId(job.id);
+  const runJobAction = (job: JobItem, { setBusyJobId, run, describeFailure }: JobActionOptions) => {
+    setBusyJobId(job.id);
     startTransition(async () => {
       try {
-        await toggleFavourite(job.id);
+        await run();
         router.refresh();
       } catch (err) {
-        setErrors((prev) => [...prev, `Failed: ${String(err)}`]);
+        addError(describeFailure(err));
       } finally {
-        setTogglingId(null);
+        setBusyJobId(null);
       }
     });
   };
 
-  const handleTrack = (job: JobItem) => {
-    setTrackingId(job.id);
-    startTransition(async () => {
-      try {
-        await trackJob(job.id);
-        router.refresh();
-      } catch (err) {
-        setErrors((prev) => [
-          ...prev,
-          `Track failed for ${job.title}: ${String(err)}`,
-        ]);
-      } finally {
-        setTrackingId(null);
-      }
+  const handleToggle = (job: JobItem) =>
+    runJobAction(job, {
+      setBusyJobId: setTogglingId,
+      run: () => toggleFavourite(job.id),
+      describeFailure: (err) => `Failed: ${String(err)}`,
     });
-  };
+
+  const handleTrack = (job: JobItem) =>
+    runJobAction(job, {
+      setBusyJobId: setTrackingId,
+      run: () => trackJob(job.id),
+      describeFailure: (err) => `Track failed for ${job.title}: ${String(err)}`,
+    });
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>
-        Favourites
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Save jobs here. Click Track to add them to your dashboard.
-      </Typography>
-
-      <ErrorAlertList
-        errors={errors}
-        onDismiss={(i) => setErrors((prev) => prev.filter((_, j) => j !== i))}
+      <PageHeader
+        title="Saved jobs"
+        meta={`${jobs.length} saved · Track one to move it to your dashboard`}
       />
 
-      <JobFilterBar sources={sources} filters={filters} onChange={handleFilterChange} />
+      <ErrorAlertList errors={errors} onDismiss={dismissError} />
+
+      <JobFilterBar
+        variant="basic"
+        sources={sources}
+        filters={filters}
+        onChange={(nextFilters) => router.replace(favouritesHref(nextFilters))}
+      />
 
       <FavouritesJobList
         jobs={jobs}
-        applyingId={trackingId}
+        trackingId={trackingId}
         togglingId={togglingId}
-        onApply={handleTrack}
+        onTrack={handleTrack}
         onToggleFavourite={handleToggle}
       />
     </Box>

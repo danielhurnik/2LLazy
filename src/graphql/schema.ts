@@ -3,6 +3,11 @@ export const typeDefs = `#graphql
     STARTUPJOBS
     JOBSTACK
     COCUMA
+    SKILLETO
+    NOFLUFFJOBS
+    JOBSCZ
+    JOOBLE
+    GLASSDOOR
   }
 
   enum ApplicationStatus {
@@ -10,7 +15,10 @@ export const typeDefs = `#graphql
     APPLIED
     REJECTED
     INTERVIEW
+    OFFER
     FAILED
+    APPLYING
+    NEEDS_MANUAL
   }
 
   type JobPosting {
@@ -25,6 +33,7 @@ export const typeDefs = `#graphql
     postedAt: String
     scrapedAt: String!
     similarity: Float
+    matchReasons: [String!]
     favourited: Boolean!
   }
 
@@ -33,17 +42,7 @@ export const typeDefs = `#graphql
     job: JobPosting!
     status: ApplicationStatus!
     appliedAt: String
-    errorMessage: String
-    coverLetter: CoverLetter
     interview: Interview
-    createdAt: String!
-  }
-
-  type CoverLetter {
-    id: ID!
-    jobId: ID!
-    content: String!
-    generatedByAI: Boolean!
     createdAt: String!
   }
 
@@ -66,20 +65,13 @@ export const typeDefs = `#graphql
     githubUrl: String
   }
 
-  type AIHealth {
-    ok: Boolean!
-    missing: [String!]!
-  }
-
   type Query {
     searchJobs(query: String!, skillLevel: String, limit: Int): [JobPosting!]!
     getFavourites: [JobPosting!]!
     getApplications(status: ApplicationStatus): [Application!]!
     getApplication(id: ID!): Application
     getInterviews(month: Int!, year: Int!): [Interview!]!
-    getCoverLetter(id: ID!): CoverLetter
     getUserProfile: UserProfile
-    aiHealth: AIHealth!
   }
 
   type Mutation {
@@ -98,8 +90,6 @@ export const typeDefs = `#graphql
       durationMinutes: Int
       notes: String
     ): Interview!
-    generateCoverLetter(jobId: ID!, useSavedCV: Boolean): CoverLetter!
-    deleteCoverLetter(id: ID!): Boolean!
     saveUserProfile(
       name: String!
       email: String!

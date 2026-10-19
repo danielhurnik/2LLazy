@@ -5,6 +5,18 @@ import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 
+type PasswordCredentials = Partial<Record<"email" | "password", unknown>>;
+
+async function authorizeWithPassword({ email, password }: PasswordCredentials) {
+  if (!email || !password) return null;
+  const normalizedEmail = String(email).toLowerCase().trim();
+  const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+  if (!user?.password) return null;
+  const passwordMatches = await bcrypt.compare(String(password), user.password);
+  if (!passwordMatches) return null;
+  return { id: user.id, name: user.name, email: user.email, image: user.image };
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
@@ -19,15 +31,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) return null;
-        const email = String(credentials.email).toLowerCase().trim();
-        const user = await prisma.user.findUnique({ where: { email } });
-        if (!user?.password) return null;
-        const valid = await bcrypt.compare(String(credentials.password), user.password);
-        if (!valid) return null;
-        return { id: user.id, name: user.name, email: user.email, image: user.image };
-      },
+      authorize: (credentials) => authorizeWithPassword(credentials),
     }),
   ],
   pages: {
@@ -35,12 +39,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   callbacks: {
     jwt({ token, user }) {
-      // On first sign-in `user` is populated; persist userId into the JWT
       if (user?.id) token.id = user.id;
       return token;
     },
     session({ session, token }) {
-      if (token.id) session.user.id = token.id as string;
+      if (token.id) session.user.id = token.id;
       return session;
     },
   },

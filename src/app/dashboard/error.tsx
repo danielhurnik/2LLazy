@@ -1,5 +1,8 @@
 "use client";
 
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Button } from "@mui/material";
+
 export default function DashboardError({
   error,
   reset,
@@ -8,10 +11,11 @@ export default function DashboardError({
   reset: () => void;
 }) {
   return (
-    <div style={{ padding: "2rem", textAlign: "center" }}>
-      <h2>Failed to load dashboard</h2>
-      <p style={{ color: "grey", marginBottom: "1rem" }}>{error.message}</p>
-      <button onClick={reset}>Try again</button>
-    </div>
+    <EmptyState
+      title="The dashboard didn't load"
+      action={<Button variant="outlined" size="small" onClick={reset}>Try again</Button>}
+    >
+      {error.message}
+    </EmptyState>
   );
 }

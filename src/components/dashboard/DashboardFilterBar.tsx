@@ -1,21 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Box, ButtonBase, Stack } from "@mui/material";
+import { ALL_STATUSES, STATUS_LABEL, type AppStatus } from "@/types";
+import { statusTone } from "@/components/ui/StatusChip";
 import {
-  Box,
-  Chip,
-  FormControl,
-  FormControlLabel,
-  InputLabel,
-  MenuItem,
-  Select,
-  Stack,
-  Switch,
-  TextField,
-  Typography,
-} from "@mui/material";
-import type { AppStatus } from "@/types";
-import { ALL_STATUSES, STATUS_COLOR } from "@/types";
+  ALL_OPTION,
+  HasSalarySwitch,
+  PositionFilterField,
+  SourceFilterSelect,
+} from "@/components/jobs/JobFilterBar";
+import { ui, fonts } from "@/theme/theme";
 
 export interface DashboardFilters {
   status: string;
@@ -31,95 +25,123 @@ interface DashboardFilterBarProps {
   onChange: (filters: DashboardFilters) => void;
 }
 
+interface StatusTab {
+  key: string;
+  label: string;
+  count: number;
+  tone: string | null;
+}
+
+export const sumStatusCounts = (statusCounts: Record<string, number>) =>
+  Object.values(statusCounts).reduce((total, count) => total + count, 0);
+
+const HIDDEN_WHEN_EMPTY: AppStatus[] = ["APPLYING", "NEEDS_MANUAL"];
+
+const isTabShown = (status: AppStatus, count: number, activeStatus: string) =>
+  count > 0 || status === activeStatus || !HIDDEN_WHEN_EMPTY.includes(status);
+
+function buildStatusTabs(statusCounts: Record<string, number>, activeStatus: string): StatusTab[] {
+  const statusTabs = ALL_STATUSES.map((status) => ({
+    status,
+    key: status,
+    label: STATUS_LABEL[status],
+    count: statusCounts[status] ?? 0,
+    tone: statusTone(status),
+  })).filter(({ status, count }) => isTabShown(status, count, activeStatus));
+
+  return [
+    { key: ALL_OPTION, label: "All", count: sumStatusCounts(statusCounts), tone: null },
+    ...statusTabs,
+  ];
+}
+
+interface StatusTabButtonProps {
+  tab: StatusTab;
+  isActive: boolean;
+  onSelect: () => void;
+}
+
+function StatusTabButton({ tab, isActive, onSelect }: StatusTabButtonProps) {
+  return (
+    <ButtonBase
+      aria-pressed={isActive}
+      onClick={onSelect}
+      sx={{
+        gap: 0.75,
+        py: 1.25,
+        fontSize: "0.84375rem",
+        fontWeight: isActive ? 600 : 500,
+        whiteSpace: "nowrap",
+        color: isActive ? ui.text : ui.textMuted,
+        borderBottom: `2px solid ${isActive ? ui.accent : "transparent"}`,
+        "&:hover": { color: ui.text },
+      }}
+    >
+      {tab.tone && (
+        <Box sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: tab.tone }} />
+      )}
+      {tab.label}
+      <Box
+        component="span"
+        sx={{ fontFamily: fonts.mono, fontSize: "0.6875rem", color: tab.count ? ui.textMuted : ui.textFaint }}
+      >
+        {tab.count}
+      </Box>
+    </ButtonBase>
+  );
+}
+
 export function DashboardFilterBar({
   sources,
   statusCounts,
   filters,
   onChange,
 }: DashboardFilterBarProps) {
-  const set = <K extends keyof DashboardFilters>(
+  const updateFilter = <K extends keyof DashboardFilters>(
     key: K,
     value: DashboardFilters[K],
   ) => onChange({ ...filters, [key]: value });
 
-  const [positionInput, setPositionInput] = useState(filters.position);
-  useEffect(() => setPositionInput(filters.position), [filters.position]);
-
-  const commitPosition = () => set("position", positionInput);
-
-  const totalCount = Object.values(statusCounts).reduce((a, b) => a + b, 0);
-  const allSources = ["ALL", ...sources];
-
   return (
-    <Box sx={{ mb: 3 }}>
-      {/* ── Status chips ── */}
-      <Stack direction="row" spacing={0.75} sx={{ mb: 2, flexWrap: "wrap", gap: 0.75 }}>
-        <Chip
-          label={`All  ${totalCount}`}
-          variant={filters.status === "ALL" ? "filled" : "outlined"}
-          onClick={() => set("status", "ALL")}
-          sx={{
-            ...(filters.status === "ALL" && {
-              background: "rgba(255,255,255,0.15)",
-              color: "#fff",
-              borderColor: "rgba(255,255,255,0.25)",
-            }),
-          }}
-        />
-        {ALL_STATUSES.map((s: AppStatus) => (
-          <Chip
-            key={s}
-            label={`${s}  ${statusCounts[s] ?? 0}`}
-            color={STATUS_COLOR[s]}
-            variant={filters.status === s ? "filled" : "outlined"}
-            onClick={() => set("status", s)}
+    <Box sx={{ mb: 2.5 }}>
+      <Box
+        aria-label="Filter by status"
+        sx={{
+          display: "flex",
+          gap: 2.5,
+          mb: 2,
+          boxShadow: `inset 0 -1px 0 ${ui.line}`,
+          overflowX: "auto",
+          overflowY: "hidden",
+          scrollbarWidth: "none",
+          "&::-webkit-scrollbar": { display: "none" },
+        }}
+      >
+        {buildStatusTabs(statusCounts, filters.status).map((tab) => (
+          <StatusTabButton
+            key={tab.key}
+            tab={tab}
+            isActive={filters.status === tab.key}
+            onSelect={() => updateFilter("status", tab.key)}
           />
         ))}
-      </Stack>
+      </Box>
 
-      {/* ── Secondary filters ── */}
-      <Stack
-        direction="row"
-        spacing={1.5}
-        sx={{ flexWrap: "wrap", alignItems: "center" }}
-      >
-        <TextField
-          label="Position / Company"
-          size="small"
-          value={positionInput}
-          onChange={(e) => setPositionInput(e.target.value)}
-          onBlur={commitPosition}
-          onKeyDown={(e) => e.key === "Enter" && commitPosition()}
-          sx={{ minWidth: 200 }}
-          placeholder="Search title or company…"
+      <Stack direction="row" sx={{ flexWrap: "wrap", alignItems: "center", gap: 1 }}>
+        <PositionFilterField
+          value={filters.position}
+          onCommit={(position) => updateFilter("position", position)}
         />
 
-        <FormControl size="small" sx={{ minWidth: 140 }}>
-          <InputLabel id="filter-source-label">Site</InputLabel>
-          <Select
-            labelId="filter-source-label"
-            value={filters.source}
-            label="Site"
-            onChange={(e) => set("source", e.target.value)}
-          >
-            {allSources.map((src) => (
-              <MenuItem key={src} value={src}>
-                {src === "ALL" ? "All Sites" : src}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+        <SourceFilterSelect
+          sources={sources}
+          value={filters.source}
+          onChange={(source) => updateFilter("source", source)}
+        />
 
-        <FormControlLabel
-          control={
-            <Switch
-              size="small"
-              checked={filters.hasSalary}
-              onChange={(e) => set("hasSalary", e.target.checked)}
-            />
-          }
-          label={<Typography variant="body2" color="text.secondary">Has Salary</Typography>}
-          sx={{ ml: 0, gap: 0.5 }}
+        <HasSalarySwitch
+          checked={filters.hasSalary}
+          onChange={(hasSalary) => updateFilter("hasSalary", hasSalary)}
         />
       </Stack>
     </Box>

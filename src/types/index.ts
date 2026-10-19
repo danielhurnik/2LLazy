@@ -1,51 +1,68 @@
-/**
- * Shared UI types used across pages and components.
- * Keep separate from src/lib/scrapers/types.ts (backend scraper types).
- */
+import type { CountryCode } from "@/lib/jobs/sources/types";
 
-export type AppStatus = "PENDING" | "APPLIED" | "REJECTED" | "INTERVIEW" | "OFFER" | "FAILED";
+export type AppStatus =
+  | "PENDING"
+  | "APPLYING"
+  | "NEEDS_MANUAL"
+  | "APPLIED"
+  | "REJECTED"
+  | "INTERVIEW"
+  | "OFFER"
+  | "FAILED";
 
 export const ALL_STATUSES: AppStatus[] = [
   "PENDING",
+  "APPLYING",
+  "NEEDS_MANUAL",
   "APPLIED",
-  "REJECTED",
   "INTERVIEW",
   "OFFER",
+  "REJECTED",
   "FAILED",
 ];
 
-export const STATUS_COLOR: Record<
-  AppStatus,
-  "default" | "info" | "success" | "error" | "warning"
-> = {
+export const STATUS_LABEL: Record<AppStatus, string> = {
+  PENDING: "To apply",
+  APPLYING: "Applying…",
+  NEEDS_MANUAL: "Needs manual",
+  APPLIED: "Applied",
+  INTERVIEW: "Interview",
+  OFFER: "Offer",
+  REJECTED: "Rejected",
+  FAILED: "Apply failed",
+};
+
+export const AUTO_APPLY_STATUSES: AppStatus[] = ["PENDING", "FAILED", "NEEDS_MANUAL"];
+
+export const MANUAL_STATUSES: AppStatus[] = ALL_STATUSES.filter((status) => status !== "APPLYING");
+
+type StatusColor = "default" | "primary" | "info" | "success" | "error" | "warning";
+
+export const STATUS_COLOR: Record<AppStatus, StatusColor> = {
   PENDING: "default",
+  APPLYING: "info",
+  NEEDS_MANUAL: "warning",
   APPLIED: "info",
-  REJECTED: "error",
   INTERVIEW: "success",
-  OFFER: "success",
+  OFFER: "primary",
+  REJECTED: "error",
   FAILED: "warning",
 };
 
-export type SourceChipColor =
-  | "primary"
-  | "secondary"
-  | "success"
-  | "warning"
-  | "info"
-  | "error"
-  | "default";
-
-export const SOURCE_COLOR: Record<string, SourceChipColor> = {
-  STARTUPJOBS: "success",
-  JOBSTACK: "warning",
-  COCUMA: "info",
-  SKILLETO: "secondary",
-  NOFLUFFJOBS: "primary",
-  JOBSCZ: "error",
-  JOOBLE: "warning",
+const SOURCE_HOST: Record<string, string> = {
+  STARTUPJOBS: "startupjobs.cz",
+  JOBSTACK: "jobstack.it",
+  COCUMA: "cocuma.cz",
+  SKILLETO: "skilleto.cz",
+  NOFLUFFJOBS: "nofluffjobs.com",
+  JOBSCZ: "jobs.cz",
+  JOOBLE: "jooble.org",
 };
 
-/** Unified job item used in search results and favourites. */
+export function sourceLabel(source: string): string {
+  return SOURCE_HOST[source] ?? source.toLowerCase();
+}
+
 export interface JobItem {
   id: string;
   title: string;
@@ -56,18 +73,14 @@ export interface JobItem {
   source: string;
   salary?: string;
   workType?: string;
-  /** Only present on search results (0–1 cosine similarity). */
   similarity?: number;
+  matchReasons?: string[];
   favourited?: boolean;
-  /** Latest generated cover letter for this job, if any. */
-  coverLetter?: { id: string; content: string } | null;
-  /** True if the job was first seen in the DB within the last 24 hours. */
   isNew?: boolean;
-  /** True if the job was returned from the DB cache, not freshly scraped in this run. */
   isStale?: boolean;
 }
 
-export interface ApplicationInterview {
+interface ApplicationInterview {
   id: string;
   scheduledAt: string;
   durationMinutes: number;
@@ -78,8 +91,10 @@ export interface Application {
   id: string;
   status: AppStatus;
   appliedAt: string | null;
-  errorMessage: string | null;
   notes?: string | null;
+  errorMessage: string | null;
+  appliedVia: string | null;
+  evidencePath: string | null;
   job: {
     id: string;
     title: string;
@@ -90,7 +105,6 @@ export interface Application {
     sourceUrl: string;
     salary: string | null;
   };
-  coverLetter: { id: string; content: string } | null;
   interview: ApplicationInterview | null;
 }
 
@@ -106,39 +120,28 @@ export interface Interview {
   };
 }
 
-export interface ScheduleInterviewForm {
-  applicationId: string;
+interface ScheduledNoteFields {
   scheduledAt: string;
   durationMinutes: number;
   notes: string;
 }
 
-/** Unified display entry for the calendar — covers linked interviews and free-form events. */
+export interface ScheduleInterviewForm extends ScheduledNoteFields {
+  applicationId: string;
+}
+
 export interface CalendarEntry {
   id: string;
   type: "interview" | "event";
-  /** For event: user-supplied title. For interview: company name. */
   title: string;
-  /** For interview: job title. Undefined for events. */
   subtitle?: string;
   scheduledAt: string;
   durationMinutes: number;
   notes: string | null;
 }
 
-export interface CalendarEventForm {
+export interface CalendarEventForm extends ScheduledNoteFields {
   title: string;
-  scheduledAt: string;
-  durationMinutes: number;
-  notes: string;
-}
-
-// ─── Settings types ───────────────────────────────────────────────────────────
-
-export interface SiteCredStatus {
-  site: string;
-  configured: boolean;
-  username: string | null;
 }
 
 export interface UploadedFile {
@@ -154,6 +157,7 @@ export interface UserProfile {
   phone: string;
   linkedInUrl: string;
   githubUrl: string;
-  coverLetterLanguage: string;
+  country: CountryCode;
+  city: string;
   googleCalendarSync: boolean;
 }

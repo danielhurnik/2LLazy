@@ -1,42 +1,48 @@
 "use client";
 
-import {
-  Box,
-  Button,
-  Divider,
-  TextField,
-  Typography,
-  alpha,
-} from "@mui/material";
-import BoltIcon from "@mui/icons-material/Bolt";
+import { Box, Button, TextField, Typography } from "@mui/material";
 import GoogleIcon from "@mui/icons-material/Google";
 import { signIn } from "next-auth/react";
-import { ios } from "@/theme/theme";
-import { useState } from "react";
+import { useState, type SubmitEvent } from "react";
+import { Wordmark } from "@/components/ui/Wordmark";
+import { ui, fonts } from "@/theme/theme";
 
-export function LoginForm({ error }: { error?: string }) {
+const POST_LOGIN_PATH = "/";
+const CREDENTIALS_MISMATCH_MESSAGE = "That email and password don't match.";
+const SIGN_IN_FAILED_MESSAGE = "Sign-in failed. Please try again.";
+
+interface LoginFormProps {
+  error?: string;
+}
+
+function HairlineRule() {
+  return <Box sx={{ flex: 1, height: "1px", bgcolor: ui.line }} />;
+}
+
+export function LoginForm({ error }: LoginFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [credError, setCredError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [credentialsError, setCredentialsError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  async function handleCredentials(e: React.FormEvent) {
-    e.preventDefault();
-    setCredError("");
-    setLoading(true);
+  async function handleCredentialsSubmit(event: SubmitEvent) {
+    event.preventDefault();
+    setCredentialsError("");
+    setSubmitting(true);
     const result = await signIn("credentials", {
       email,
       password,
-      callbackUrl: "/",
+      callbackUrl: POST_LOGIN_PATH,
       redirect: false,
-    });
-    setLoading(false);
+    }).finally(() => setSubmitting(false));
     if (result?.error) {
-      setCredError("Invalid email or password.");
-    } else {
-      window.location.href = result?.url ?? "/";
+      setCredentialsError(CREDENTIALS_MISMATCH_MESSAGE);
+      return;
     }
+    window.location.href = result?.url ?? POST_LOGIN_PATH;
   }
+
+  const visibleError = credentialsError || (error ? SIGN_IN_FAILED_MESSAGE : "");
 
   return (
     <Box
@@ -45,87 +51,44 @@ export function LoginForm({ error }: { error?: string }) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background:
-          "radial-gradient(ellipse at 50% 0%, rgba(0,122,255,0.12) 0%, transparent 60%)," +
-          "#000000",
+        px: 2,
+        py: 6,
       }}
     >
-      <Box
-        sx={{
-          p: 4,
-          background: "rgba(28,28,30,0.92)",
-          backdropFilter: "blur(30px) saturate(180%)",
-          WebkitBackdropFilter: "blur(30px) saturate(180%)",
-          borderRadius: "20px",
-          border: `1px solid ${ios.separator}`,
-          boxShadow: "0 24px 64px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3)",
-          width: "100%",
-          maxWidth: 360,
-          display: "flex",
-          flexDirection: "column",
-          gap: 2,
-          animation: "fadeSlideUp 0.4s cubic-bezier(0.34,1.2,0.64,1) both",
-        }}
-      >
-        {/* App icon */}
-        <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1.5, mb: 0.5 }}>
-          <Box sx={{
-            width: 56,
-            height: 56,
-            borderRadius: "16px",
-            background: `linear-gradient(145deg, #1a8fff, ${ios.blue} 45%, #0060df)`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            boxShadow: `0 8px 20px ${alpha(ios.blue, 0.45)}, 0 0 0 1px ${alpha(ios.blue, 0.3)}`,
-          }}>
-            <BoltIcon sx={{ color: "#fff", fontSize: 28 }} />
-          </Box>
-          <Box sx={{ textAlign: "center" }}>
-            <Typography sx={{ color: "#fff", fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.2 }}>
-              2LLAZY
-            </Typography>
-            <Typography sx={{ color: ios.label2, fontSize: 13, mt: 0.25 }}>
-              Job Tracker
-            </Typography>
-          </Box>
-        </Box>
+      <Box sx={{ width: "100%", maxWidth: 340 }}>
+        <Wordmark size={22} />
 
-        {/* Divider */}
-        <Box sx={{ height: "1px", background: ios.separator }} />
-
-        <Typography sx={{ color: ios.label2, fontSize: 13, textAlign: "center" }}>
-          Sign in to access your personal job tracker workspace.
+        <Typography variant="h5" component="h1" sx={{ mt: 3.5 }}>
+          For people too lazy to apply by hand.
+        </Typography>
+        <Typography variant="body2" sx={{ mt: 1, color: ui.textMuted }}>
+          Searches seven Czech job boards at once, ranks what fits, and keeps track of
+          everything you send.
         </Typography>
 
-        {error && (
-          <Typography sx={{ color: "#ff453a", fontSize: 13, textAlign: "center" }}>
-            Sign-in failed. Please try again.
-          </Typography>
-        )}
-
         <Button
-          variant="contained"
+          variant="outlined"
           fullWidth
-          onClick={() => signIn("google", { callbackUrl: "/" })}
+          onClick={() => signIn("google", { callbackUrl: POST_LOGIN_PATH })}
           startIcon={<GoogleIcon />}
-          sx={{
-            mt: 0.5,
-            py: 1.1,
-            fontSize: "0.9375rem",
-            background: "#fff",
-            color: "#1f1f1f",
-            "&:hover": { background: "#f5f5f5" },
-          }}
+          sx={{ mt: 4, py: 1 }}
         >
           Continue with Google
         </Button>
 
-        <Divider sx={{ borderColor: ios.separator }}>
-          <Typography sx={{ color: ios.label2, fontSize: 12, px: 1 }}>or</Typography>
-        </Divider>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, my: 2.5 }}>
+          <HairlineRule />
+          <Typography sx={{ fontFamily: fonts.mono, fontSize: "0.6875rem", color: ui.textFaint }}>
+            or with email
+          </Typography>
+          <HairlineRule />
+        </Box>
 
-        <Box component="form" onSubmit={handleCredentials} sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+        <Box
+          component="form"
+          onSubmit={handleCredentialsSubmit}
+          sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}
+        >
           <TextField
             label="Email"
             type="email"
@@ -135,11 +98,6 @@ export function LoginForm({ error }: { error?: string }) {
             onChange={(e) => setEmail(e.target.value)}
             required
             inputProps={{ "data-testid": "credentials-email" }}
-            sx={{
-              "& .MuiOutlinedInput-root": { borderRadius: "10px", color: "#fff" },
-              "& .MuiInputLabel-root": { color: ios.label2 },
-              "& .MuiOutlinedInput-notchedOutline": { borderColor: ios.separator },
-            }}
           />
           <TextField
             label="Password"
@@ -150,31 +108,14 @@ export function LoginForm({ error }: { error?: string }) {
             onChange={(e) => setPassword(e.target.value)}
             required
             inputProps={{ "data-testid": "credentials-password" }}
-            sx={{
-              "& .MuiOutlinedInput-root": { borderRadius: "10px", color: "#fff" },
-              "& .MuiInputLabel-root": { color: ios.label2 },
-              "& .MuiOutlinedInput-notchedOutline": { borderColor: ios.separator },
-            }}
           />
-          {(credError || error) && (
-            <Typography sx={{ color: "#ff453a", fontSize: 13, textAlign: "center" }}>
-              {credError || "Sign-in failed. Please try again."}
+          {visibleError && (
+            <Typography role="alert" variant="body2" sx={{ color: ui.red }}>
+              {visibleError}
             </Typography>
           )}
-          <Button
-            type="submit"
-            variant="contained"
-            fullWidth
-            disabled={loading}
-            sx={{
-              py: 1.1,
-              fontSize: "0.9375rem",
-              background: ios.blue,
-              "&:hover": { background: "#0060df" },
-              "&:disabled": { opacity: 0.6 },
-            }}
-          >
-            {loading ? "Signing in…" : "Sign in"}
+          <Button type="submit" variant="contained" fullWidth disabled={submitting} sx={{ py: 1 }}>
+            {submitting ? "Signing in…" : "Sign in"}
           </Button>
         </Box>
       </Box>

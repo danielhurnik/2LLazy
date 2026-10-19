@@ -1,36 +1,27 @@
 import type { NextConfig } from "next";
 import path from "path";
 
+const ONE_YEAR_SECONDS = 31_536_000;
+const UNBUNDLEABLE_SERVER_PACKAGES = ["pdf-parse"];
+const chunkUrlsAreContentHashed = process.env.NODE_ENV === "production";
+
 const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(__dirname),
   },
-  // These packages rely on native binaries, large files, or Node.js-specific
-  // globals that must not be bundled by webpack
-  serverExternalPackages: [
-    "pdf-parse",
-    "formidable",
-    "ws",
-    "@neondatabase/serverless",
-  ],
+  serverExternalPackages: UNBUNDLEABLE_SERVER_PACKAGES,
   experimental: {
     serverActions: {
       bodySizeLimit: "10mb",
     },
   },
-  // Long-lived cache headers for immutable Next.js static chunks
   async headers() {
+    if (!chunkUrlsAreContentHashed) return [];
     return [
       {
         source: "/_next/static/:path*",
         headers: [
-          { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
-        ],
-      },
-      {
-        source: "/public/:path*",
-        headers: [
-          { key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" },
+          { key: "Cache-Control", value: `public, max-age=${ONE_YEAR_SECONDS}, immutable` },
         ],
       },
     ];

@@ -1,6 +1,8 @@
 "use client";
 
-import { Box, Card, CardContent, Typography, Stack, alpha } from "@mui/material";
+import type { ReactNode } from "react";
+import Link from "next/link";
+import { Box, Button, Card, CardContent, Typography } from "@mui/material";
 import {
   BarChart,
   Bar,
@@ -10,11 +12,13 @@ import {
   Tooltip,
   ResponsiveContainer,
   Cell,
-  PieChart,
-  Pie,
-  Legend,
 } from "recharts";
-import { ios } from "@/theme/theme";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { statusTone } from "@/components/ui/StatusChip";
+import type { AppStatus } from "@/types";
+import { ALL_STATUSES, STATUS_LABEL, sourceLabel } from "@/types";
+import { ui, fonts } from "@/theme/theme";
 
 interface Props {
   byStatus: { status: string; count: number }[];
@@ -24,169 +28,209 @@ interface Props {
   interviewRate: number;
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  PENDING: ios.label3,
-  APPLIED: ios.blue,
-  REJECTED: ios.red,
-  INTERVIEW: ios.green,
-  OFFER: ios.teal,
-  FAILED: ios.orange,
-};
+interface CategoryRow {
+  label: string;
+  count: number;
+}
 
-const SOURCE_COLORS: Record<string, string> = {
-  STARTUPJOBS: ios.green,
-  JOBSTACK: ios.orange,
-  COCUMA: ios.blue,
-};
+interface StatusRow extends CategoryRow {
+  tone: string;
+}
 
-const CHART_STYLE = {
-  background: "transparent",
-  fontSize: 12,
-  color: "rgba(235,235,245,0.6)",
-};
+const CHART_HEIGHT = 220;
+const STATUS_LABEL_WIDTH = 88;
+const SOURCE_LABEL_WIDTH = 112;
+const WEEKLY_CHART_MARGIN = { top: 4, right: 4, bottom: 0, left: -20 };
+const CATEGORY_CHART_MARGIN = { top: 0, right: 8, bottom: 0, left: 0 };
+const WEEKLY_BAR_RADIUS: [number, number, number, number] = [3, 3, 0, 0];
+const CATEGORY_BAR_RADIUS: [number, number, number, number] = [0, 3, 3, 0];
+const SERIES_NAME = "Applications";
 
-const AXIS_STYLE = { fill: "rgba(235,235,245,0.45)", fontSize: 11 };
-const GRID_STYLE = { stroke: "rgba(255,255,255,0.06)" };
-const TOOLTIP_STYLE = {
+const AXIS_TICK = { fill: ui.textFaint, fontSize: 11 };
+const AXIS_STYLE = { tick: AXIS_TICK, axisLine: false, tickLine: false };
+const TOOLTIP_PROPS = {
+  cursor: { fill: "rgba(255,255,245,0.03)" },
   contentStyle: {
-    background: "rgba(28,28,30,0.97)",
-    border: `1px solid ${ios.separator}`,
-    borderRadius: 10,
+    backgroundColor: ui.raised,
+    border: `1px solid ${ui.lineStrong}`,
+    borderRadius: 6,
     fontSize: 12,
+    padding: "6px 10px",
   },
-  labelStyle: { color: "rgba(235,235,245,0.8)" },
-  itemStyle: { color: "rgba(235,235,245,0.6)" },
+  labelStyle: { color: ui.text, marginBottom: 2 },
+  itemStyle: { color: ui.textMuted, padding: 0 },
 };
 
-function StatCard({ label, value, color }: { label: string; value: string | number; color?: string }) {
+const pluralSuffix = (count: number) => (count === 1 ? "" : "s");
+
+const isAppStatus = (status: string): status is AppStatus =>
+  ALL_STATUSES.some((knownStatus) => knownStatus === status);
+
+function toStatusRow({ status, count }: { status: string; count: number }): StatusRow {
+  if (!isAppStatus(status)) return { label: status, count, tone: ui.textFaint };
+  return { label: STATUS_LABEL[status], count, tone: statusTone(status) };
+}
+
+function Figure({ label, value, note }: { label: string; value: ReactNode; note: string }) {
   return (
-    <Card sx={{ flex: 1 }}>
-      <CardContent sx={{ py: 2.5 }}>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5, fontSize: "0.8rem" }}>
-          {label}
+    <Box
+      sx={{
+        px: 2.25,
+        py: 2,
+        "& + &": {
+          borderTop: { xs: `1px solid ${ui.line}`, sm: "none" },
+          borderLeft: { sm: `1px solid ${ui.line}` },
+        },
+      }}
+    >
+      <Typography variant="overline" component="div" sx={{ color: ui.textFaint }}>
+        {label}
+      </Typography>
+      <Typography
+        sx={{ mt: 0.25, fontSize: "2rem", fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1.1 }}
+      >
+        {value}
+      </Typography>
+      <Typography variant="body2" sx={{ mt: 0.25, color: ui.textFaint }}>
+        {note}
+      </Typography>
+    </Box>
+  );
+}
+
+function ChartCard({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <Card>
+      <CardContent>
+        <Typography variant="h6" sx={{ mb: 2 }}>
+          {title}
         </Typography>
-        <Typography
-          variant="h4"
-          sx={{ fontWeight: 700, color: color ?? "#fff", letterSpacing: "-0.03em" }}
-        >
-          {value}
-        </Typography>
+        <Box sx={{ "& .recharts-cartesian-axis-tick text": { fontFamily: fonts.mono } }}>
+          {children}
+        </Box>
       </CardContent>
     </Card>
   );
 }
 
+function WeeklyChart({ weekly }: { weekly: Props["weekly"] }) {
+  return (
+    <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
+      <BarChart data={weekly} margin={WEEKLY_CHART_MARGIN}>
+        <CartesianGrid vertical={false} stroke={ui.line} />
+        <XAxis dataKey="week" {...AXIS_STYLE} />
+        <YAxis {...AXIS_STYLE} allowDecimals={false} />
+        <Tooltip {...TOOLTIP_PROPS} />
+        <Bar dataKey="count" name={SERIES_NAME} fill={ui.accent} radius={WEEKLY_BAR_RADIUS} maxBarSize={28} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+function CategoryChart({
+  rows,
+  labelWidth,
+  barColor,
+  children,
+}: {
+  rows: CategoryRow[];
+  labelWidth: number;
+  barColor?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
+      <BarChart data={rows} layout="vertical" margin={CATEGORY_CHART_MARGIN}>
+        <CartesianGrid horizontal={false} stroke={ui.line} />
+        <XAxis type="number" {...AXIS_STYLE} allowDecimals={false} />
+        <YAxis type="category" dataKey="label" {...AXIS_STYLE} width={labelWidth} />
+        <Tooltip {...TOOLTIP_PROPS} />
+        <Bar dataKey="count" name={SERIES_NAME} fill={barColor} radius={CATEGORY_BAR_RADIUS} barSize={14}>
+          {children}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+function StatsCharts({
+  weekly,
+  statusRows,
+  sourceRows,
+}: {
+  weekly: Props["weekly"];
+  statusRows: StatusRow[];
+  sourceRows: CategoryRow[];
+}) {
+  return (
+    <Box sx={{ display: "grid", gap: 2 }}>
+      <ChartCard title="Applications per week">
+        <WeeklyChart weekly={weekly} />
+      </ChartCard>
+
+      <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" } }}>
+        <ChartCard title="By status">
+          <CategoryChart rows={statusRows} labelWidth={STATUS_LABEL_WIDTH}>
+            {statusRows.map((row) => (
+              <Cell key={row.label} fill={row.tone} />
+            ))}
+          </CategoryChart>
+        </ChartCard>
+
+        <ChartCard title="By board">
+          <CategoryChart rows={sourceRows} labelWidth={SOURCE_LABEL_WIDTH} barColor={ui.textFaint} />
+        </ChartCard>
+      </Box>
+    </Box>
+  );
+}
+
+function NoStatsYet() {
+  return (
+    <EmptyState
+      title="No numbers yet"
+      action={
+        <Button component={Link} href="/" variant="outlined" size="small">
+          Search jobs
+        </Button>
+      }
+    >
+      Charts fill in once you track your first application.
+    </EmptyState>
+  );
+}
+
 export function StatsClient({ byStatus, bySource, weekly, totalApplications, interviewRate }: Props) {
   const offersCount = byStatus.find((r) => r.status === "OFFER")?.count ?? 0;
+  const hasData = totalApplications > 0;
+
+  const statusRows = byStatus.map(toStatusRow);
+  const sourceRows = bySource.map((r) => ({ label: sourceLabel(r.source), count: r.count }));
 
   return (
     <Box>
-      {/* ── Header ── */}
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h4" sx={{ mb: 0.5 }}>
-          Statistics
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Overview of your job application activity.
-        </Typography>
-      </Box>
+      <PageHeader
+        title="Stats"
+        meta={
+          hasData
+            ? `Based on ${totalApplications} tracked application${pluralSuffix(totalApplications)}`
+            : undefined
+        }
+      />
 
-      {/* ── Stat cards ── */}
-      <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 3 }}>
-        <StatCard label="Total Applications" value={totalApplications} color={ios.blue} />
-        <StatCard label="Interview Rate" value={`${interviewRate}%`} color={ios.green} />
-        <StatCard label="Offers" value={offersCount} color={ios.teal} />
-      </Stack>
-
-      {/* ── Weekly activity chart ── */}
       <Card sx={{ mb: 2 }}>
-        <CardContent>
-          <Typography variant="h6" sx={{ mb: 2, fontSize: 14, fontWeight: 600 }}>
-            Applications per Week
-          </Typography>
-          <Box>
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={weekly} style={CHART_STYLE}>
-                <CartesianGrid strokeDasharray="3 3" {...GRID_STYLE} />
-                <XAxis dataKey="week" tick={AXIS_STYLE} />
-                <YAxis tick={AXIS_STYLE} allowDecimals={false} />
-                <Tooltip {...TOOLTIP_STYLE} />
-                <Bar dataKey="count" fill={ios.blue} radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </Box>
-        </CardContent>
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)" } }}>
+          <Figure label="Tracked" value={totalApplications} note="applications on the dashboard" />
+          <Figure label="Interview rate" value={`${interviewRate}%`} note="of them reached an interview" />
+          <Figure label="Offers" value={offersCount} note={`offer${pluralSuffix(offersCount)} so far`} />
+        </Box>
       </Card>
 
-      {/* ── Status + Source charts ── */}
-      <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
-        <Card sx={{ flex: 1 }}>
-          <CardContent>
-            <Typography variant="h6" sx={{ mb: 2, fontSize: 14, fontWeight: 600 }}>
-              By Status
-            </Typography>
-            <Box>
-              <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={byStatus} layout="vertical" style={CHART_STYLE}>
-                  <CartesianGrid strokeDasharray="3 3" {...GRID_STYLE} />
-                  <XAxis type="number" tick={AXIS_STYLE} allowDecimals={false} />
-                  <YAxis type="category" dataKey="status" tick={AXIS_STYLE} width={80} />
-                  <Tooltip {...TOOLTIP_STYLE} />
-                  <Bar dataKey="count" radius={[0, 4, 4, 0]}>
-                    {byStatus.map((entry) => (
-                      <Cell
-                        key={entry.status}
-                        fill={STATUS_COLORS[entry.status] ?? ios.label2}
-                        fillOpacity={0.85}
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </Box>
-          </CardContent>
-        </Card>
-
-        <Card sx={{ flex: 1 }}>
-          <CardContent>
-            <Typography variant="h6" sx={{ mb: 2, fontSize: 14, fontWeight: 600 }}>
-              By Source
-            </Typography>
-            <Box>
-              <ResponsiveContainer width="100%" height={260}>
-                <PieChart style={CHART_STYLE}>
-                  <Pie
-                    data={bySource}
-                    dataKey="count"
-                    nameKey="source"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={90}
-                    label={({ name, percent }) =>
-                      `${name} ${Math.round((percent ?? 0) * 100)}%`
-                    }
-                    labelLine={false}
-                  >
-                    {bySource.map((entry) => (
-                      <Cell
-                        key={entry.source}
-                        fill={SOURCE_COLORS[entry.source] ?? ios.indigo}
-                        fillOpacity={0.85}
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip {...TOOLTIP_STYLE} />
-                  <Legend
-                    formatter={(value) => (
-                      <span style={{ color: "rgba(235,235,245,0.6)", fontSize: 12 }}>{value}</span>
-                    )}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            </Box>
-          </CardContent>
-        </Card>
-      </Stack>
+      {hasData ? (
+        <StatsCharts weekly={weekly} statusRows={statusRows} sourceRows={sourceRows} />
+      ) : (
+        <NoStatsYet />
+      )}
     </Box>
   );
 }

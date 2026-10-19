@@ -10,7 +10,7 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "html", "json-summary"],
       include: ["src/lib/**/*.ts"],
-      exclude: ["src/lib/prisma.ts", "src/lib/browser.ts"],
+      exclude: ["src/lib/prisma.ts"],
     },
   },
   resolve: {

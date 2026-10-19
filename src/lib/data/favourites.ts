@@ -1,83 +1,59 @@
 import { unstable_cache } from "next/cache";
+import type { JobPosting, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { JobSource } from "@prisma/client";
 import type { JobItem } from "@/types";
+import { buildJobPostingWhere, findDistinctJobSources } from "./applications";
+import type { JobPostingFilters } from "./applications";
 
-const VALID_SOURCES = new Set(Object.values(JobSource));
+export type FavouriteFilters = JobPostingFilters;
 
-export interface FavouriteFilters {
-  source?: string;
-  position?: string;
-  hasSalary?: boolean;
-}
-
-export const FAVOURITES_TAG = "favourites";
+const FAVOURITES_TAG = "favourites";
 export const favouriteTag = (userId: string) => `${FAVOURITES_TAG}:${userId}`;
 
-async function _getFavourites(userId: string, filters?: FavouriteFilters): Promise<JobItem[]> {
-  const { source, position, hasSalary } = filters ?? {};
-  const jobs = await prisma.jobPosting.findMany({
-    where: {
-      favouritedBy: { some: { userId } },
-      ...(source && source !== "ALL" && VALID_SOURCES.has(source as JobSource) ? { source: source as JobSource } : {}),
-      ...(hasSalary ? { salary: { not: null } } : {}),
-      ...(position?.trim()
-        ? {
-          OR: [
-            { title: { contains: position.trim(), mode: "insensitive" } },
-            { company: { contains: position.trim(), mode: "insensitive" } },
-          ],
-        }
-        : {}),
-    },
-    orderBy: { scrapedAt: "desc" },
-    include: {
-      coverLetters: {
-        where: { userId },
-        orderBy: { createdAt: "desc" },
-        take: 1,
-        select: { id: true, content: true },
-      },
-    },
-  });
+const FAVOURITES_CACHE_SECONDS = 60;
 
-  return jobs.map((job) => ({
+const favouritesCacheOptions = (userId: string) => ({
+  revalidate: FAVOURITES_CACHE_SECONDS,
+  tags: [favouriteTag(userId)],
+});
+
+const favouritedByUser = (userId: string) =>
+  ({ favouritedBy: { some: { userId } } }) satisfies Prisma.JobPostingWhereInput;
+
+function toFavouriteJobItem(job: JobPosting): JobItem {
+  return {
     id: job.id,
     title: job.title,
     company: job.company,
     location: job.location ?? "",
     description: job.description,
     sourceUrl: job.sourceUrl,
-    source: job.source as string,
+    source: job.source,
     salary: job.salary ?? undefined,
     favourited: true,
-    coverLetter: job.coverLetters[0] ?? null,
-  }));
+  };
 }
 
-async function _getFavouriteSources(userId: string): Promise<string[]> {
-  const rows = await prisma.jobPosting.findMany({
-    where: { favouritedBy: { some: { userId } } },
-    distinct: ["source"],
-    select: { source: true },
-    orderBy: { source: "asc" },
+async function findFavourites(userId: string, filters?: FavouriteFilters): Promise<JobItem[]> {
+  const jobs = await prisma.jobPosting.findMany({
+    where: { ...favouritedByUser(userId), ...buildJobPostingWhere(filters) },
+    orderBy: { scrapedAt: "desc" },
   });
-  return rows.map((r) => r.source as string);
+  return jobs.map(toFavouriteJobItem);
 }
 
 export function getFavourites(userId: string, filters?: FavouriteFilters) {
   return unstable_cache(
-    () => _getFavourites(userId, filters),
+    () => findFavourites(userId, filters),
     ["get-favourites", userId, JSON.stringify(filters ?? {})],
-    { revalidate: 60, tags: [favouriteTag(userId)] },
+    favouritesCacheOptions(userId),
   )();
 }
 
 export function getFavouriteSources(userId: string) {
   return unstable_cache(
-    () => _getFavouriteSources(userId),
+    () => findDistinctJobSources(favouritedByUser(userId)),
     ["get-favourite-sources", userId],
-    { revalidate: 60, tags: [favouriteTag(userId)] },
+    favouritesCacheOptions(userId),
   )();
 }
-

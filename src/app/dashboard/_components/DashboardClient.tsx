@@ -2,10 +2,14 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Box, Typography, Alert } from "@mui/material";
-import { DashboardFilterBar, type DashboardFilters } from "@/components/dashboard/DashboardFilterBar";
-import { CoverLetterDialog } from "@/components/dialogs/CoverLetterDialog";
-import { StreamingCoverLetterDialog } from "@/components/dialogs/StreamingCoverLetterDialog";
+import { Box, Alert } from "@mui/material";
+import {
+  DashboardFilterBar,
+  sumStatusCounts,
+  type DashboardFilters,
+} from "@/components/dashboard/DashboardFilterBar";
+import { ALL_OPTION } from "@/components/jobs/JobFilterBar";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusChangeDialog } from "@/components/dialogs/StatusChangeDialog";
 import { updateApplicationStatus } from "@/lib/actions/applicationActions";
 import { ApplicationList } from "./ApplicationList";
@@ -18,64 +22,69 @@ interface Props {
   statusCounts: Record<string, number>;
 }
 
+interface StatusChangeDraft {
+  applicationId: string;
+  status: AppStatus;
+}
+
+const DASHBOARD_PATH = "/dashboard";
+const AWAITING_REPLY_STATUSES: AppStatus[] = ["APPLIED", "INTERVIEW"];
+
+function toSearchParams({ status, source, position, hasSalary }: DashboardFilters): URLSearchParams {
+  const params = new URLSearchParams();
+  if (status !== ALL_OPTION) params.set("status", status);
+  if (source !== ALL_OPTION) params.set("source", source);
+  if (position) params.set("position", position);
+  if (hasSalary) params.set("hasSalary", "true");
+  return params;
+}
+
+function dashboardHref(filters: DashboardFilters): string {
+  const params = toSearchParams(filters);
+  return params.size > 0 ? `${DASHBOARD_PATH}?${params.toString()}` : DASHBOARD_PATH;
+}
+
+function describeTracking(trackedCount: number, awaitingReplyCount: number): string {
+  if (trackedCount === 0) return "Nothing tracked yet";
+  return `${trackedCount} tracked · ${awaitingReplyCount} waiting on a reply or interview`;
+}
+
 export function DashboardClient({ applications, filters, sources, statusCounts }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const [clDialog, setClDialog] = useState<{ open: boolean; content: string; coverId: string | null; deleteError: string | null }>({
-    open: false,
-    content: "",
-    coverId: null,
-    deleteError: null,
-  });
-  const [streamDlg, setStreamDlg] = useState<{ open: boolean; jobId: string | null; jobTitle: string; completed: boolean }>({
-    open: false,
-    jobId: null,
-    jobTitle: "",
-    completed: false,
-  });
-  const [statusDialog, setStatusDialog] = useState<{
-    open: boolean;
-    id: string;
-    status: AppStatus;
-  } | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [statusChange, setStatusChange] = useState<StatusChangeDraft | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleFilterChange = (newFilters: DashboardFilters) => {
-    const params = new URLSearchParams();
-    if (newFilters.status !== "ALL") params.set("status", newFilters.status);
-    if (newFilters.source !== "ALL") params.set("source", newFilters.source);
-    if (newFilters.position) params.set("position", newFilters.position);
-    if (newFilters.hasSalary) params.set("hasSalary", "true");
-    router.replace(`/dashboard${params.size > 0 ? `?${params.toString()}` : ""}`);
-  };
+  const trackedCount = sumStatusCounts(statusCounts);
+  const awaitingReplyCount = AWAITING_REPLY_STATUSES.reduce(
+    (total, status) => total + (statusCounts[status] ?? 0),
+    0,
+  );
+  const hasActiveFilters = toSearchParams(filters).size > 0;
 
-  const handleStatusChange = (id: string, status: AppStatus) => {
+  const applyFilters = (nextFilters: DashboardFilters) => router.replace(dashboardHref(nextFilters));
+  const clearFilters = () => router.replace(DASHBOARD_PATH);
+
+  const saveStatusChange = ({ applicationId, status }: StatusChangeDraft) => {
     startTransition(async () => {
       try {
-        await updateApplicationStatus(id, status);
+        await updateApplicationStatus(applicationId, status);
         router.refresh();
-        setStatusDialog(null);
+        setStatusChange(null);
       } catch (err) {
-        setErrorMsg(`Failed to update status: ${String(err)}`);
+        setErrorMessage(`Failed to update status: ${String(err)}`);
       }
     });
   };
 
   return (
     <Box>
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h4" sx={{ mb: 0.5 }}>
-          Applications
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Track and manage all your job applications in one place.
-        </Typography>
-      </Box>
+      <PageHeader title="Applications" meta={describeTracking(trackedCount, awaitingReplyCount)} />
 
-      {errorMsg && (
-        <Alert severity="error" onClose={() => setErrorMsg(null)} sx={{ mb: 2 }}>
-          {errorMsg}
+      {errorMessage && (
+        <Alert severity="error" onClose={() => setErrorMessage(null)} sx={{ mb: 2 }}>
+          {errorMessage}
         </Alert>
       )}
 
@@ -83,66 +92,24 @@ export function DashboardClient({ applications, filters, sources, statusCounts }
         sources={sources}
         statusCounts={statusCounts}
         filters={filters}
-        onChange={handleFilterChange}
+        onChange={applyFilters}
       />
 
       <ApplicationList
         applications={applications}
-        isPending={isPending}
-        onStatusClick={(id, status) => setStatusDialog({ open: true, id, status })}
-        onViewCoverLetter={(content, coverId) => setClDialog({ open: true, content, coverId, deleteError: null })}
-        onGenerateCoverLetter={(jobId, jobTitle) => setStreamDlg({ open: true, jobId, jobTitle, completed: false })}
+        isSaving={isPending}
+        onStatusClick={(applicationId, status) => setStatusChange({ applicationId, status })}
+        onClearFilters={hasActiveFilters ? clearFilters : undefined}
       />
 
-      <CoverLetterDialog
-        open={clDialog.open}
-        content={clDialog.content}
-        onClose={() => setClDialog({ open: false, content: "", coverId: null, deleteError: null })}
-        onDeleteError={clDialog.deleteError}
-        onDelete={clDialog.coverId ? async () => {
-          const res = await fetch("/api/graphql", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              query: `mutation Del($id: ID!) { deleteCoverLetter(id: $id) }`,
-              variables: { id: clDialog.coverId },
-            }),
-          });
-          const data = await res.json() as { errors?: { message: string }[] };
-          if (data.errors?.length) {
-            setClDialog((prev) => ({ ...prev, deleteError: data.errors![0].message }));
-            return;
-          }
-          setClDialog({ open: false, content: "", coverId: null, deleteError: null });
-          router.refresh();
-        } : undefined}
-      />
-
-      <StreamingCoverLetterDialog
-        open={streamDlg.open}
-        jobId={streamDlg.jobId}
-        jobTitle={streamDlg.jobTitle}
-        onClose={() => {
-          if (streamDlg.completed) router.refresh();
-          setStreamDlg({ open: false, jobId: null, jobTitle: "", completed: false });
-        }}
-        onComplete={() => {
-          setStreamDlg((prev) => ({ ...prev, completed: true }));
-        }}
-      />
-
-      {statusDialog && (
+      {statusChange && (
         <StatusChangeDialog
-          open={statusDialog.open}
-          status={statusDialog.status}
+          open
+          status={statusChange.status}
           isSaving={isPending}
-          onStatusChange={(status) =>
-            setStatusDialog({ ...statusDialog, status })
-          }
-          onClose={() => setStatusDialog(null)}
-          onSave={() =>
-            handleStatusChange(statusDialog.id, statusDialog.status)
-          }
+          onStatusChange={(status) => setStatusChange({ ...statusChange, status })}
+          onClose={() => setStatusChange(null)}
+          onSave={() => saveStatusChange(statusChange)}
         />
       )}
     </Box>

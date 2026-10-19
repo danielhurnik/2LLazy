@@ -1,57 +1,115 @@
 "use client";
 
 import { useActionState, useTransition, useState } from "react";
+import type { ReactNode } from "react";
 import {
+  Box,
   Typography,
   Card,
   CardContent,
   Button,
   Stack,
   Alert,
-  Chip,
   CircularProgress,
   IconButton,
   Tooltip,
 } from "@mui/material";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
-import DeleteIcon from "@mui/icons-material/Delete";
+import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
+import { ui, fonts } from "@/theme/theme";
 import type { UploadedFile } from "@/types";
 import { uploadCvAction, deleteUploadedFileAction } from "@/lib/actions/settingsActions";
+
+const UPLOAD_INPUT_ID = "cv-upload-input";
+const ACCEPTED_FILE_TYPES = ".pdf,.docx,.doc,.txt";
+const BYTES_PER_KILOBYTE = 1024;
+
+const formatKilobytes = (bytes: number) => `${(bytes / BYTES_PER_KILOBYTE).toFixed(1)} KB`;
 
 interface Props {
   uploadedFiles: UploadedFile[];
 }
 
+function InlineCode({ children }: { children: ReactNode }) {
+  return (
+    <Box component="code" sx={{ fontFamily: fonts.mono, fontSize: "0.8em", color: ui.text }}>
+      {children}
+    </Box>
+  );
+}
+
+function UploadedFileRow({
+  file,
+  isDeleting,
+  onDelete,
+}: {
+  file: UploadedFile;
+  isDeleting: boolean;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <Stack
+      direction="row"
+      alignItems="center"
+      spacing={1.5}
+      sx={{ px: 1.5, py: 0.75, "& + &": { borderTop: `1px solid ${ui.line}` } }}
+    >
+      <Typography variant="body2" noWrap sx={{ minWidth: 0, flexGrow: 1 }}>
+        {file.filename}
+      </Typography>
+      <Typography sx={{ fontFamily: fonts.mono, fontSize: "0.72rem", color: ui.textFaint, flexShrink: 0 }}>
+        {formatKilobytes(file.size)}
+      </Typography>
+      <Tooltip title="Delete file">
+        <span>
+          <IconButton
+            size="small"
+            disabled={isDeleting}
+            onClick={() => onDelete(file.id)}
+            aria-label={`Delete ${file.filename}`}
+            sx={{ "&:hover": { color: ui.red } }}
+          >
+            {isDeleting ? (
+              <CircularProgress size={14} color="inherit" />
+            ) : (
+              <DeleteOutlineRoundedIcon fontSize="small" />
+            )}
+          </IconButton>
+        </span>
+      </Tooltip>
+    </Stack>
+  );
+}
+
 export function CvDocumentsCard({ uploadedFiles }: Props) {
-  const [state, formAction, isPending] = useActionState(uploadCvAction, null);
+  const [uploadState, uploadFormAction, isUploading] = useActionState(uploadCvAction, null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [deletingFile, setDeletingFile] = useState<string | null>(null);
+  const [deletingFileId, setDeletingFileId] = useState<string | null>(null);
   const [, startDeleteTransition] = useTransition();
+  const hasFiles = uploadedFiles.length > 0;
 
   const handleDelete = (id: string) => {
-    setDeletingFile(id);
+    setDeletingFileId(id);
     startDeleteTransition(async () => {
       const result = await deleteUploadedFileAction(id);
       if (result.error) setDeleteError(result.error);
-      setDeletingFile(null);
+      setDeletingFileId(null);
     });
   };
 
   return (
-    <Card sx={{ mb: 3 }}>
+    <Card sx={{ mb: 2 }}>
       <CardContent>
-        <Typography variant="h6" gutterBottom>
-          CV &amp; Documents
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Upload your CV/resume. Files named <code>cv.*</code> or{" "}
-          <code>resume.*</code> are auto-detected for cover letter generation
-          and form file uploads.
+        <Typography variant="h6">CV and documents</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25, mb: 2 }}>
+          Files named <InlineCode>cv.*</InlineCode> or{" "}
+          <InlineCode>resume.*</InlineCode> are
+          treated as your main CV.
         </Typography>
 
-        {state?.error && (
+        {uploadState?.error && (
           <Alert severity="error" sx={{ mb: 2 }}>
-            {state.error}
+            {uploadState.error}
           </Alert>
         )}
         {deleteError && (
@@ -59,18 +117,18 @@ export function CvDocumentsCard({ uploadedFiles }: Props) {
             {deleteError}
           </Alert>
         )}
-        {state?.filename && (
+        {uploadState?.filename && (
           <Alert severity="success" sx={{ mb: 2 }}>
-            Uploaded: {state.filename}
+            Uploaded: {uploadState.filename}
           </Alert>
         )}
 
-        <form action={formAction}>
+        <form action={uploadFormAction}>
           <input
-            id="cv-upload-input"
+            id={UPLOAD_INPUT_ID}
             type="file"
             name="file"
-            accept=".pdf,.docx,.doc,.txt"
+            accept={ACCEPTED_FILE_TYPES}
             style={{ display: "none" }}
             onChange={(e) => {
               if (e.target.files?.[0]) {
@@ -80,43 +138,26 @@ export function CvDocumentsCard({ uploadedFiles }: Props) {
           />
           <Button
             component="label"
-            htmlFor="cv-upload-input"
+            htmlFor={UPLOAD_INPUT_ID}
             variant="outlined"
-            startIcon={isPending ? <CircularProgress size={16} /> : <UploadFileIcon />}
-            disabled={isPending}
+            startIcon={isUploading ? <CircularProgress size={16} /> : <UploadFileIcon />}
+            disabled={isUploading}
             sx={{ mb: 2 }}
           >
-            {isPending ? "Uploading..." : "Upload File"}
+            {isUploading ? "Uploading…" : "Upload file"}
           </Button>
         </form>
 
-        <Stack spacing={1}>
-          {uploadedFiles.map((f) => (
-            <Stack key={f.id} direction="row" alignItems="center" spacing={1}>
-              <Chip label={f.filename} size="small" variant="outlined" />
-              <Typography variant="caption" color="text.secondary">
-                {(f.size / 1024).toFixed(1)} KB
-              </Typography>
-              <Tooltip title="Delete file">
-                <span>
-                  <IconButton
-                    size="small"
-                    color="error"
-                    disabled={deletingFile === f.id}
-                    onClick={() => handleDelete(f.id)}
-                    aria-label={`Delete ${f.filename}`}
-                  >
-                    {deletingFile === f.id ? (
-                      <CircularProgress size={14} color="error" />
-                    ) : (
-                      <DeleteIcon fontSize="small" />
-                    )}
-                  </IconButton>
-                </span>
-              </Tooltip>
-            </Stack>
+        <Stack sx={{ border: hasFiles ? `1px solid ${ui.line}` : "none", borderRadius: 1 }}>
+          {uploadedFiles.map((file) => (
+            <UploadedFileRow
+              key={file.id}
+              file={file}
+              isDeleting={deletingFileId === file.id}
+              onDelete={handleDelete}
+            />
           ))}
-          {uploadedFiles.length === 0 && (
+          {!hasFiles && (
             <Typography variant="body2" color="text.secondary">
               No files uploaded yet.
             </Typography>

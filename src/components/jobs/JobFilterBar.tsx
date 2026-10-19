@@ -1,11 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
-  Box,
-  FormControl,
   FormControlLabel,
-  InputLabel,
   MenuItem,
   Select,
   Stack,
@@ -16,6 +13,10 @@ import {
   ToggleButtonGroup,
   InputAdornment,
 } from "@mui/material";
+import { sourceLabel } from "@/types";
+import { ui } from "@/theme/theme";
+
+export const ALL_OPTION = "ALL";
 
 export interface JobFilters {
   source: string;
@@ -28,10 +29,10 @@ export interface JobFilters {
 }
 
 export const DEFAULT_JOB_FILTERS: JobFilters = {
-  source: "ALL",
+  source: ALL_OPTION,
   position: "",
   hasSalary: false,
-  workType: "ALL",
+  workType: ALL_OPTION,
   city: "",
   salaryMin: "",
   salaryMax: "",
@@ -41,113 +42,219 @@ interface JobFilterBarProps {
   sources: string[];
   filters: JobFilters;
   onChange: (filters: JobFilters) => void;
+  variant?: "full" | "basic";
 }
 
-export function JobFilterBar({ sources, filters, onChange }: JobFilterBarProps) {
-  const set = <K extends keyof JobFilters>(key: K, value: JobFilters[K]) =>
-    onChange({ ...filters, [key]: value });
+const WORK_TYPES = [
+  { value: ALL_OPTION, label: "Any" },
+  { value: "Remote", label: "Remote" },
+  { value: "Hybrid", label: "Hybrid" },
+  { value: "Onsite", label: "Onsite" },
+];
 
-  const [positionInput, setPositionInput] = useState(filters.position);
-  const [cityInput, setCityInput] = useState(filters.city);
-  useEffect(() => setPositionInput(filters.position), [filters.position]);
-  useEffect(() => setCityInput(filters.city), [filters.city]);
+const sourceOptionLabel = (source: string) =>
+  source === ALL_OPTION ? "All boards" : sourceLabel(source);
 
-  const commitPosition = () => set("position", positionInput);
-  const commitCity = () => set("city", cityInput);
+interface CommitOnBlurTextFieldProps {
+  value: string;
+  onCommit: (value: string) => void;
+  placeholder: string;
+  ariaLabel: string;
+  width: number;
+}
 
-  const allSources = ["ALL", ...sources];
+function CommitOnBlurTextField({ value, onCommit, placeholder, ariaLabel, width }: CommitOnBlurTextFieldProps) {
+  const [draft, setDraft] = useState(value);
+  const [previousValue, setPreviousValue] = useState(value);
+  if (previousValue !== value) {
+    setPreviousValue(value);
+    setDraft(value);
+  }
+
+  const commit = () => onCommit(draft);
 
   return (
-    <Box sx={{ mb: 2.5 }}>
-      <Stack spacing={1.5}>
-        {/* Row 1: text filters */}
-        <Stack direction="row" spacing={1.5} sx={{ flexWrap: "wrap", alignItems: "center" }}>
-          <TextField
-            label="Position / Company"
-            size="small"
-            value={positionInput}
-            onChange={(e) => setPositionInput(e.target.value)}
-            onBlur={commitPosition}
-            onKeyDown={(e) => e.key === "Enter" && commitPosition()}
-            sx={{ minWidth: 200 }}
-            placeholder="Search title or company…"
-          />
+    <TextField
+      size="small"
+      placeholder={placeholder}
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => event.key === "Enter" && commit()}
+      inputProps={{ "aria-label": ariaLabel }}
+      sx={{ width }}
+    />
+  );
+}
 
-          <TextField
-            label="City"
-            size="small"
-            value={cityInput}
-            onChange={(e) => setCityInput(e.target.value)}
-            onBlur={commitCity}
-            onKeyDown={(e) => e.key === "Enter" && commitCity()}
-            sx={{ minWidth: 150 }}
-            placeholder="e.g. Praha, Brno…"
-          />
+interface PositionFilterFieldProps {
+  value: string;
+  onCommit: (position: string) => void;
+}
 
-          <FormControl size="small" sx={{ minWidth: 140 }}>
-            <InputLabel id="job-filter-source-label">Site</InputLabel>
-            <Select
-              labelId="job-filter-source-label"
-              value={filters.source}
-              label="Site"
-              onChange={(e) => set("source", e.target.value)}
-            >
-              {allSources.map((src) => (
-                <MenuItem key={src} value={src}>
-                  {src === "ALL" ? "All Sites" : src}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+export function PositionFilterField({ value, onCommit }: PositionFilterFieldProps) {
+  return (
+    <CommitOnBlurTextField
+      value={value}
+      onCommit={onCommit}
+      placeholder="Filter by title or company"
+      ariaLabel="Position / Company"
+      width={220}
+    />
+  );
+}
 
-          <FormControlLabel
-            control={
-              <Switch
-                size="small"
-                checked={filters.hasSalary}
-                onChange={(e) => set("hasSalary", e.target.checked)}
-              />
-            }
-            label={<Typography variant="body2" color="text.secondary">Has Salary</Typography>}
-            sx={{ ml: 0, gap: 0.5 }}
-          />
-        </Stack>
+interface SourceFilterSelectProps {
+  sources: string[];
+  value: string;
+  onChange: (source: string) => void;
+}
 
-        {/* Row 2: work type + salary range */}
-        <Stack direction="row" spacing={1.5} sx={{ flexWrap: "wrap", alignItems: "center" }}>
-          <ToggleButtonGroup
-            value={filters.workType}
-            exclusive
-            size="small"
-            onChange={(_, v) => { if (v !== null) set("workType", v); }}
-            aria-label="Work type filter"
-          >
-            <ToggleButton value="ALL" sx={{ textTransform: "none", px: 1.5 }}>All</ToggleButton>
-            <ToggleButton value="Remote" sx={{ textTransform: "none", px: 1.5 }}>Remote</ToggleButton>
-            <ToggleButton value="Hybrid" sx={{ textTransform: "none", px: 1.5 }}>Hybrid</ToggleButton>
-            <ToggleButton value="Onsite" sx={{ textTransform: "none", px: 1.5 }}>Onsite</ToggleButton>
-          </ToggleButtonGroup>
+export function SourceFilterSelect({ sources, value, onChange }: SourceFilterSelectProps) {
+  return (
+    <Select
+      size="small"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      SelectDisplayProps={{ "aria-label": "Job board" }}
+      sx={{ minWidth: 150 }}
+    >
+      {[ALL_OPTION, ...sources].map((source) => (
+        <MenuItem key={source} value={source}>
+          {sourceOptionLabel(source)}
+        </MenuItem>
+      ))}
+    </Select>
+  );
+}
 
-          <TextField
-            label="Min Salary"
-            size="small"
-            type="number"
-            value={filters.salaryMin}
-            onChange={(e) => set("salaryMin", e.target.value)}
-            sx={{ width: 130 }}
-            InputProps={{ startAdornment: <InputAdornment position="start">CZK</InputAdornment> }}
-          />
-          <TextField
-            label="Max Salary"
-            size="small"
-            type="number"
-            value={filters.salaryMax}
-            onChange={(e) => set("salaryMax", e.target.value)}
-            sx={{ width: 130 }}
-            InputProps={{ startAdornment: <InputAdornment position="start">CZK</InputAdornment> }}
-          />
-        </Stack>
-      </Stack>
-    </Box>
+interface HasSalarySwitchProps {
+  checked: boolean;
+  onChange: (hasSalary: boolean) => void;
+}
+
+export function HasSalarySwitch({ checked, onChange }: HasSalarySwitchProps) {
+  return (
+    <FormControlLabel
+      control={
+        <Switch
+          size="small"
+          checked={checked}
+          onChange={(event) => onChange(event.target.checked)}
+        />
+      }
+      label="Has salary"
+      sx={{ ml: 0.5 }}
+    />
+  );
+}
+
+interface WorkTypeToggleProps {
+  value: string;
+  onChange: (workType: string) => void;
+}
+
+function WorkTypeToggle({ value, onChange }: WorkTypeToggleProps) {
+  return (
+    <ToggleButtonGroup
+      value={value}
+      exclusive
+      size="small"
+      onChange={(_event, workType: string | null) => {
+        if (workType !== null) onChange(workType);
+      }}
+      aria-label="Work type"
+    >
+      {WORK_TYPES.map((workType) => (
+        <ToggleButton key={workType.value} value={workType.value}>{workType.label}</ToggleButton>
+      ))}
+    </ToggleButtonGroup>
+  );
+}
+
+interface SalaryRangeFieldsProps {
+  salaryMin: string;
+  salaryMax: string;
+  onSalaryMinChange: (salaryMin: string) => void;
+  onSalaryMaxChange: (salaryMax: string) => void;
+}
+
+function SalaryRangeFields({ salaryMin, salaryMax, onSalaryMinChange, onSalaryMaxChange }: SalaryRangeFieldsProps) {
+  return (
+    <Stack direction="row" alignItems="center" spacing={0.75}>
+      <TextField
+        size="small"
+        type="number"
+        placeholder="Min"
+        value={salaryMin}
+        onChange={(event) => onSalaryMinChange(event.target.value)}
+        inputProps={{ "aria-label": "Minimum monthly salary in CZK" }}
+        sx={{ width: 92 }}
+      />
+      <Typography sx={{ color: ui.textFaint }}>–</Typography>
+      <TextField
+        size="small"
+        type="number"
+        placeholder="Max"
+        value={salaryMax}
+        onChange={(event) => onSalaryMaxChange(event.target.value)}
+        inputProps={{ "aria-label": "Maximum monthly salary in CZK" }}
+        InputProps={{ endAdornment: <InputAdornment position="end">Kč</InputAdornment> }}
+        sx={{ width: 118 }}
+      />
+    </Stack>
+  );
+}
+
+export function JobFilterBar({ sources, filters, onChange, variant = "full" }: JobFilterBarProps) {
+  const updateFilter = <K extends keyof JobFilters>(key: K, value: JobFilters[K]) =>
+    onChange({ ...filters, [key]: value });
+
+  const isFullVariant = variant === "full";
+
+  return (
+    <Stack direction="row" sx={{ mb: 2, flexWrap: "wrap", alignItems: "center", gap: 1 }}>
+      <PositionFilterField
+        value={filters.position}
+        onCommit={(position) => updateFilter("position", position)}
+      />
+
+      {isFullVariant && (
+        <CommitOnBlurTextField
+          value={filters.city}
+          onCommit={(city) => updateFilter("city", city)}
+          placeholder="City"
+          ariaLabel="City"
+          width={120}
+        />
+      )}
+
+      <SourceFilterSelect
+        sources={sources}
+        value={filters.source}
+        onChange={(source) => updateFilter("source", source)}
+      />
+
+      {isFullVariant && (
+        <WorkTypeToggle
+          value={filters.workType}
+          onChange={(workType) => updateFilter("workType", workType)}
+        />
+      )}
+
+      {isFullVariant && (
+        <SalaryRangeFields
+          salaryMin={filters.salaryMin}
+          salaryMax={filters.salaryMax}
+          onSalaryMinChange={(salaryMin) => updateFilter("salaryMin", salaryMin)}
+          onSalaryMaxChange={(salaryMax) => updateFilter("salaryMax", salaryMax)}
+        />
+      )}
+
+      <HasSalarySwitch
+        checked={filters.hasSalary}
+        onChange={(hasSalary) => updateFilter("hasSalary", hasSalary)}
+      />
+    </Stack>
   );
 }

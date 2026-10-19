@@ -1,28 +1,28 @@
-import { neonConfig } from "@neondatabase/serverless";
-import { PrismaNeon } from "@prisma/adapter-neon";
+import { Pool } from "pg";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
-import ws from "ws";
 
-// Required for WebSocket connections in Node.js 18/20 (not available natively)
-neonConfig.webSocketConstructor = ws;
+const databaseUrl = process.env.DATABASE_URL;
+const isProduction = process.env.NODE_ENV === "production";
+const isDevelopment = process.env.NODE_ENV === "development";
 
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
+const isHostedNeonDatabase = (url: string | undefined) => url?.includes("neon.tech") ?? false;
 
-function createPrismaClient() {
-  // PrismaNeon uses Neon's serverless WebSocket protocol — dramatically faster than
-  // raw pg for serverless functions because it avoids the TCP+TLS handshake overhead
-  // and supports connection multiplexing over a single persistent WebSocket.
-  const adapter = new PrismaNeon({
-    connectionString: process.env.DATABASE_URL!,
+function createPrismaClient(): PrismaClient {
+  const pool = new Pool({
+    connectionString: databaseUrl,
+    ssl: isHostedNeonDatabase(databaseUrl) ? { rejectUnauthorized: false } : false,
   });
   return new PrismaClient({
-    adapter,
-    log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
+    adapter: new PrismaPg(pool),
+    log: isDevelopment ? ["error", "warn"] : ["error"],
   });
 }
 
-export const prisma = globalForPrisma.prisma || createPrismaClient();
+const devHotReloadCache = globalThis as unknown as { prisma?: PrismaClient };
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
+export const prisma = devHotReloadCache.prisma ?? createPrismaClient();
+
+if (!isProduction) {
+  devHotReloadCache.prisma = prisma;
 }

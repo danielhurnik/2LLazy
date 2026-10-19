@@ -1,99 +1,59 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
+import { lookupIntent } from "@/lib/queryIntent";
 
-// Mock OpenAI so no real API call is made
-vi.mock("@langchain/openai", () => ({
-  ChatOpenAI: vi.fn().mockImplementation(() => ({
-    withStructuredOutput: vi.fn().mockReturnValue({
-      invoke: vi.fn().mockResolvedValue({
-        category: "Fullstack",
-        includedTitles: ["Fullstack developer"],
-        excludedTitles: ["DevOps"],
-        canonicalText: "Fullstack developer",
-        antiText: "DevOps engineer",
-        scrapingKeyword: "Fullstack",
-      }),
-    }),
-  })),
-}));
+const QUERIES_WITH_KNOWN_CATEGORIES = ["react", "node", "python", "fullstack", "devops", "vue"];
+const MIN_CANONICAL_TEXT_LENGTH = 20;
+const UNKNOWN_QUERY = "zig-lang";
+const OBJECT_PROTOTYPE_KEYS = ["constructor", "toString", "__proto__"];
 
-async function getLib() {
-  const mod = await import("@/lib/queryIntent");
-  return mod.classifyQueryIntent;
-}
+const categoryOf = (query: string) => lookupIntent(query).category;
 
-describe("classifyQueryIntent — static intent table (fast path)", () => {
-  it("classifies 'react' as Frontend", async () => {
-    const fn = await getLib();
-    const intent = await fn("react", "Any");
-    expect(intent.category).toBe("Frontend");
+describe("lookupIntent — static intent table", () => {
+  it("classifies 'react' as Frontend", () => {
+    expect(categoryOf("react")).toBe("Frontend");
   });
 
-  it("classifies 'React' (uppercase) as Frontend", async () => {
-    const fn = await getLib();
-    const intent = await fn("React", "Any");
-    expect(intent.category).toBe("Frontend");
+  it("is case-insensitive and alias-aware", () => {
+    expect(categoryOf("React")).toBe("Frontend");
+    expect(categoryOf("React.js")).toBe("Frontend");
+    expect(categoryOf("node.js")).toBe("Backend");
   });
 
-  it("react intent includes React/Next.js in includedTitles", async () => {
-    const fn = await getLib();
-    const intent = await fn("react", "Any");
-    const titles = intent.includedTitles.join(" ");
-    expect(titles).toMatch(/React/i);
-  });
-
-  it("react intent excludes Backend in excludedTitles", async () => {
-    const fn = await getLib();
-    const intent = await fn("react", "Any");
+  it("react intent includes React titles and excludes Backend", () => {
+    const intent = lookupIntent("react");
+    expect(intent.includedTitles.join(" ")).toMatch(/React/i);
     expect(intent.excludedTitles).toContain("Backend");
   });
 
-  it("react antiText contains backend keywords for negative scoring", async () => {
-    const fn = await getLib();
-    const intent = await fn("react", "Any");
-    expect(intent.antiText).toMatch(/backend|server|API/i);
+  it("classifies node / fullstack / devops", () => {
+    expect(categoryOf("node")).toBe("Backend");
+    expect(categoryOf("fullstack")).toBe("Fullstack");
+    expect(categoryOf("devops")).toBe("DevOps");
   });
 
-  it("classifies 'node' as Backend", async () => {
-    const fn = await getLib();
-    const intent = await fn("node", "Any");
-    expect(intent.category).toBe("Backend");
-  });
-
-  it("classifies 'fullstack' as Fullstack", async () => {
-    const fn = await getLib();
-    const intent = await fn("fullstack", "Any");
-    expect(intent.category).toBe("Fullstack");
-  });
-
-  it("classifies 'devops' as DevOps", async () => {
-    const fn = await getLib();
-    const intent = await fn("devops", "Any");
-    expect(intent.category).toBe("DevOps");
-  });
-
-  it("provides a scrapingKeyword for all known categories", async () => {
-    const fn = await getLib();
-    for (const query of ["react", "node", "python", "fullstack", "devops", "vue"]) {
-      const intent = await fn(query, "Any");
+  it("provides a scrapingKeyword and canonicalText for known categories", () => {
+    for (const query of QUERIES_WITH_KNOWN_CATEGORIES) {
+      const intent = lookupIntent(query);
       expect(intent.scrapingKeyword).toBeTruthy();
+      expect(intent.canonicalText.length).toBeGreaterThan(MIN_CANONICAL_TEXT_LENGTH);
     }
   });
 
-  it("canonicalText is non-empty for known categories", async () => {
-    const fn = await getLib();
-    const intent = await fn("react", "Any");
-    expect(intent.canonicalText.length).toBeGreaterThan(20);
+  it("falls back to the strongest token in a multi-word query", () => {
+    expect(categoryOf("senior react developer")).toBe("Frontend");
+    expect(categoryOf("python backend engineer")).toBe("Backend");
   });
 
-  it("unknown query falls through to GPT (mocked) and returns a valid intent", async () => {
-    const fn = await getLib();
-    const intent = await fn("zig-lang", "Any");
-    // Our mock returns Fullstack for any GPT call
-    expect(intent).toHaveProperty("category");
-    expect(intent).toHaveProperty("includedTitles");
-    expect(intent).toHaveProperty("excludedTitles");
-    expect(intent).toHaveProperty("canonicalText");
-    expect(intent).toHaveProperty("antiText");
-    expect(intent).toHaveProperty("scrapingKeyword");
+  it("returns a keyword-only intent for unknown queries without any network call", () => {
+    const intent = lookupIntent(UNKNOWN_QUERY);
+    expect(intent.category).toBe("Other");
+    expect(intent.scrapingKeyword).toBe(UNKNOWN_QUERY);
+    expect(intent.includedTitles).toEqual([]);
+  });
+
+  it("treats Object.prototype keys as unknown queries", () => {
+    for (const query of OBJECT_PROTOTYPE_KEYS) {
+      expect(categoryOf(query)).toBe("Other");
+    }
   });
 });

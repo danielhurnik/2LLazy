@@ -1,9 +1,12 @@
 import { prisma } from "@/lib/prisma";
-import { generateEmbedding, generateCoverLetter, checkOllamaHealth } from "@/lib/ai";
-import { readCvText } from "@/lib/cv";
-import { cosineSimilarity } from "@/lib/similarity";
-import { ApplicationStatus } from "@prisma/client";
-import { revalidateTag, revalidatePath } from "next/cache";
+import { resolveIntent } from "@/lib/jobs/intent";
+import { storedToNormalized } from "@/lib/jobs/pipeline";
+import { favouriteIdsFor, searchRecent } from "@/lib/jobs/repo";
+import { SCORE_THRESHOLD, scoreJob, type ScoreRequest } from "@/lib/jobs/score";
+import { DEFAULT_COUNTRY } from "@/lib/jobs/sources/types";
+import type { ApplicationStatus } from "@prisma/client";
+import { GraphQLError } from "graphql";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { favouriteTag } from "@/lib/data/favourites";
 import { interviewTag } from "@/lib/data/interviews";
 import { applicationTag } from "@/lib/data/applications";
@@ -12,186 +15,193 @@ export interface GqlContext {
   userId: string;
 }
 
+interface SerializableJob {
+  postedAt: Date | null;
+  scrapedAt: Date;
+}
+
+interface SearchJobsArgs {
+  query: string;
+  skillLevel?: string;
+  limit?: number;
+}
+
+interface ScheduleInterviewArgs {
+  applicationId: string;
+  scheduledAt: string;
+  durationMinutes?: number;
+  timezone?: string;
+  notes?: string;
+}
+
+interface UpdateInterviewArgs {
+  id: string;
+  scheduledAt?: string | null;
+  durationMinutes?: number;
+  notes?: string;
+}
+
+interface UserProfileArgs {
+  name: string;
+  email: string;
+  phone?: string;
+  linkedInUrl?: string;
+  githubUrl?: string;
+}
+
+const DEFAULT_SEARCH_LIMIT = 20;
+const SEARCH_WINDOW_DAYS = 60;
+const SEARCH_CANDIDATE_POOL = 300;
+const DEFAULT_INTERVIEW_MINUTES = 60;
+const DEFAULT_TIMEZONE = "UTC";
+const EXPIRE_IMMEDIATELY = { expire: 0 };
+const APPLICATION_WITH_JOB_AND_INTERVIEW = { job: true, interview: true } as const;
+
+function expireTags(...tags: string[]): void {
+  for (const tag of tags) revalidateTag(tag, EXPIRE_IMMEDIATELY);
+}
+
+function serializeJob<T extends SerializableJob>(job: T, favourited: boolean) {
+  return {
+    ...job,
+    favourited,
+    postedAt: job.postedAt?.toISOString() ?? null,
+    scrapedAt: job.scrapedAt.toISOString(),
+  };
+}
+
+function parseDateTime(value: string, field: string): Date {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) throw new GraphQLError(`${field} is not a valid date`);
+  return date;
+}
+
+function monthRange(year: number, month: number): { gte: Date; lt: Date } {
+  return { gte: new Date(year, month - 1, 1), lt: new Date(year, month, 1) };
+}
+
+async function findOwnedInterview(id: string, userId: string) {
+  const interview = await prisma.interview.findFirst({ where: { id, application: { userId } } });
+  if (!interview) throw new GraphQLError("Not found");
+  return interview;
+}
+
 export const resolvers = {
   Query: {
     searchJobs: async (
       _: unknown,
-      { query, skillLevel = "", limit = 20 }: { query: string; skillLevel?: string; limit?: number },
-      { userId }: GqlContext
+      { query, skillLevel = "", limit = DEFAULT_SEARCH_LIMIT }: SearchJobsArgs,
+      { userId }: GqlContext,
     ) => {
-      const text = `${query} ${skillLevel}`.trim();
-      const queryEmbedding = await generateEmbedding(text);
+      const intent = resolveIntent(query);
+      const [rows, favouriteIds] = await Promise.all([
+        searchRecent({
+          titleTerms: [query, intent.scrapingKeyword, ...intent.includedTitles],
+          query,
+          days: SEARCH_WINDOW_DAYS,
+          limit: SEARCH_CANDIDATE_POOL,
+        }),
+        favouriteIdsFor(userId),
+      ]);
+      const scoreRequest: ScoreRequest = { query, skillLevel, city: "", intent, salaryMin: null, salaryMax: null };
 
-      const allJobs = await prisma.$queryRaw<Array<{
-        id: string; title: string; company: string; location: string | null;
-        sourceUrl: string; source: string; salary: string | null;
-        postedAt: Date | null; scrapedAt: Date;
-        embedding: string | null;
-      }>>`
-        SELECT id, title, company, location, "sourceUrl", source::text, salary,
-               "postedAt", "scrapedAt", embedding::text as embedding
-        FROM "JobPosting"
-        WHERE embedding IS NOT NULL
-        LIMIT 500
-      `;
-
-      // Check which jobs are favourited by this user
-      const favouritedIds = new Set(
-        (await prisma.userFavourite.findMany({ where: { userId }, select: { jobId: true } }))
-          .map((f) => f.jobId)
-      );
-
-      const parsedJobs = allJobs.map((j) => ({
-        ...j,
-        favourited: favouritedIds.has(j.id),
-        embedding: j.embedding ? JSON.parse(j.embedding) as number[] : null,
-      }));
-      const jobs = parsedJobs.filter(
-        (j) => j.embedding !== null && (j.embedding as number[]).length === queryEmbedding.length
-      );
-      return jobs
-        .map((job) => ({
-          ...job,
-          postedAt: job.postedAt?.toISOString() ?? null,
-          scrapedAt: job.scrapedAt.toISOString(),
-          similarity: cosineSimilarity(queryEmbedding, job.embedding as number[]),
-        }))
+      return rows
+        .map((row) => {
+          const scored = scoreJob(scoreRequest, storedToNormalized(row, DEFAULT_COUNTRY), row.firstSeenAt);
+          return {
+            ...serializeJob(row, favouriteIds.has(row.id)),
+            similarity: scored.score,
+            matchReasons: scored.reasons,
+          };
+        })
+        .filter((job) => job.similarity >= SCORE_THRESHOLD)
         .sort((a, b) => b.similarity - a.similarity)
         .slice(0, limit);
     },
 
-    getFavourites: async (
-      _: unknown,
-      __: unknown,
-      { userId }: GqlContext
-    ) => {
+    getFavourites: async (_: unknown, __: unknown, { userId }: GqlContext) => {
       const jobs = await prisma.jobPosting.findMany({
         where: { favouritedBy: { some: { userId } } },
         orderBy: { scrapedAt: "desc" },
       });
-      return jobs.map((job) => ({
-        ...job,
-        favourited: true,
-        postedAt: job.postedAt?.toISOString() ?? null,
-        scrapedAt: job.scrapedAt.toISOString(),
-      }));
+      return jobs.map((job) => serializeJob(job, true));
     },
 
     getApplications: async (
       _: unknown,
-      { status }: { status?: ApplicationStatus },
-      { userId }: GqlContext
-    ) => {
-      return prisma.application.findMany({
-        where: { userId, ...(status ? { status } : {}) },
-        include: { job: true, coverLetter: true, interview: true },
+      { status }: { status?: ApplicationStatus | null },
+      { userId }: GqlContext,
+    ) =>
+      prisma.application.findMany({
+        where: { userId, status: status ?? undefined },
+        include: APPLICATION_WITH_JOB_AND_INTERVIEW,
         orderBy: { createdAt: "desc" },
-      });
-    },
+      }),
 
-    getApplication: async (
-      _: unknown,
-      { id }: { id: string },
-      { userId }: GqlContext
-    ) => {
-      return prisma.application.findFirst({
+    getApplication: async (_: unknown, { id }: { id: string }, { userId }: GqlContext) =>
+      prisma.application.findFirst({
         where: { id, userId },
-        include: { job: true, coverLetter: true, interview: true },
-      });
-    },
+        include: APPLICATION_WITH_JOB_AND_INTERVIEW,
+      }),
 
     getInterviews: async (
       _: unknown,
       { month, year }: { month: number; year: number },
-      { userId }: GqlContext
-    ) => {
-      const start = new Date(year, month - 1, 1);
-      const end = new Date(year, month, 1);
-      return prisma.interview.findMany({
-        where: {
-          scheduledAt: { gte: start, lt: end },
-          application: { userId },
-        },
+      { userId }: GqlContext,
+    ) =>
+      prisma.interview.findMany({
+        where: { scheduledAt: monthRange(year, month), application: { userId } },
         include: { application: { include: { job: true } } },
         orderBy: { scheduledAt: "asc" },
-      });
-    },
+      }),
 
-    getCoverLetter: async (
-      _: unknown,
-      { id }: { id: string },
-      { userId }: GqlContext
-    ) => {
-      return prisma.coverLetter.findFirst({ where: { id, userId } });
-    },
-
-    getUserProfile: async (
-      _: unknown,
-      __: unknown,
-      { userId }: GqlContext
-    ) => {
-      return prisma.userProfile.findUnique({ where: { userId } });
-    },
-
-    aiHealth: async () => {
-      return checkOllamaHealth();
-    },
+    getUserProfile: async (_: unknown, __: unknown, { userId }: GqlContext) =>
+      prisma.userProfile.findUnique({ where: { userId } }),
   },
 
   Mutation: {
-    toggleFavourite: async (
-      _: unknown,
-      { jobId }: { jobId: string },
-      { userId }: GqlContext
-    ) => {
-      const existing = await prisma.userFavourite.findUnique({
-        where: { userId_jobId: { userId, jobId } },
-      });
+    toggleFavourite: async (_: unknown, { jobId }: { jobId: string }, { userId }: GqlContext) => {
+      const favouriteKey = { userId_jobId: { userId, jobId } };
+      const existing = await prisma.userFavourite.findUnique({ where: favouriteKey });
       if (existing) {
-        await prisma.userFavourite.delete({ where: { userId_jobId: { userId, jobId } } });
+        await prisma.userFavourite.delete({ where: favouriteKey });
       } else {
         await prisma.userFavourite.create({ data: { userId, jobId } });
       }
       const job = await prisma.jobPosting.findUniqueOrThrow({ where: { id: jobId } });
-      revalidateTag(favouriteTag(userId), "default");
+      expireTags(favouriteTag(userId));
       revalidatePath("/favourites");
-      return {
-        ...job,
-        favourited: !existing,
-        postedAt: job.postedAt?.toISOString() ?? null,
-        scrapedAt: job.scrapedAt.toISOString(),
-      };
+      return serializeJob(job, !existing);
     },
 
     updateApplicationStatus: async (
       _: unknown,
       { id, status }: { id: string; status: ApplicationStatus },
-      { userId }: GqlContext
-    ) => {
-      return prisma.application.update({
+      { userId }: GqlContext,
+    ) =>
+      prisma.application.update({
         where: { id, userId },
         data: { status },
-        include: { job: true, coverLetter: true, interview: true },
-      });
-    },
+        include: APPLICATION_WITH_JOB_AND_INTERVIEW,
+      }),
 
     scheduleInterview: async (
       _: unknown,
       {
         applicationId,
         scheduledAt,
-        durationMinutes = 60,
-        timezone = "UTC",
+        durationMinutes = DEFAULT_INTERVIEW_MINUTES,
+        timezone = DEFAULT_TIMEZONE,
         notes,
-      }: {
-        applicationId: string;
-        scheduledAt: string;
-        durationMinutes?: number;
-        timezone?: string;
-        notes?: string;
-      },
-      { userId }: GqlContext
+      }: ScheduleInterviewArgs,
+      { userId }: GqlContext,
     ) => {
+      const schedule = {
+        scheduledAt: parseDateTime(scheduledAt, "scheduledAt"),
+        durationMinutes,
+        timezone,
+        notes,
+      };
       const [, interview] = await prisma.$transaction([
         prisma.application.update({
           where: { id: applicationId, userId },
@@ -199,23 +209,11 @@ export const resolvers = {
         }),
         prisma.interview.upsert({
           where: { applicationId },
-          create: {
-            applicationId,
-            scheduledAt: new Date(scheduledAt),
-            durationMinutes,
-            timezone,
-            notes,
-          },
-          update: {
-            scheduledAt: new Date(scheduledAt),
-            durationMinutes,
-            timezone,
-            notes,
-          },
+          create: { applicationId, ...schedule },
+          update: schedule,
         }),
       ]);
-      revalidateTag(interviewTag(userId), "default");
-      revalidateTag(applicationTag(userId), "default");
+      expireTags(interviewTag(userId), applicationTag(userId));
       revalidatePath("/interviews");
       revalidatePath("/dashboard");
       return interview;
@@ -223,116 +221,28 @@ export const resolvers = {
 
     updateInterview: async (
       _: unknown,
-      {
-        id,
-        scheduledAt,
-        durationMinutes,
-        notes,
-      }: {
-        id: string;
-        scheduledAt?: string;
-        durationMinutes?: number;
-        notes?: string;
-      },
-      { userId }: GqlContext
+      { id, scheduledAt, durationMinutes, notes }: UpdateInterviewArgs,
+      { userId }: GqlContext,
     ) => {
-      // Verify the interview belongs to the user
-      const interview = await prisma.interview.findFirst({
-        where: { id, application: { userId } },
-      });
-      if (!interview) throw new Error("Not found");
+      await findOwnedInterview(id, userId);
       const updated = await prisma.interview.update({
         where: { id },
         data: {
-          ...(scheduledAt ? { scheduledAt: new Date(scheduledAt) } : {}),
-          ...(durationMinutes !== undefined ? { durationMinutes } : {}),
-          ...(notes !== undefined ? { notes } : {}),
+          scheduledAt: scheduledAt ? parseDateTime(scheduledAt, "scheduledAt") : undefined,
+          durationMinutes,
+          notes,
         },
       });
-      revalidateTag(interviewTag(userId), "default");
+      expireTags(interviewTag(userId));
       revalidatePath("/interviews");
       return updated;
     },
 
-    generateCoverLetter: async (
-      _: unknown,
-      { jobId, useSavedCV = true }: { jobId: string; useSavedCV?: boolean },
-      { userId }: GqlContext
-    ) => {
-      const job = await prisma.jobPosting.findUniqueOrThrow({ where: { id: jobId } });
-
-      let cvText = "";
-      if (useSavedCV) {
-        cvText = await readCvText(userId).catch(() => "");
-      }
-
-      const userProfile = await prisma.userProfile.findUnique({
+    saveUserProfile: async (_: unknown, profile: UserProfileArgs, { userId }: GqlContext) =>
+      prisma.userProfile.upsert({
         where: { userId },
-        select: { coverLetterLanguage: true },
-      });
-      const language = userProfile?.coverLetterLanguage ?? "English";
-
-      const content = await generateCoverLetter(
-        job.title,
-        job.company,
-        job.description,
-        cvText,
-        language,
-      );
-
-      const [coverLetter] = await prisma.$transaction([
-        prisma.coverLetter.create({
-          data: { userId, jobId, content, generatedByAI: true },
-        }),
-        prisma.userFavourite.upsert({
-          where: { userId_jobId: { userId, jobId } },
-          create: { userId, jobId },
-          update: {},
-        }),
-      ]);
-      revalidateTag(favouriteTag(userId), "default");
-      revalidatePath("/favourites");
-      return coverLetter;
-    },
-
-    deleteCoverLetter: async (
-      _: unknown,
-      { id }: { id: string },
-      { userId }: GqlContext
-    ) => {
-      const cl = await prisma.coverLetter.findUnique({ where: { id } });
-      // If it doesn't exist at all, treat as already deleted (idempotent)
-      if (!cl) {
-        revalidateTag(applicationTag(userId), "default");
-        return true;
-      }
-      // Ownership check
-      if (cl.userId !== userId) throw new Error("Not found");
-      await prisma.application.updateMany({
-        where: { coverLetterId: id, userId },
-        data: { coverLetterId: null },
-      });
-      await prisma.coverLetter.delete({ where: { id } });
-      revalidateTag(applicationTag(userId), "default");
-      return true;
-    },
-
-    saveUserProfile: async (
-      _: unknown,
-      args: {
-        name: string;
-        email: string;
-        phone?: string;
-        linkedInUrl?: string;
-        githubUrl?: string;
-      },
-      { userId }: GqlContext
-    ) => {
-      return prisma.userProfile.upsert({
-        where: { userId },
-        update: args,
-        create: { userId, ...args },
-      });
-    },
+        update: profile,
+        create: { userId, ...profile },
+      }),
   },
 };

@@ -1,6 +1,6 @@
 import { Stack, Typography, IconButton } from "@mui/material";
-import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
-import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import ChevronLeftRoundedIcon from "@mui/icons-material/ChevronLeftRounded";
+import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import type { Dayjs } from "dayjs";
 
 interface Props {
@@ -12,15 +12,15 @@ interface Props {
 
 export function CalendarMonthNav({ currentMonth, isPending, onPrev, onNext }: Props) {
   return (
-    <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 2 }}>
-      <IconButton onClick={onPrev} disabled={isPending}>
-        <ChevronLeftIcon />
+    <Stack direction="row" alignItems="center" spacing={0.5}>
+      <IconButton size="small" onClick={onPrev} disabled={isPending} aria-label="Previous month">
+        <ChevronLeftRoundedIcon fontSize="small" />
       </IconButton>
-      <Typography variant="h6" sx={{ minWidth: 160, textAlign: "center" }}>
+      <Typography variant="h6" sx={{ minWidth: 128, textAlign: "center" }}>
         {currentMonth.format("MMMM YYYY")}
       </Typography>
-      <IconButton onClick={onNext} disabled={isPending}>
-        <ChevronRightIcon />
+      <IconButton size="small" onClick={onNext} disabled={isPending} aria-label="Next month">
+        <ChevronRightRoundedIcon fontSize="small" />
       </IconButton>
     </Stack>
   );

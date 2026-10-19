@@ -1,20 +1,13 @@
-/**
- * Runs `fn` over all items in sequential batches of `batchSize`.
- * Items within a batch run concurrently; batches run one after another.
- * Null / rejected results are silently dropped.
- */
 export async function batchProcess<T, R>(
   items: T[],
   batchSize: number,
-  fn: (item: T) => Promise<R | null>,
+  process: (item: T) => Promise<R | null>,
 ): Promise<R[]> {
   const results: R[] = [];
-  for (let i = 0; i < items.length; i += batchSize) {
-    const settled = await Promise.allSettled(
-      items.slice(i, i + batchSize).map(fn),
-    );
-    for (const r of settled) {
-      if (r.status === "fulfilled" && r.value !== null) results.push(r.value);
+  for (let start = 0; start < items.length; start += batchSize) {
+    const settled = await Promise.allSettled(items.slice(start, start + batchSize).map(process));
+    for (const outcome of settled) {
+      if (outcome.status === "fulfilled" && outcome.value !== null) results.push(outcome.value);
     }
   }
   return results;

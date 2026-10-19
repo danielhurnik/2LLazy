@@ -1,58 +1,111 @@
 "use server";
 
-import { revalidatePath, revalidateTag } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import path from "path";
 import { randomUUID } from "crypto";
 import { settingsTag } from "@/lib/data/settings";
 import { requireUserId } from "@/lib/auth/sessionManager";
+import { isSupportedCountry, type CountryCode } from "@/lib/jobs/sources/types";
 
 const ALLOWED_EXTENSIONS = new Set([".pdf", ".docx", ".doc", ".txt"]);
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+const BYTES_PER_MEGABYTE = 1024 * 1024;
+const MAX_FILE_SIZE_MB = 10;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * BYTES_PER_MEGABYTE;
 
-const MAGIC_SIGNATURES: Array<{ bytes: number[] }> = [
-  { bytes: [0x25, 0x50, 0x44, 0x46] }, // %PDF
-  { bytes: [0x50, 0x4b, 0x03, 0x04] }, // PK (DOCX/ZIP)
-  { bytes: [0xd0, 0xcf, 0x11, 0xe0] }, // DOC (OLE2)
-];
+const PDF_SIGNATURE = [0x25, 0x50, 0x44, 0x46];
+const DOCX_ZIP_SIGNATURE = [0x50, 0x4b, 0x03, 0x04];
+const DOC_OLE2_SIGNATURE = [0xd0, 0xcf, 0x11, 0xe0];
+const BINARY_DOCUMENT_SIGNATURES = [PDF_SIGNATURE, DOCX_ZIP_SIGNATURE, DOC_OLE2_SIGNATURE];
 
-function hasMagicBytes(buf: Buffer): boolean {
-  const isPrintable = Array.from(buf.subarray(0, 512)).every(
-    (b) => b === 0x09 || b === 0x0a || b === 0x0d || (b >= 0x20 && b <= 0x7e),
-  );
-  if (isPrintable) return true;
-  return MAGIC_SIGNATURES.some(({ bytes }) =>
-    bytes.every((b, i) => buf[i] === b),
+const PLAIN_TEXT_SNIFF_LENGTH = 512;
+const TAB = 0x09;
+const LINE_FEED = 0x0a;
+const CARRIAGE_RETURN = 0x0d;
+const FIRST_PRINTABLE_ASCII = 0x20;
+const LAST_PRINTABLE_ASCII = 0x7e;
+const TEXT_WHITESPACE_BYTES = new Set([TAB, LINE_FEED, CARRIAGE_RETURN]);
+
+const UNSAFE_FILENAME_CHARACTERS = /[^a-zA-Z0-9._-]/g;
+
+const GOOGLE_PROVIDER = "google";
+const CALENDAR_SCOPE_FRAGMENT = "calendar";
+const REQUIRED_PROFILE_PLACEHOLDERS = { name: "", email: "" };
+const MAX_CITY_LENGTH = 80;
+
+type UploadCvResult = { error?: string; filename?: string };
+
+interface UserProfileInput {
+  name: string;
+  email: string;
+  phone?: string;
+  linkedInUrl?: string;
+  githubUrl?: string;
+  country?: string;
+  city?: string;
+}
+
+interface EditableProfileFields extends Omit<UserProfileInput, "country" | "city"> {
+  country?: CountryCode;
+  city?: string | null;
+}
+
+function isPlainTextByte(byte: number): boolean {
+  return (
+    TEXT_WHITESPACE_BYTES.has(byte) ||
+    (byte >= FIRST_PRINTABLE_ASCII && byte <= LAST_PRINTABLE_ASCII)
   );
 }
 
-export async function uploadCvAction(
-  _prevState: { error?: string; filename?: string } | null,
-  formData: FormData,
-): Promise<{ error?: string; filename?: string }> {
-  const userId = await requireUserId();
-  const file = formData.get("file") as File | null;
-  if (!file || !file.name) return { error: "No file provided" };
-  if (file.size > MAX_FILE_SIZE) return { error: "File too large (max 10 MB)" };
+function looksLikePlainText(content: Buffer): boolean {
+  return content.subarray(0, PLAIN_TEXT_SNIFF_LENGTH).every(isPlainTextByte);
+}
 
-  const ext = path.extname(file.name).toLowerCase();
-  if (!ALLOWED_EXTENSIONS.has(ext))
+function startsWithSignature(content: Buffer, signature: number[]): boolean {
+  return signature.every((byte, index) => content[index] === byte);
+}
+
+function hasRecognisedDocumentContent(content: Buffer): boolean {
+  return (
+    looksLikePlainText(content) ||
+    BINARY_DOCUMENT_SIGNATURES.some((signature) => startsWithSignature(content, signature))
+  );
+}
+
+function toStoredFileName(originalName: string): string {
+  const sanitisedBaseName = path.basename(originalName).replace(UNSAFE_FILENAME_CHARACTERS, "_");
+  return `${randomUUID()}-${sanitisedBaseName}`;
+}
+
+function revalidateSettings(userId: string): void {
+  updateTag(settingsTag(userId));
+  revalidatePath("/settings");
+}
+
+export async function uploadCvAction(
+  _prevState: UploadCvResult | null,
+  formData: FormData,
+): Promise<UploadCvResult> {
+  const userId = await requireUserId();
+  const file = formData.get("file");
+  if (!file || typeof file === "string" || !file.name) return { error: "No file provided" };
+  if (file.size > MAX_FILE_SIZE_BYTES) return { error: `File too large (max ${MAX_FILE_SIZE_MB} MB)` };
+
+  const extension = path.extname(file.name).toLowerCase();
+  if (!ALLOWED_EXTENSIONS.has(extension))
     return { error: "Only PDF, DOCX, DOC, and TXT files are allowed" };
 
-  const arrayBuffer = await file.arrayBuffer();
-  const buf = Buffer.from(arrayBuffer);
-  if (!hasMagicBytes(buf))
+  const content = Buffer.from(await file.arrayBuffer());
+  if (!hasRecognisedDocumentContent(content))
     return { error: "File content does not match its declared type" };
 
-  const safeName = `${randomUUID()}-${path.basename(file.name).replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-
+  const storedFileName = toStoredFileName(file.name);
   await prisma.cvDocument.create({
-    data: { userId, originalName: safeName, data: buf, size: buf.length },
+    data: { userId, originalName: storedFileName, data: content, size: content.length },
   });
 
-  revalidateTag(settingsTag(userId), "default");
-  revalidatePath("/settings");
-  return { filename: safeName };
+  revalidateSettings(userId);
+  return { filename: storedFileName };
 }
 
 export async function deleteUploadedFileAction(id: string): Promise<{ error?: string }> {
@@ -62,27 +115,50 @@ export async function deleteUploadedFileAction(id: string): Promise<{ error?: st
   } catch {
     return { error: "File not found or could not be deleted." };
   }
-  revalidateTag(settingsTag(userId), "default");
-  revalidatePath("/settings");
+  revalidateSettings(userId);
   return {};
 }
 
-export async function saveUserProfile(profile: {
-  name: string;
-  email: string;
-  phone?: string;
-  linkedInUrl?: string;
-  githubUrl?: string;
-  coverLetterLanguage?: string;
-}): Promise<void> {
+function validCountry(country: string | undefined): CountryCode | undefined {
+  if (country === undefined) return undefined;
+  if (!isSupportedCountry(country)) throw new Error(`Unsupported country: ${country}`);
+  return country;
+}
+
+function normalisedCity(city: string | undefined): string | null | undefined {
+  if (city === undefined) return undefined;
+  return city.trim().slice(0, MAX_CITY_LENGTH) || null;
+}
+
+function pickEditableProfileFields({
+  name,
+  email,
+  phone,
+  linkedInUrl,
+  githubUrl,
+  country,
+  city,
+}: UserProfileInput): EditableProfileFields {
+  return {
+    name,
+    email,
+    phone,
+    linkedInUrl,
+    githubUrl,
+    country: validCountry(country),
+    city: normalisedCity(city),
+  };
+}
+
+export async function saveUserProfile(profile: UserProfileInput): Promise<void> {
   const userId = await requireUserId();
+  const editableFields = pickEditableProfileFields(profile);
   await prisma.userProfile.upsert({
     where: { userId },
-    update: profile,
-    create: { userId, ...profile },
+    update: editableFields,
+    create: { ...editableFields, userId },
   });
-  revalidateTag(settingsTag(userId), "default");
-  revalidatePath("/settings");
+  revalidateSettings(userId);
 }
 
 export async function toggleGoogleCalendarSync(enabled: boolean): Promise<void> {
@@ -90,27 +166,16 @@ export async function toggleGoogleCalendarSync(enabled: boolean): Promise<void> 
   await prisma.userProfile.upsert({
     where: { userId },
     update: { googleCalendarSync: enabled },
-    create: {
-      userId,
-      name: "",
-      email: "",
-      googleCalendarSync: enabled,
-    },
+    create: { userId, ...REQUIRED_PROFILE_PLACEHOLDERS, googleCalendarSync: enabled },
   });
-  revalidateTag(settingsTag(userId), "default");
-  revalidatePath("/settings");
+  revalidateSettings(userId);
 }
 
-/**
- * Returns true if the user's stored Google OAuth token includes the
- * calendar.events scope (i.e. they have already granted it via incremental auth).
- */
 export async function checkCalendarAccess(): Promise<boolean> {
   const userId = await requireUserId();
-  const account = await prisma.account.findFirst({
-    where: { userId, provider: "google" },
+  const googleAccount = await prisma.account.findFirst({
+    where: { userId, provider: GOOGLE_PROVIDER },
     select: { scope: true },
   });
-  return (account?.scope ?? "").includes("calendar");
+  return (googleAccount?.scope ?? "").includes(CALENDAR_SCOPE_FRAGMENT);
 }
-

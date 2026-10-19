@@ -1,215 +1,198 @@
-/**
- * Playwright Fix-Plan Reporter
- *
- * After the test run completes, this reporter:
- *  1. Collects all failures with their error messages and locations.
- *  2. Categorises each failure by likely root cause.
- *  3. Writes a machine-readable fixPlan.json + a human-readable FIX_PLAN.md
- *     to the playwright-report/ directory.
- *
- * The categories and suggested fixes are based on known failure patterns
- * in this codebase (auth wall, scraper timeouts, DB issues, etc.).
- */
-import type {
-  Reporter,
-  FullConfig,
-  Suite,
-  TestCase,
-  TestResult,
-  FullResult,
-} from "@playwright/test/reporter";
+import type { Reporter, TestCase, TestResult } from "@playwright/test/reporter";
 import fs from "fs";
 import path from "path";
 
-interface FailureEntry {
+type Priority = "critical" | "high" | "medium" | "low";
+
+interface Diagnosis {
+  category: string;
+  suggestedFix: string;
+  priority: Priority;
+}
+
+interface FailureEntry extends Diagnosis {
   testTitle: string;
   file: string;
   error: string;
-  category: string;
-  suggestedFix: string;
-  priority: "critical" | "high" | "medium" | "low";
+}
+
+interface DiagnosisRule extends Diagnosis {
+  matches: (errorMessage: string, testTitle: string) => boolean;
 }
 
 const REPORT_DIR = path.join(process.cwd(), "playwright-report");
+const FIX_PLAN_MARKDOWN_PATH = path.join(REPORT_DIR, "FIX_PLAN.md");
+const FIX_PLAN_JSON_PATH = path.join(REPORT_DIR, "fixPlan.json");
+const STORED_ERROR_LENGTH = 500;
+const DISPLAYED_ERROR_LENGTH = 200;
+const PRIORITY_ORDER: Priority[] = ["critical", "high", "medium", "low"];
+const PRIORITY_BADGE: Record<Priority, string> = {
+  critical: "🔴",
+  high: "🟠",
+  medium: "🟡",
+  low: "⚪",
+};
 
-function categorise(testTitle: string, errorMessage: string): { category: string; suggestedFix: string; priority: FailureEntry["priority"] } {
-  const msg = errorMessage.toLowerCase();
+const containsAny = (text: string, needles: string[]) => needles.some((needle) => text.includes(needle));
+const numberedSteps = (...lines: string[]) => lines.map((line, i) => `${i + 1}. ${line}`).join("\n");
+const capitalize = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
+const isTimeout = (message: string) => containsAny(message, ["timeout", "waitfor", "exceeded"]);
+
+const DIAGNOSIS_RULES: DiagnosisRule[] = [
+  {
+    matches: (message) => containsAny(message, ["login", "401", "unauthenticated", "sign in"]),
+    category: "Authentication",
+    suggestedFix: numberedSteps(
+      "Start the dev server: `npm run dev`",
+      "Create the test user: `npx tsx prisma/seed-test-user.ts`",
+      "Delete tests/.auth/user.json and re-run `npx playwright test` so the setup project logs in again.",
+    ),
+    priority: "critical",
+  },
+  {
+    matches: (message, title) => isTimeout(message) && containsAny(title, ["scrape", "search", "job"]),
+    category: "Scraper Timeout",
+    suggestedFix: numberedSteps(
+      "Check the dev server logs for [scrape] errors.",
+      "Check network connectivity to the job board sites.",
+      "Raise the test timeout in playwright.config.ts if scraping is just slow.",
+    ),
+    priority: "high",
+  },
+  {
+    matches: (message) => isTimeout(message),
+    category: "General Timeout",
+    suggestedFix: numberedSteps(
+      "Ensure the dev server is running on http://localhost:3000.",
+      "Check that DATABASE_URL is set in .env.local or .env.",
+      "Increase the timeout for this specific test if it's a known slow path.",
+    ),
+    priority: "high",
+  },
+  {
+    matches: (message) => containsAny(message, ["500", "internal server error", "prisma"]),
+    category: "Server / Database Error",
+    suggestedFix: numberedSteps(
+      "Check server terminal output for Prisma errors.",
+      "Run `npm run db:migrate` to apply pending migrations.",
+      "Verify DATABASE_URL points to a running Postgres instance.",
+      "Run `npm run db:generate` to regenerate the Prisma client.",
+    ),
+    priority: "critical",
+  },
+  {
+    matches: (message) => containsAny(message, ["400", "invalid"]),
+    category: "Validation / API Contract",
+    suggestedFix: numberedSteps(
+      "Check the input validation in the server action or route the test calls.",
+      "Confirm the test is sending the correct payload format.",
+      "If the validation changed, update the test expectation.",
+    ),
+    priority: "medium",
+  },
+  {
+    matches: (message) => containsAny(message, ["selector", "locator", "element", "visible"]),
+    category: "UI Selector Mismatch",
+    suggestedFix: numberedSteps(
+      "Open playwright-report/index.html and inspect the screenshot.",
+      "The component structure may have changed — update the selector in the test.",
+      "Consider adding data-testid attributes to the relevant component.",
+      "Run: `npx playwright codegen http://localhost:3000` to regenerate selectors.",
+    ),
+    priority: "medium",
+  },
+  {
+    matches: (message) => containsAny(message, ["network", "fetch", "econnrefused"]),
+    category: "Network / Dev Server",
+    suggestedFix: numberedSteps(
+      "Ensure `npm run dev` is running before executing tests.",
+      "Check that nothing else is using port 3000.",
+      "Verify BASE_URL env var (defaults to http://localhost:3000).",
+    ),
+    priority: "critical",
+  },
+];
+
+const FALLBACK_DIAGNOSIS: Diagnosis = {
+  category: "Unknown",
+  suggestedFix: numberedSteps(
+    "Open playwright-report/index.html for a full trace + screenshot.",
+    "Check the error message and stack trace for clues.",
+    "Run the individual test in headed mode: `npx playwright test --headed --debug`.",
+  ),
+  priority: "low",
+};
+
+function diagnose(testTitle: string, errorMessage: string): Diagnosis {
+  const message = errorMessage.toLowerCase();
   const title = testTitle.toLowerCase();
+  const rule = DIAGNOSIS_RULES.find((candidate) => candidate.matches(message, title));
+  if (!rule) return FALLBACK_DIAGNOSIS;
+  const { category, suggestedFix, priority } = rule;
+  return { category, suggestedFix, priority };
+}
 
-  if (msg.includes("login") || msg.includes("401") || msg.includes("unauthenticated") || msg.includes("sign in")) {
-    return {
-      category: "Authentication",
-      suggestedFix:
-        "1. Start the dev server: `npm run dev`\n" +
-        "2. Open http://localhost:3000 in your browser and complete Google OAuth.\n" +
-        "3. Re-run `npx playwright test` — the auth state will be saved to tests/.auth/user.json.",
-      priority: "critical",
-    };
-  }
+function renderFailure(failure: FailureEntry): string {
+  return (
+    `### ${failure.testTitle}\n\n` +
+    `- **File:** \`${failure.file}\`\n` +
+    `- **Category:** ${failure.category}\n` +
+    `- **Error:** \`${failure.error.slice(0, DISPLAYED_ERROR_LENGTH)}\`\n\n` +
+    `**Suggested Fix:**\n\n${failure.suggestedFix}\n\n` +
+    `---\n\n`
+  );
+}
 
-  if (msg.includes("timeout") || msg.includes("waitfor") || msg.includes("exceeded")) {
-    if (title.includes("scrape") || title.includes("search") || title.includes("job")) {
-      return {
-        category: "Scraper Timeout",
-        suggestedFix:
-          "1. Check the dev server logs for [scrape] errors.\n" +
-          "2. Verify OPENAI_API_KEY is set in .env.\n" +
-          "3. Check network connectivity to job board sites.\n" +
-          "4. Increase PLAYWRIGHT_TIMEOUT in playwright.config.ts if scraping is just slow.",
-        priority: "high",
-      };
-    }
-    return {
-      category: "General Timeout",
-      suggestedFix:
-        "1. Ensure the dev server is running on http://localhost:3000.\n" +
-        "2. Check that all .env variables (DATABASE_URL, OPENAI_API_KEY) are set.\n" +
-        "3. Increase timeout for this specific test if it's a known slow path.",
-      priority: "high",
-    };
-  }
+function renderPrioritySection(priority: Priority, failures: FailureEntry[]): string {
+  if (failures.length === 0) return "";
+  const heading = `## ${PRIORITY_BADGE[priority]} ${capitalize(priority)} Priority (${failures.length})\n\n`;
+  return heading + failures.map(renderFailure).join("");
+}
 
-  if (msg.includes("500") || msg.includes("internal server error") || msg.includes("prisma")) {
-    return {
-      category: "Server / Database Error",
-      suggestedFix:
-        "1. Check server terminal output for Prisma errors.\n" +
-        "2. Run `npm run db:migrate` to apply pending migrations.\n" +
-        "3. Verify DATABASE_URL in .env points to a running Neon / Postgres instance.\n" +
-        "4. Run `npm run db:generate` to regenerate the Prisma client.",
-      priority: "critical",
-    };
-  }
+function renderFixPlan(failures: FailureEntry[], generatedAt: string): string {
+  const header =
+    `# Playwright Fix Plan\n\n` +
+    `Generated: ${generatedAt}  \n` +
+    `Total failures: **${failures.length}**\n\n` +
+    `---\n\n`;
+  const sections = PRIORITY_ORDER.map((priority) =>
+    renderPrioritySection(priority, failures.filter((failure) => failure.priority === priority)),
+  );
+  return header + sections.join("");
+}
 
-  if (msg.includes("400") || msg.includes("applicationid") || msg.includes("invalid")) {
-    return {
-      category: "Validation / API Contract",
-      suggestedFix:
-        "1. Check the applicationId regex in src/app/api/apply/route.ts.\n" +
-        "2. Confirm the test is sending the correct payload format.\n" +
-        "3. If the validation changed, update the test expectation.",
-      priority: "medium",
-    };
-  }
-
-  if (msg.includes("selector") || msg.includes("locator") || msg.includes("element") || msg.includes("visible")) {
-    return {
-      category: "UI Selector Mismatch",
-      suggestedFix:
-        "1. Open playwright-report/index.html and inspect the screenshot.\n" +
-        "2. The component structure may have changed — update the selector in the test.\n" +
-        "3. Consider adding data-testid attributes to the relevant component.\n" +
-        "4. Run: `npx playwright codegen http://localhost:3000` to regenerate selectors.",
-      priority: "medium",
-    };
-  }
-
-  if (msg.includes("network") || msg.includes("fetch") || msg.includes("econnrefused")) {
-    return {
-      category: "Network / Dev Server",
-      suggestedFix:
-        "1. Ensure `npm run dev` is running before executing tests.\n" +
-        "2. Check that nothing else is using port 3000.\n" +
-        "3. Verify BASE_URL env var (defaults to http://localhost:3000).",
-      priority: "critical",
-    };
-  }
-
-  return {
-    category: "Unknown",
-    suggestedFix:
-      "1. Open playwright-report/index.html for a full trace + screenshot.\n" +
-      "2. Check the error message and stack trace for clues.\n" +
-      "3. Run the individual test in headed mode: `npx playwright test --headed --debug`.",
-    priority: "low",
-  };
+function renderAllPassed(generatedAt: string): string {
+  return `# Fix Plan\n\n✅ **All tests passed!** No fixes required.\n\nGenerated: ${generatedAt}\n`;
 }
 
 class FixPlanReporter implements Reporter {
   private failures: FailureEntry[] = [];
 
-  onBegin(_config: FullConfig, _suite: Suite) {
-    if (!fs.existsSync(REPORT_DIR)) {
-      fs.mkdirSync(REPORT_DIR, { recursive: true });
-    }
+  onBegin() {
+    fs.mkdirSync(REPORT_DIR, { recursive: true });
   }
 
   onTestEnd(test: TestCase, result: TestResult) {
     if (result.status !== "failed") return;
-
-    const errorMessage = result.errors
-      .map((e) => e.message ?? "")
-      .join("\n");
-
-    const fileLocation = test.location.file.replace(process.cwd() + path.sep, "");
-    const { category, suggestedFix, priority } = categorise(test.title, errorMessage);
-
+    const errorMessage = result.errors.map((e) => e.message ?? "").join("\n");
     this.failures.push({
       testTitle: test.title,
-      file: fileLocation,
-      error: errorMessage.slice(0, 500),
-      category,
-      suggestedFix,
-      priority,
+      file: path.relative(process.cwd(), test.location.file),
+      error: errorMessage.slice(0, STORED_ERROR_LENGTH),
+      ...diagnose(test.title, errorMessage),
     });
   }
 
-  onEnd(_result: FullResult) {
+  onEnd() {
+    const generatedAt = new Date().toISOString();
+    fs.writeFileSync(FIX_PLAN_JSON_PATH, JSON.stringify({ failures: this.failures, generatedAt }, null, 2));
+
     if (this.failures.length === 0) {
-      // Write a success note
-      const successMd =
-        `# Fix Plan\n\n` +
-        `✅ **All tests passed!** No fixes required.\n\n` +
-        `Generated: ${new Date().toISOString()}\n`;
-      fs.writeFileSync(path.join(REPORT_DIR, "FIX_PLAN.md"), successMd);
-      fs.writeFileSync(path.join(REPORT_DIR, "fixPlan.json"), JSON.stringify({ failures: [], generatedAt: new Date().toISOString() }, null, 2));
+      fs.writeFileSync(FIX_PLAN_MARKDOWN_PATH, renderAllPassed(generatedAt));
       return;
     }
 
-    // Group by priority
-    const byPriority: Record<string, FailureEntry[]> = {
-      critical: [],
-      high: [],
-      medium: [],
-      low: [],
-    };
-    for (const f of this.failures) {
-      byPriority[f.priority].push(f);
-    }
-
-    // Write JSON
-    fs.writeFileSync(
-      path.join(REPORT_DIR, "fixPlan.json"),
-      JSON.stringify({ failures: this.failures, generatedAt: new Date().toISOString() }, null, 2),
-    );
-
-    // Write Markdown
-    let md =
-      `# Playwright Fix Plan\n\n` +
-      `Generated: ${new Date().toISOString()}  \n` +
-      `Total failures: **${this.failures.length}**\n\n` +
-      `---\n\n`;
-
-    for (const priority of ["critical", "high", "medium", "low"] as const) {
-      const entries = byPriority[priority];
-      if (entries.length === 0) continue;
-
-      const emoji = priority === "critical" ? "🔴" : priority === "high" ? "🟠" : priority === "medium" ? "🟡" : "⚪";
-      md += `## ${emoji} ${priority.charAt(0).toUpperCase() + priority.slice(1)} Priority (${entries.length})\n\n`;
-
-      for (const f of entries) {
-        md +=
-          `### ${f.testTitle}\n\n` +
-          `- **File:** \`${f.file}\`\n` +
-          `- **Category:** ${f.category}\n` +
-          `- **Error:** \`${f.error.slice(0, 200)}\`\n\n` +
-          `**Suggested Fix:**\n\n${f.suggestedFix}\n\n` +
-          `---\n\n`;
-      }
-    }
-
-    fs.writeFileSync(path.join(REPORT_DIR, "FIX_PLAN.md"), md);
-
+    fs.writeFileSync(FIX_PLAN_MARKDOWN_PATH, renderFixPlan(this.failures, generatedAt));
     console.log(`\n🔧 Fix plan written to playwright-report/FIX_PLAN.md (${this.failures.length} failures)\n`);
   }
 }

@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath, revalidateTag } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import type { CalendarEntry, CalendarEventForm, ScheduleInterviewForm } from "@/types";
 import { getCalendarEntriesForMonth, interviewTag } from "@/lib/data/interviews";
@@ -14,7 +14,99 @@ import {
   buildGCalPayload,
 } from "@/lib/googleCalendar";
 
-/** Lightweight server action for client-side month navigation — no full page reload. */
+const INTERVIEW_TIMEZONE = "UTC";
+const FALLBACK_INTERVIEW_SUMMARY = "Job Interview";
+const MIN_CALENDAR_EVENT_MINUTES = 5;
+
+type GCalPayload = ReturnType<typeof buildGCalPayload>;
+
+interface CalendarEventDetails {
+  title: string;
+  scheduledAt: Date;
+  requestedDurationMinutes: number;
+  notes: string | null;
+}
+
+function revalidateCalendar(userId: string): void {
+  updateTag(interviewTag(userId));
+  revalidatePath("/interviews");
+}
+
+function revalidateApplications(userId: string): void {
+  updateTag(applicationTag(userId));
+  revalidatePath("/dashboard");
+}
+
+async function createLinkedGCalEvent(
+  userId: string,
+  payload: GCalPayload,
+  saveGCalEventId: (googleCalendarEventId: string) => Promise<unknown>,
+): Promise<void> {
+  const googleCalendarEventId = await createGCalEvent(userId, payload);
+  if (googleCalendarEventId) await saveGCalEventId(googleCalendarEventId);
+}
+
+async function findInterviewGCalEventId(applicationId: string): Promise<string | null> {
+  const interview = await prisma.interview.findUnique({
+    where: { applicationId },
+    select: { googleCalendarEventId: true },
+  });
+  return interview?.googleCalendarEventId ?? null;
+}
+
+async function buildInterviewSummary(applicationId: string): Promise<string> {
+  const application = await prisma.application.findUnique({
+    where: { id: applicationId },
+    include: { job: { select: { title: true, company: true } } },
+  });
+  if (!application) return FALLBACK_INTERVIEW_SUMMARY;
+  return `Interview – ${application.job.title} @ ${application.job.company}`;
+}
+
+async function syncInterviewWithGoogleCalendar(
+  userId: string,
+  interviewId: string,
+  previousGCalEventId: string | null,
+  payload: GCalPayload,
+): Promise<void> {
+  if (previousGCalEventId) {
+    await updateGCalEvent(userId, previousGCalEventId, payload);
+    return;
+  }
+  await createLinkedGCalEvent(userId, payload, (googleCalendarEventId) =>
+    prisma.interview.update({ where: { id: interviewId }, data: { googleCalendarEventId } }),
+  );
+}
+
+function parseCalendarEventForm(form: CalendarEventForm): CalendarEventDetails {
+  const title = form.title.trim();
+  if (!title) throw new Error("Event title is required.");
+  return {
+    title,
+    scheduledAt: new Date(form.scheduledAt),
+    requestedDurationMinutes: form.durationMinutes,
+    notes: form.notes.trim() || null,
+  };
+}
+
+function toCalendarEventRecord(details: CalendarEventDetails) {
+  return {
+    title: details.title,
+    scheduledAt: details.scheduledAt,
+    durationMinutes: Math.max(MIN_CALENDAR_EVENT_MINUTES, details.requestedDurationMinutes),
+    notes: details.notes,
+  };
+}
+
+function toCalendarEventGCalPayload(details: CalendarEventDetails): GCalPayload {
+  return buildGCalPayload(
+    details.title,
+    details.scheduledAt,
+    details.requestedDurationMinutes,
+    details.notes,
+  );
+}
+
 export async function fetchCalendarEntriesAction(
   month: number,
   year: number,
@@ -27,13 +119,10 @@ export async function scheduleInterview(
   form: ScheduleInterviewForm,
 ): Promise<void> {
   const userId = await requireUserId();
-  const scheduledDate = new Date(form.scheduledAt);
+  const scheduledAt = new Date(form.scheduledAt);
+  const notes = form.notes || null;
 
-  // Look up existing interview to get its gcal event id (if any)
-  const existing = await prisma.interview.findUnique({
-    where: { applicationId: form.applicationId },
-    select: { googleCalendarEventId: true },
-  });
+  const previousGCalEventId = await findInterviewGCalEventId(form.applicationId);
 
   const [, interview] = await prisma.$transaction([
     prisma.application.update({
@@ -44,116 +133,63 @@ export async function scheduleInterview(
       where: { applicationId: form.applicationId },
       create: {
         applicationId: form.applicationId,
-        scheduledAt: scheduledDate,
+        scheduledAt,
         durationMinutes: form.durationMinutes,
-        timezone: "UTC",
-        notes: form.notes || null,
+        timezone: INTERVIEW_TIMEZONE,
+        notes,
       },
       update: {
-        scheduledAt: scheduledDate,
+        scheduledAt,
         durationMinutes: form.durationMinutes,
-        notes: form.notes || null,
+        notes,
       },
     }),
   ]);
 
-  // Google Calendar sync (non-blocking — failure doesn't break the action)
   if (await hasCalendarSync(userId)) {
-    const app = await prisma.application.findUnique({
-      where: { id: form.applicationId },
-      include: { job: { select: { title: true, company: true } } },
-    });
-    const summary = app
-      ? `Interview – ${app.job.title} @ ${app.job.company}`
-      : "Job Interview";
     const payload = buildGCalPayload(
-      summary,
-      scheduledDate,
+      await buildInterviewSummary(form.applicationId),
+      scheduledAt,
       form.durationMinutes,
-      form.notes || null,
-      "UTC"
+      notes,
+      INTERVIEW_TIMEZONE,
     );
-
-    const existingGcalId = existing?.googleCalendarEventId ?? null;
-    if (existingGcalId) {
-      await updateGCalEvent(userId, existingGcalId, payload);
-    } else {
-      const gcalId = await createGCalEvent(userId, payload);
-      if (gcalId) {
-        await prisma.interview.update({
-          where: { id: interview.id },
-          data: { googleCalendarEventId: gcalId },
-        });
-      }
-    }
+    await syncInterviewWithGoogleCalendar(userId, interview.id, previousGCalEventId, payload);
   }
 
-  revalidateTag(interviewTag(userId), "default");
-  revalidateTag(applicationTag(userId), "default");
-  revalidatePath("/interviews");
-  revalidatePath("/dashboard");
+  revalidateCalendar(userId);
+  revalidateApplications(userId);
 }
 
 export async function createCalendarEvent(form: CalendarEventForm): Promise<void> {
   const userId = await requireUserId();
-  if (!form.title.trim()) throw new Error("Event title is required.");
-  const scheduledDate = new Date(form.scheduledAt);
+  const details = parseCalendarEventForm(form);
   const event = await prisma.calendarEvent.create({
-    data: {
-      userId,
-      title: form.title.trim(),
-      scheduledAt: scheduledDate,
-      durationMinutes: Math.max(5, form.durationMinutes),
-      notes: form.notes.trim() || null,
-    },
+    data: { userId, ...toCalendarEventRecord(details) },
   });
 
   if (await hasCalendarSync(userId)) {
-    const payload = buildGCalPayload(
-      form.title.trim(),
-      scheduledDate,
-      form.durationMinutes,
-      form.notes.trim() || null
+    await createLinkedGCalEvent(userId, toCalendarEventGCalPayload(details), (googleCalendarEventId) =>
+      prisma.calendarEvent.update({ where: { id: event.id }, data: { googleCalendarEventId } }),
     );
-    const gcalId = await createGCalEvent(userId, payload);
-    if (gcalId) {
-      await prisma.calendarEvent.update({
-        where: { id: event.id },
-        data: { googleCalendarEventId: gcalId },
-      });
-    }
   }
 
-  revalidateTag(interviewTag(userId), "default");
-  revalidatePath("/interviews");
+  revalidateCalendar(userId);
 }
 
 export async function updateCalendarEvent(id: string, form: CalendarEventForm): Promise<void> {
   const userId = await requireUserId();
-  if (!form.title.trim()) throw new Error("Event title is required.");
-  const scheduledDate = new Date(form.scheduledAt);
+  const details = parseCalendarEventForm(form);
   const event = await prisma.calendarEvent.update({
     where: { id, userId },
-    data: {
-      title: form.title.trim(),
-      scheduledAt: scheduledDate,
-      durationMinutes: Math.max(5, form.durationMinutes),
-      notes: form.notes.trim() || null,
-    },
+    data: toCalendarEventRecord(details),
   });
 
-  if (event.googleCalendarEventId && await hasCalendarSync(userId)) {
-    const payload = buildGCalPayload(
-      form.title.trim(),
-      scheduledDate,
-      form.durationMinutes,
-      form.notes.trim() || null
-    );
-    await updateGCalEvent(userId, event.googleCalendarEventId, payload);
+  if (event.googleCalendarEventId && (await hasCalendarSync(userId))) {
+    await updateGCalEvent(userId, event.googleCalendarEventId, toCalendarEventGCalPayload(details));
   }
 
-  revalidateTag(interviewTag(userId), "default");
-  revalidatePath("/interviews");
+  revalidateCalendar(userId);
 }
 
 export async function deleteCalendarEvent(id: string): Promise<void> {
@@ -164,12 +200,9 @@ export async function deleteCalendarEvent(id: string): Promise<void> {
   });
   await prisma.calendarEvent.delete({ where: { id, userId } });
 
-  if (event?.googleCalendarEventId && await hasCalendarSync(userId)) {
+  if (event?.googleCalendarEventId && (await hasCalendarSync(userId))) {
     await deleteGCalEvent(userId, event.googleCalendarEventId);
   }
 
-  revalidateTag(interviewTag(userId), "default");
-  revalidatePath("/interviews");
+  revalidateCalendar(userId);
 }
-
-

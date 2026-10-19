@@ -1,20 +1,14 @@
-/**
- * Demo seed — favourites real scraped jobs and adds applications/interview for the demo.
- * Safe to re-run (all operations are idempotent).
- * Run: npx tsx prisma/seed.ts
- */
 import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient, ApplicationStatus } from "@prisma/client";
-import { OpenAIEmbeddings } from "@langchain/openai";
 
+const databaseUrl = process.env.DATABASE_URL;
+const isNeonDatabase = databaseUrl?.includes("neon.tech") ?? false;
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL?.includes("neon.tech") ? { rejectUnauthorized: false } : false,
+  connectionString: databaseUrl,
+  ssl: isNeonDatabase ? { rejectUnauthorized: false } : false,
 });
 const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
-
-// ─── Role profile data ────────────────────────────────────────────────────────
 
 const ROLE_PROFILES: Array<{
   category: string;
@@ -117,28 +111,102 @@ const ROLE_PROFILES: Array<{
     },
   ];
 
-// ─── Demo seed data ───────────────────────────────────────────────────────────
+const FAVOURITE_JOB_TITLE_FRAGMENTS = [
+  "Senior Frontend Engineer, React.js",
+  "Senior Backend/Fullstack Node.JS Developer",
+  "Frontend React Developer",
+  "React developer",
+  "Full Stack Developer",
+];
 
-const DEMO_COVER_LETTER = `Dear Hiring Team,
+const INTERVIEW_FAVOURITE_INDEX = 0;
 
-I am writing to express my strong interest in this role. With 4+ years of experience building production React and TypeScript applications, I am excited by the opportunity to contribute to your engineering team.
+type DemoApplication = {
+  favouriteIndex: number;
+  status: ApplicationStatus;
+  appliedAt: Date | null;
+};
 
-In my recent projects I led a full migration from a legacy codebase to a modern Next.js + TypeScript stack, introduced a shared component library, and reduced bundle size by 40% through code-splitting. I am comfortable across the full stack — Node.js APIs, PostgreSQL, GraphQL, and cloud deployments.
+const DEMO_APPLICATIONS: DemoApplication[] = [
+  { favouriteIndex: INTERVIEW_FAVOURITE_INDEX, status: ApplicationStatus.INTERVIEW, appliedAt: new Date("2026-03-28") },
+  { favouriteIndex: 1, status: ApplicationStatus.APPLIED, appliedAt: new Date("2026-04-01") },
+  { favouriteIndex: 2, status: ApplicationStatus.PENDING, appliedAt: null },
+  { favouriteIndex: 3, status: ApplicationStatus.REJECTED, appliedAt: new Date("2026-03-20") },
+];
 
-I would love the opportunity to discuss how I can contribute to your team's goals. Thank you for your consideration.
+const DEMO_INTERVIEW = {
+  scheduledAt: new Date("2026-04-10T10:00:00Z"),
+  timezone: "Europe/Prague",
+  durationMinutes: 60,
+  notes: "Technical interview — React, TypeScript, system design. Prepare: virtual DOM, memoization, GraphQL patterns.",
+};
 
-Best regards,
-Daniel`;
+type FavouritedJob = {
+  id: string;
+  title: string;
+};
 
-async function main() {
-  console.log("🌱 Seeding demo data into Neon...\n");
+async function resolveSeedUserId(): Promise<string | undefined> {
+  const configuredUserId = process.env.SEED_USER_ID;
+  if (configuredUserId) return configuredUserId;
+  const firstUser = await prisma.user.findFirst({ select: { id: true } });
+  return firstUser?.id;
+}
 
-  // Resolve userId — pass SEED_USER_ID env var or use the first user in the DB
-  let userId: string | undefined = process.env.SEED_USER_ID;
-  if (!userId) {
-    const firstUser = await prisma.user.findFirst({ select: { id: true } });
-    userId = firstUser?.id;
+async function favouriteDemoJobs(userId: string): Promise<FavouritedJob[]> {
+  const favouritedJobs: FavouritedJob[] = [];
+  for (const titleFragment of FAVOURITE_JOB_TITLE_FRAGMENTS) {
+    const job = await prisma.jobPosting.findFirst({ where: { title: { contains: titleFragment } } });
+    if (!job) continue;
+    await prisma.userFavourite.upsert({
+      where: { userId_jobId: { userId, jobId: job.id } },
+      create: { userId, jobId: job.id },
+      update: {},
+    });
+    favouritedJobs.push({ id: job.id, title: job.title });
+    console.log(`⭐ Favourited: ${job.title} @ ${job.company}`);
   }
+  return favouritedJobs;
+}
+
+async function createDemoApplications(userId: string, favouritedJobs: FavouritedJob[]): Promise<void> {
+  for (const { favouriteIndex, status, appliedAt } of DEMO_APPLICATIONS) {
+    const job = favouritedJobs[favouriteIndex];
+    if (!job) continue;
+    const existingApplication = await prisma.application.findFirst({ where: { jobId: job.id, userId } });
+    if (existingApplication) {
+      console.log(`⏭️  Application already exists: ${job.title}`);
+      continue;
+    }
+    await prisma.application.create({ data: { userId, jobId: job.id, status, appliedAt } });
+    console.log(`✅ Application: ${job.title} → ${status}`);
+  }
+}
+
+async function scheduleDemoInterview(userId: string, jobId: string): Promise<void> {
+  const interviewApplication = await prisma.application.findFirst({
+    where: { jobId, status: ApplicationStatus.INTERVIEW, userId },
+  });
+  if (!interviewApplication) return;
+
+  const existingInterview = await prisma.interview.findUnique({
+    where: { applicationId: interviewApplication.id },
+  });
+  if (existingInterview) {
+    console.log("⏭️  Interview already exists");
+    return;
+  }
+
+  await prisma.interview.create({
+    data: { applicationId: interviewApplication.id, ...DEMO_INTERVIEW },
+  });
+  console.log("✅ Interview scheduled for Apr 10");
+}
+
+async function seedDemoData(): Promise<void> {
+  console.log("🌱 Seeding demo data...\n");
+
+  const userId = await resolveSeedUserId();
   if (!userId) {
     console.log("⚠️  No user found. Log in via Google OAuth first, then re-run the seed.");
     console.log("   Or set SEED_USER_ID=<your-user-id> in .env");
@@ -146,167 +214,46 @@ async function main() {
   }
   console.log(`👤 Seeding for userId: ${userId}\n`);
 
-  // Step 1: Favourite 5 of the real scraped jobs
-  const titlesToFavourite = [
-    "Senior Frontend Engineer, React.js",
-    "Senior Backend/Fullstack Node.JS Developer",
-    "Frontend React Developer",
-    "React developer",
-    "Full Stack Developer",
-  ];
-
-  const favouritedIds: string[] = [];
-  for (const title of titlesToFavourite) {
-    const job = await prisma.jobPosting.findFirst({ where: { title: { contains: title } } });
-    if (job) {
-      await prisma.userFavourite.upsert({
-        where: { userId_jobId: { userId, jobId: job.id } },
-        create: { userId, jobId: job.id },
-        update: {},
-      });
-      favouritedIds.push(job.id);
-      console.log(`⭐ Favourited: ${job.title} @ ${job.company}`);
-    }
-  }
-
-  if (favouritedIds.length === 0) {
+  const favouritedJobs = await favouriteDemoJobs(userId);
+  if (favouritedJobs.length === 0) {
     console.log("⚠️  No matching jobs found to favourite. Run a scrape first.");
     return;
   }
 
-  // Step 2: Add a cover letter to the first favourited job
-  const firstJobId = favouritedIds[0];
-  const firstJob = await prisma.jobPosting.findUnique({ where: { id: firstJobId } });
-
-  let coverLetterId: string | undefined;
-  const existingCL = await prisma.coverLetter.findFirst({ where: { jobId: firstJobId, userId } });
-  if (!existingCL) {
-    const cl = await prisma.coverLetter.create({
-      data: { userId, jobId: firstJobId, content: DEMO_COVER_LETTER, generatedByAI: true },
-    });
-    coverLetterId = cl.id;
-    console.log(`✅ Cover letter created for: ${firstJob?.title}`);
-  } else {
-    coverLetterId = existingCL.id;
-    console.log(`⏭️  Cover letter already exists for: ${firstJob?.title}`);
-  }
-
-  // Step 3: Add applications in different statuses across the favourited jobs
-  const appStatuses: { idx: number; status: ApplicationStatus; appliedAt: Date | null }[] = [
-    { idx: 0, status: ApplicationStatus.INTERVIEW, appliedAt: new Date("2026-03-28") },
-    { idx: 1, status: ApplicationStatus.APPLIED, appliedAt: new Date("2026-04-01") },
-    { idx: 2, status: ApplicationStatus.PENDING, appliedAt: null },
-    { idx: 3, status: ApplicationStatus.REJECTED, appliedAt: new Date("2026-03-20") },
-  ];
-
-  for (const { idx, status, appliedAt } of appStatuses) {
-    const jobId = favouritedIds[idx];
-    if (!jobId) continue;
-    const job = await prisma.jobPosting.findUnique({ where: { id: jobId } });
-    const existing = await prisma.application.findFirst({ where: { jobId, userId } });
-    if (!existing) {
-      await prisma.application.create({
-        data: {
-          userId,
-          jobId,
-          status,
-          appliedAt,
-          coverLetterId: idx === 0 ? coverLetterId : undefined,
-        },
-      });
-      console.log(`✅ Application: ${job?.title} → ${status}`);
-    } else {
-      console.log(`⏭️  Application already exists: ${job?.title}`);
-    }
-  }
-
-  // Step 4: Add an interview for the INTERVIEW application
-  const interviewApp = await prisma.application.findFirst({
-    where: { jobId: favouritedIds[0], status: ApplicationStatus.INTERVIEW, userId },
-  });
-  if (interviewApp) {
-    const existingInterview = await prisma.interview.findUnique({
-      where: { applicationId: interviewApp.id },
-    });
-    if (!existingInterview) {
-      await prisma.interview.create({
-        data: {
-          applicationId: interviewApp.id,
-          scheduledAt: new Date("2026-04-10T10:00:00Z"),
-          timezone: "Europe/Prague",
-          durationMinutes: 60,
-          notes: "Technical interview — React, TypeScript, system design. Prepare: virtual DOM, memoization, GraphQL patterns.",
-        },
-      });
-      console.log(`✅ Interview scheduled for Apr 10`);
-    } else {
-      console.log(`⏭️  Interview already exists`);
-    }
-  }
+  await createDemoApplications(userId, favouritedJobs);
+  await scheduleDemoInterview(userId, favouritedJobs[INTERVIEW_FAVOURITE_INDEX].id);
 
   console.log("\n🎉 Done! Dashboard, Favourites and Interviews are ready to demo.");
 }
 
-// ─── Role profile seeding ─────────────────────────────────────────────────────
-
 async function seedRoleProfiles() {
-  const OPENAI_API_KEY = process.env.OPENAI_API_KEY?.trim();
-  if (!OPENAI_API_KEY) {
-    console.log("⚠️  OPENAI_API_KEY not set — skipping role profile seeding.");
-    return;
-  }
-
-  console.log("\n📚 Seeding RAG role profiles…");
-
-  const embeddings = new OpenAIEmbeddings({
-    model: "text-embedding-3-small",
-    apiKey: OPENAI_API_KEY,
-  });
+  console.log("\n📚 Seeding role profiles (keyword descriptions only — no embeddings)…");
 
   for (const profile of ROLE_PROFILES) {
     try {
-      console.log(`  Embedding: ${profile.category}…`);
-      const [embedding, antiEmbedding] = await Promise.all([
-        embeddings.embedQuery(profile.description),
-        embeddings.embedQuery(profile.antiQuery),
-      ]);
-
-      const embJson = JSON.stringify(embedding);
-      const antiJson = JSON.stringify(antiEmbedding);
-
       await prisma.$executeRaw`
-        INSERT INTO "RoleProfile" (id, category, description, "antiQuery", embedding, "antiEmbedding", "updatedAt")
-        VALUES (
-          gen_random_uuid()::text,
-          ${profile.category},
-          ${profile.description},
-          ${profile.antiQuery},
-          ${embJson}::vector,
-          ${antiJson}::vector,
-          NOW()
-        )
+        INSERT INTO "RoleProfile" (id, category, description, "antiQuery", "updatedAt")
+        VALUES (gen_random_uuid()::text, ${profile.category}, ${profile.description}, ${profile.antiQuery}, NOW())
         ON CONFLICT (category) DO UPDATE SET
-          description    = EXCLUDED.description,
-          "antiQuery"    = EXCLUDED."antiQuery",
-          embedding      = EXCLUDED.embedding,
-          "antiEmbedding" = EXCLUDED."antiEmbedding",
-          "updatedAt"    = NOW()
+          description = EXCLUDED.description,
+          "antiQuery" = EXCLUDED."antiQuery",
+          "updatedAt" = NOW()
       `;
-
       console.log(`  ✅ ${profile.category}`);
     } catch (err) {
       console.error(`  ❌ ${profile.category}:`, err);
     }
   }
-
-  console.log("📚 Role profiles seeded.\n");
 }
 
-async function runAll() {
-  await main();
+async function seed(): Promise<void> {
+  await seedDemoData();
   await seedRoleProfiles();
 }
 
-runAll()
-  .catch((e) => { console.error(e); process.exit(1); })
+seed()
+  .catch((error: unknown) => {
+    console.error(error);
+    process.exit(1);
+  })
   .finally(() => prisma.$disconnect());

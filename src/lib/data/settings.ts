@@ -1,50 +1,70 @@
 import { unstable_cache } from "next/cache";
+import type { Prisma, UserProfile as UserProfileRecord } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { DEFAULT_COUNTRY, isSupportedCountry } from "@/lib/jobs/sources/types";
 import type { UploadedFile, UserProfile } from "@/types";
 
-export const SETTINGS_TAG = "settings";
+const SETTINGS_TAG = "settings";
 export const settingsTag = (userId: string) => `${SETTINGS_TAG}:${userId}`;
 
-async function _getSettingsData(userId: string): Promise<{
+const SETTINGS_CACHE_SECONDS = 300;
+
+const UPLOADED_FILE_SELECT = {
+  id: true,
+  originalName: true,
+  size: true,
+  uploadedAt: true,
+} satisfies Prisma.CvDocumentSelect;
+
+type UploadedFileRecord = Prisma.CvDocumentGetPayload<{ select: typeof UPLOADED_FILE_SELECT }>;
+
+interface SettingsData {
   profile: UserProfile;
   uploadedFiles: UploadedFile[];
-  aiHealth: { ok: boolean; missing: string[] };
-  hasOpenAI: boolean;
-}> {
-  const [dbProfile, dbFiles] = await Promise.all([
+}
+
+function toUserProfile(record: UserProfileRecord | null): UserProfile {
+  return {
+    name: record?.name ?? "",
+    email: record?.email ?? "",
+    phone: record?.phone ?? "",
+    linkedInUrl: record?.linkedInUrl ?? "",
+    githubUrl: record?.githubUrl ?? "",
+    country: record && isSupportedCountry(record.country) ? record.country : DEFAULT_COUNTRY,
+    city: record?.city ?? "",
+    googleCalendarSync: record?.googleCalendarSync ?? false,
+  };
+}
+
+function toUploadedFile(file: UploadedFileRecord): UploadedFile {
+  return {
+    id: file.id,
+    filename: file.originalName,
+    size: file.size,
+    uploadedAt: file.uploadedAt.toISOString(),
+  };
+}
+
+async function findSettingsData(userId: string): Promise<SettingsData> {
+  const [profile, uploadedFiles] = await Promise.all([
     prisma.userProfile.findUnique({ where: { userId } }),
-    prisma.cvDocument.findMany({ where: { userId }, orderBy: { uploadedAt: "desc" }, select: { id: true, originalName: true, size: true, uploadedAt: true } }),
+    prisma.cvDocument.findMany({
+      where: { userId },
+      orderBy: { uploadedAt: "desc" },
+      select: UPLOADED_FILE_SELECT,
+    }),
   ]);
 
-  const hasOpenAI = Boolean(process.env.OPENAI_API_KEY?.trim());
-
-  const profile: UserProfile = {
-    name: dbProfile?.name ?? "",
-    email: dbProfile?.email ?? "",
-    phone: dbProfile?.phone ?? "",
-    linkedInUrl: dbProfile?.linkedInUrl ?? "",
-    githubUrl: dbProfile?.githubUrl ?? "",
-    coverLetterLanguage: dbProfile?.coverLetterLanguage ?? "English",
-    googleCalendarSync: dbProfile?.googleCalendarSync ?? false,
+  return {
+    profile: toUserProfile(profile),
+    uploadedFiles: uploadedFiles.map(toUploadedFile),
   };
-
-  const uploadedFiles: UploadedFile[] = dbFiles.map((f) => ({
-    id: f.id,
-    filename: f.originalName,
-    size: f.size,
-    uploadedAt: f.uploadedAt.toISOString(),
-  }));
-
-  const aiHealth = { ok: hasOpenAI, missing: hasOpenAI ? [] : ["OPENAI_API_KEY"] };
-
-  return { profile, uploadedFiles, aiHealth, hasOpenAI };
 }
 
 export function getSettingsData(userId: string) {
   return unstable_cache(
-    () => _getSettingsData(userId),
+    () => findSettingsData(userId),
     ["get-settings", userId],
-    { revalidate: 300, tags: [settingsTag(userId)] },
+    { revalidate: SETTINGS_CACHE_SECONDS, tags: [settingsTag(userId)] },
   )();
 }
-

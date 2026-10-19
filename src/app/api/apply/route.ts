@@ -1,90 +1,51 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { auth } from "@/auth";
+import { loadApplyInput, runApply, type ApplyInput } from "@/lib/apply/runner";
+import type { ApplyEvent } from "@/lib/apply/types";
 
 export const runtime = "nodejs";
+export const maxDuration = 600;
+
+const APPLICATION_ID = /^[a-z0-9]{10,40}$/i;
+const SSE_HEADERS = {
+  "Content-Type": "text/event-stream",
+  "Cache-Control": "no-cache",
+  Connection: "keep-alive",
+  "X-Accel-Buffering": "no",
+};
+
+const jsonError = (error: string, status: number) =>
+  new Response(JSON.stringify({ error }), { status, headers: { "Content-Type": "application/json" } });
+
+function streamApply(input: ApplyInput, dryRun: boolean): Response {
+  const encoder = new TextEncoder();
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+  const writer = writable.getWriter();
+  let closed = false;
+  const emit = (event: ApplyEvent) => {
+    if (closed) return;
+    writer.write(encoder.encode(`data: ${JSON.stringify(event)}\n\n`)).catch(() => {
+      closed = true;
+    });
+  };
+  void runApply(input, emit, { autoSubmit: !dryRun }).finally(() => {
+    closed = true;
+    writer.close().catch(() => undefined);
+  });
+  return new Response(readable, { headers: SSE_HEADERS });
+}
 
 export async function POST(req: NextRequest) {
-  // Auto-apply is dev-only — Netlify functions time out before Playwright can finish.
-  if (process.env.NODE_ENV === "production") {
-    return NextResponse.json({ error: "Auto-apply not available in production" }, { status: 501 });
-  }
-
   const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  const userId = session.user.id;
+  const userId = session?.user?.id;
+  if (!userId) return jsonError("Unauthorized", 401);
 
-  const body = await req.json().catch(() => ({})) as { applicationId?: string };
-  const { applicationId } = body;
-  if (!applicationId || !/^[a-z0-9]{15,30}$/i.test(applicationId)) {
-    return NextResponse.json({ error: "Missing or invalid applicationId" }, { status: 400 });
-  }
+  const body: unknown = await req.json().catch(() => null);
+  const fields = typeof body === "object" && body !== null ? (body as { applicationId?: unknown; dryRun?: unknown }) : {};
+  const applicationId = typeof fields.applicationId === "string" ? fields.applicationId : "";
+  if (!APPLICATION_ID.test(applicationId)) return jsonError("Missing applicationId", 400);
 
-  try {
-    // Lazy imports — none of this runs in production
-    const { prisma } = await import("@/lib/prisma");
-    const { applyRouter } = await import("@/lib/apply/applyRouter");
-
-    // Load application + job
-    const application = await prisma.application.findUnique({
-      where: { id: applicationId, userId },
-      include: {
-        job: true,
-        coverLetter: true,
-      },
-    });
-
-    if (!application) {
-      return NextResponse.json({ error: "Application not found" }, { status: 404 });
-    }
-
-    const { job, coverLetter } = application;
-
-    // Load user profile
-    const userProfile = await prisma.userProfile.findUnique({ where: { userId } });
-    if (!userProfile) {
-      return NextResponse.json({ error: "User profile not set up yet" }, { status: 400 });
-    }
-
-    // Load latest CV document
-    const cvDocument = await prisma.cvDocument.findFirst({
-      where: { userId },
-      orderBy: { uploadedAt: "desc" },
-    });
-
-    const profile = {
-      name: userProfile.name,
-      email: userProfile.email,
-      phone: userProfile.phone,
-      linkedInUrl: userProfile.linkedInUrl,
-      githubUrl: userProfile.githubUrl,
-      coverLetterText: coverLetter?.content ?? null,
-    };
-
-    const cvBuffer = cvDocument ? Buffer.from(cvDocument.data) : undefined;
-
-    const result = await applyRouter(job.source, job.sourceUrl, profile, cvBuffer);
-
-    // Update application status in DB (store full errorMessage for debugging)
-    const statusMap = {
-      APPLIED: "APPLIED",
-      FAILED: "FAILED",
-      MANUAL_REQUIRED: "PENDING", // Keep as pending so user knows to act
-    } as const;
-
-    await prisma.application.update({
-      where: { id: applicationId },
-      data: {
-        status: statusMap[result.status],
-        appliedAt: result.status === "APPLIED" ? new Date() : undefined,
-        errorMessage: result.errorMessage ?? null,
-      },
-    });
-
-    // Return only status — errorMessage may contain internal paths/stack traces
-    return NextResponse.json({ status: result.status });
-  } catch {
-    return NextResponse.json({ error: "An unexpected error occurred" }, { status: 500 });
-  }
+  const loaded = await loadApplyInput(applicationId, userId);
+  if ("code" in loaded) return jsonError(loaded.message, loaded.code);
+  return streamApply(loaded, fields.dryRun === true);
 }

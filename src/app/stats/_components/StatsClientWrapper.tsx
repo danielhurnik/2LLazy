@@ -1,14 +1,10 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import type { ComponentProps } from "react";
+import type { StatsClient } from "./StatsClient";
 
-interface Props {
-  byStatus: { status: string; count: number }[];
-  bySource: { source: string; count: number }[];
-  weekly: { week: string; count: number }[];
-  totalApplications: number;
-  interviewRate: number;
-}
+type Props = ComponentProps<typeof StatsClient>;
 
 const StatsClientDynamic = dynamic(
   () => import("./StatsClient").then((m) => m.StatsClient),

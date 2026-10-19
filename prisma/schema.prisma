@@ -1,14 +1,9 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
-  provider        = "prisma-client-js"
-  previewFeatures = ["postgresqlExtensions"]
+  provider = "prisma-client-js"
 }
 
 datasource db {
-  provider   = "postgresql"
-  extensions = [pgvector(map: "vector")]
+  provider = "postgresql"
 }
 
 enum JobSource {
@@ -29,9 +24,9 @@ enum ApplicationStatus {
   INTERVIEW
   OFFER
   FAILED
+  APPLYING
+  NEEDS_MANUAL
 }
-
-// ── NextAuth models ────────────────────────────────────────────────────────────
 
 model User {
   id            String    @id @default(cuid())
@@ -46,9 +41,7 @@ model User {
   accounts Account[]
   sessions Session[]
 
-  // App data
   applications   Application[]
-  coverLetters   CoverLetter[]
   calendarEvents CalendarEvent[]
   cvDocuments    CvDocument[]
   userProfile    UserProfile?
@@ -93,8 +86,6 @@ model VerificationToken {
   @@id([identifier, token])
 }
 
-// ── Per-user favourites (replaces `favourited` field on JobPosting) ────────────
-
 model UserFavourite {
   userId    String
   jobId     String
@@ -106,71 +97,68 @@ model UserFavourite {
   @@id([userId, jobId])
 }
 
-// ── App models ─────────────────────────────────────────────────────────────────
-
 model UserProfile {
-  id                  String   @id @default(cuid())
-  userId              String   @unique
-  name                String
-  email               String
-  phone               String?
-  cvPath              String?
-  linkedInUrl         String?
-  githubUrl           String?
-  coverLetterLanguage String   @default("English")
-  googleCalendarSync  Boolean  @default(false)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                     String    @id @default(cuid())
+  userId                 String    @unique
+  name                   String
+  email                  String
+  phone                  String?
+  cvPath                 String?
+  linkedInUrl            String?
+  githubUrl              String?
+  googleCalendarSync     Boolean   @default(false)
+  country                String    @default("CZ")
+  city                   String?
+  searchProfile          Json?
+  searchProfileUpdatedAt DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model JobPosting {
-  id           String                       @id @default(cuid())
-  title        String
-  company      String
-  location     String?
-  description  String                       @db.Text
-  sourceUrl    String                       @unique
-  source       JobSource
-  salary       String?
-  workType     String?
-  postedAt     DateTime?
-  scrapedAt    DateTime                     @default(now())
-  firstSeenAt  DateTime                     @default(now())
-  embedding    Unsupported("vector(1536)")?
-  applications Application[]
-  coverLetters CoverLetter[]
-  favouritedBy UserFavourite[]
+  id             String          @id @default(cuid())
+  title          String
+  company        String
+  location       String?
+  description    String          @db.Text
+  sourceUrl      String          @unique
+  source         JobSource
+  salary         String?
+  workType       String?
+  postedAt       DateTime?
+  scrapedAt      DateTime        @default(now())
+  firstSeenAt    DateTime        @default(now())
+  country        String          @default("CZ")
+  city           String?
+  remote         Boolean?
+  salaryMin      Int?
+  salaryMax      Int?
+  salaryCurrency String?
+  skills         String[]        @default([])
+  contentHash    String?
+  applications   Application[]
+  favouritedBy   UserFavourite[]
+
+  @@index([country, scrapedAt])
 }
 
 model Application {
-  id            String            @id @default(cuid())
-  userId        String
-  jobId         String
-  job           JobPosting        @relation(fields: [jobId], references: [id])
-  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  status        ApplicationStatus @default(PENDING)
-  appliedAt     DateTime?
-  errorMessage  String?           @db.Text
-  notes         String?           @db.Text
-  coverLetterId String?
-  coverLetter   CoverLetter?      @relation(fields: [coverLetterId], references: [id])
-  interview     Interview?
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
-}
-
-model CoverLetter {
-  id            String        @id @default(cuid())
-  userId        String
-  jobId         String
-  job           JobPosting    @relation(fields: [jobId], references: [id])
-  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  content       String        @db.Text
-  generatedByAI Boolean       @default(false)
-  createdAt     DateTime      @default(now())
-  applications  Application[]
+  id           String            @id @default(cuid())
+  userId       String
+  jobId        String
+  job          JobPosting        @relation(fields: [jobId], references: [id])
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status       ApplicationStatus @default(PENDING)
+  appliedAt    DateTime?
+  errorMessage String?           @db.Text
+  appliedVia   String?
+  evidencePath String?
+  notes        String?           @db.Text
+  interview    Interview?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
 }
 
 model Interview {
@@ -200,16 +188,12 @@ model CalendarEvent {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-// ── RAG Role Profiles ──────────────────────────────────────────────────────────
-
 model RoleProfile {
-  id            String                       @id @default(cuid())
-  category      String                       @unique
-  description   String                       @db.Text
-  antiQuery     String                       @db.Text
-  embedding     Unsupported("vector(1536)")?
-  antiEmbedding Unsupported("vector(1536)")?
-  updatedAt     DateTime                     @updatedAt
+  id          String   @id @default(cuid())
+  category    String   @unique
+  description String   @db.Text
+  antiQuery   String   @db.Text
+  updatedAt   DateTime @updatedAt
 }
 
 model CvDocument {

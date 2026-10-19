@@ -2,27 +2,23 @@
 
 import { Alert } from "@mui/material";
 
-interface Props {
+interface ErrorAlertListProps {
   errors: string[];
   onDismiss: (index: number) => void;
 }
 
-/**
- * Renders a stack of dismissable warning alerts.
- * Shared between the Search and Favourites pages.
- */
-export function ErrorAlertList({ errors, onDismiss }: Props) {
+export function ErrorAlertList({ errors, onDismiss }: ErrorAlertListProps) {
   if (!errors.length) return null;
   return (
     <>
-      {errors.map((e, i) => (
+      {errors.map((message, index) => (
         <Alert
-          key={i}
+          key={index}
           severity="warning"
           sx={{ mb: 1 }}
-          onClose={() => onDismiss(i)}
+          onClose={() => onDismiss(index)}
         >
-          {e}
+          {message}
         </Alert>
       ))}
     </>

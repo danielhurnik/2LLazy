@@ -1,63 +1,77 @@
 import { unstable_cache } from "next/cache";
+import type { CalendarEvent, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { CalendarEntry } from "@/types";
 
-export const INTERVIEWS_TAG = "interviews";
+const INTERVIEWS_TAG = "interviews";
 export const interviewTag = (userId: string) => `${INTERVIEWS_TAG}:${userId}`;
 
-async function _getCalendarEntriesForMonth(
+const CALENDAR_CACHE_SECONDS = 60;
+
+const INTERVIEW_INCLUDE = {
+  application: { include: { job: true } },
+} satisfies Prisma.InterviewInclude;
+
+type InterviewWithJob = Prisma.InterviewGetPayload<{ include: typeof INTERVIEW_INCLUDE }>;
+
+function withinMonth(month: number, year: number) {
+  const firstDayOfMonth = new Date(year, month - 1, 1);
+  const firstDayOfNextMonth = new Date(year, month, 1);
+  return { gte: firstDayOfMonth, lt: firstDayOfNextMonth } satisfies Prisma.DateTimeFilter;
+}
+
+function toInterviewEntry(interview: InterviewWithJob): CalendarEntry {
+  return {
+    id: interview.id,
+    type: "interview",
+    title: interview.application.job.company,
+    subtitle: interview.application.job.title,
+    scheduledAt: interview.scheduledAt.toISOString(),
+    durationMinutes: interview.durationMinutes,
+    notes: interview.notes,
+  };
+}
+
+function toEventEntry(event: CalendarEvent): CalendarEntry {
+  return {
+    id: event.id,
+    type: "event",
+    title: event.title,
+    scheduledAt: event.scheduledAt.toISOString(),
+    durationMinutes: event.durationMinutes,
+    notes: event.notes,
+  };
+}
+
+const byScheduledAt = (a: CalendarEntry, b: CalendarEntry) =>
+  new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime();
+
+async function findCalendarEntriesForMonth(
   userId: string,
   month: number,
   year: number,
 ): Promise<CalendarEntry[]> {
-  const start = new Date(year, month - 1, 1);
-  const end = new Date(year, month, 1);
+  const scheduledAt = withinMonth(month, year);
 
   const [interviews, events] = await Promise.all([
     prisma.interview.findMany({
-      where: {
-        scheduledAt: { gte: start, lt: end },
-        application: { userId },
-      },
-      include: { application: { include: { job: true } } },
+      where: { scheduledAt, application: { userId } },
+      include: INTERVIEW_INCLUDE,
       orderBy: { scheduledAt: "asc" },
     }),
     prisma.calendarEvent.findMany({
-      where: { userId, scheduledAt: { gte: start, lt: end } },
+      where: { userId, scheduledAt },
       orderBy: { scheduledAt: "asc" },
     }),
   ]);
 
-  const interviewEntries: CalendarEntry[] = interviews.map((iv) => ({
-    id: iv.id,
-    type: "interview",
-    title: iv.application.job.company,
-    subtitle: iv.application.job.title,
-    scheduledAt: iv.scheduledAt.toISOString(),
-    durationMinutes: iv.durationMinutes,
-    notes: iv.notes,
-  }));
-
-  const eventEntries: CalendarEntry[] = events.map((ev) => ({
-    id: ev.id,
-    type: "event",
-    title: ev.title,
-    scheduledAt: ev.scheduledAt.toISOString(),
-    durationMinutes: ev.durationMinutes,
-    notes: ev.notes,
-  }));
-
-  return [...interviewEntries, ...eventEntries].sort(
-    (a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime(),
-  );
+  return [...interviews.map(toInterviewEntry), ...events.map(toEventEntry)].sort(byScheduledAt);
 }
 
 export function getCalendarEntriesForMonth(userId: string, month: number, year: number) {
   return unstable_cache(
-    () => _getCalendarEntriesForMonth(userId, month, year),
+    () => findCalendarEntriesForMonth(userId, month, year),
     ["get-calendar-entries", userId, String(month), String(year)],
-    { revalidate: 60, tags: [interviewTag(userId)] },
+    { revalidate: CALENDAR_CACHE_SECONDS, tags: [interviewTag(userId)] },
   )();
 }
-
-
