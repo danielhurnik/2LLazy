@@ -1,41 +1,68 @@
 # 2LLazy
 
 2LLazy is a job-search and application tracker for IT roles in the Czech market.
-It searches several job boards at once, ranks the results with a transparent keyword score, and keeps your favourites, applications, interviews and stats in one place.
+It searches several job boards at once, ranks the results with a transparent keyword score, and keeps your saved jobs, applications, interviews and stats in one place.
+Nothing in it calls an AI service. The only model it can use is an optional local Ollama, during auto-apply.
 
-## Core features
+## Features
 
-- Search startupjobs.cz, jobs.cz, nofluffjobs.com, cocuma.cz, jobstack.it, skilleto.cz and jooble.org with live progress
-- Instant results from postings already in the database, topped up live from each board
-- Deterministic relevance score (title, keywords, location, seniority, recency, salary) with the reasons shown on every card
+- One search across Czech job boards, with live progress as each board reports in
+- Postings already in the database appear straight away, then fresh ones are added as each board responds
+- A deterministic relevance score (title, keywords, location, seniority, recency, salary), with the reasons shown on every card
 - Polite scraping: robots.txt respected by default, per-host rate limits, retries with backoff, and a pause for boards that keep failing
-- Save favourites and track them through the application pipeline on the dashboard
-- Experimental auto apply: Playwright fills the application form in an isolated browser profile, keeps screenshots as evidence, and stops for you to finish by hand when it isn't confident. CAPTCHAs are never bypassed.
+- When a board sits a search out, the results say which one and why
+- Saved jobs that you move through the application pipeline on the dashboard
+- Experimental auto-apply for StartupJobs (see below)
 - Monthly interview calendar with optional Google Calendar sync
 - Stats on applications and outcomes
+
+## Job boards
+
+| Board | Runs when |
+|---|---|
+| Jobs.cz | Always. `PLAYWRIGHT_ENABLED=true` adds fuller descriptions for postings that render client-side |
+| Cocuma | Always |
+| Jobstack | Always |
+| StartupJobs | `PLAYWRIGHT_ENABLED=true` |
+| Skilleto | `PLAYWRIGHT_ENABLED=true` |
+| Jooble | `JOOBLE_API_KEY` is set (free key from jooble.org/api/about) |
+| NoFluffJobs | `ROBOTS_ALLOW=nofluffjobs.com/api/`, because its robots.txt disallows the API |
+
+The search pipeline lives in `src/lib/jobs`. `registry.ts` lists the boards, `sources/<board>.ts` holds each board's scraper, and `score.ts` holds the ranking. The roadmap and per-board notes are in [docs/scraping-v2-plan.md](docs/scraping-v2-plan.md).
+
+## Auto-apply
+
+The Auto-apply button on the dashboard opens the posting in Playwright, fills the application form and, when it is confident, submits it. It uses a separate, persistent Chromium profile in `.apply-profile`, so it never touches your own browser. StartupJobs has a dedicated adapter; every other site goes through a generic form filler.
+
+- Fields are matched by their labels, names and placeholders. A local Ollama, if you run one, maps fields the matcher can't place and drafts free-text answers. Without Ollama, those fields stay empty.
+- The form is submitted only when every required field is filled and the mapping confidence is at least 0.8.
+- Otherwise the run stops as NEEDS_MANUAL, with the reason shown and the browser left open on the filled form for you to finish. A CAPTCHA or a login wall always ends the run as NEEDS_MANUAL; nothing is bypassed.
+- Every run saves screenshots, the submitted values (`payload.json`) and a log (`log.txt`) to `uploads/applications/<applicationId>`. The dashboard shows them in the Evidence dialog.
+- `POST /api/apply` with `"dryRun": true` fills the form but stops before submitting.
+
+The code is in `src/lib/apply`. The design and current state are in [docs/auto-apply-plan.md](docs/auto-apply-plan.md).
 
 ## Stack
 
 - Next.js 16 (App Router) + React 19 + TypeScript
 - Material UI v5
 - Prisma 7 + PostgreSQL
-- NextAuth v5 (email/password and Google)
-- Apollo GraphQL endpoint (`/api/graphql`) and server-sent events for search and auto apply
-- Playwright for client-rendered boards and auto apply
-- Optional local Ollama for mapping ambiguous form fields during auto apply
+- NextAuth v5 (email and password, or Google)
+- Apollo GraphQL endpoint (`/api/graphql`) and server-sent events for search and auto-apply
+- Playwright for client-rendered boards and auto-apply
 
 ## Prerequisites
 
 1. Node.js 22+
-2. PostgreSQL
+2. PostgreSQL with pgvector installed. One early migration (`20260409_improvements`) still creates the `vector` extension, even though a later migration drops every vector column. `vector` is not a trusted extension, so if your app's database role is not a superuser, run `CREATE EXTENSION vector;` in the app database as a superuser first. `pg_trgm` ships with PostgreSQL and needs nothing extra.
 3. Optional: Playwright Chromium (`npx playwright install chromium`) and a local Ollama
 
 ## Environment variables
 
-Create `.env.local` (or `.env`) with:
+Create `.env.local` with the two required values. `.env.local` overrides `.env`, and both are gitignored, so keep real values there and out of the repository.
 
 ```env
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/application_fatique?schema=public"
+DATABASE_URL="postgresql://<user>:<password>@localhost:5432/application_fatique?schema=public"
 AUTH_SECRET="<random string, e.g. from npx auth secret>"
 ```
 
@@ -43,47 +70,59 @@ Optional:
 
 | Variable | Enables |
 |---|---|
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google sign-in and Google Calendar sync |
-| `JOOBLE_API_KEY` | The Jooble board (free key from jooble.org/api/about) |
-| `PLAYWRIGHT_ENABLED=true` | Boards that need a real browser (StartupJobs, Skilleto) and richer Jobs.cz descriptions |
-| `ROBOTS_ALLOW` | Opt-in exceptions to robots.txt, e.g. `nofluffjobs.com/api/` for NoFluffJobs |
-| `OLLAMA_URL`, `OLLAMA_MODEL`, `OLLAMA_EMBED_MODEL` | Local models used by auto apply (defaults: `http://127.0.0.1:11434`, `llama3`, `nomic-embed-text`). On AMD GPUs start Ollama itself with `OLLAMA_VULKAN=1`. |
-| `APPLY_HEADLESS=true`, `APPLY_PROFILE_DIR` | Run auto apply without a visible window / choose its browser profile folder |
+| `PLAYWRIGHT_ENABLED=true` | StartupJobs and Skilleto, fuller Jobs.cz descriptions, and auto-apply |
+| `JOOBLE_API_KEY` | The Jooble board |
+| `ROBOTS_ALLOW` | Comma-separated exceptions to robots.txt, e.g. `nofluffjobs.com/api/` for NoFluffJobs |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Google sign-in and Google Calendar sync |
+| `APPLY_HEADLESS=true` | Runs auto-apply without a visible browser window |
+| `APPLY_PROFILE_DIR` | Puts the auto-apply browser profile somewhere other than `.apply-profile` |
+| `OLLAMA_URL`, `OLLAMA_MODEL` | The local Ollama used by auto-apply (defaults `http://127.0.0.1:11434` and `llama3`). On AMD GPUs, start Ollama itself with `OLLAMA_VULKAN=1` |
 
 ## Setup
 
 ```bash
 npm install
-npm run db:migrate
+npx prisma migrate deploy
 npm run db:generate
+npx tsx --env-file=.env.local prisma/seed-test-user.ts
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Apply migrations with `prisma migrate deploy`, not `npm run db:migrate`. `migrate dev` replays the whole history into a shadow database, and that fails on the `vector` extension unless the app role can create it. To write a new migration, use the diff, review, deploy route in [docs/auto-apply-plan.md](docs/auto-apply-plan.md).
+
+There is no sign-up page. `prisma/seed-test-user.ts` creates a local test account; its email and password are at the top of the file. Use it on your own machine only. With the Google variables set, you can sign in with Google instead.
+
+Open [http://localhost:3000](http://localhost:3000) and sign in. Settings is where you set your country and city, which become the search defaults, and upload CVs.
 
 ## Routes
 
 | Route | Description |
 |---|---|
 | `/` | Search jobs with live progress |
-| `/favourites` | Saved jobs; track them into the dashboard |
-| `/dashboard` | Application tracker, notes and auto apply |
+| `/favourites` | Saved jobs; move them into the dashboard |
+| `/dashboard` | Application pipeline, notes, auto-apply and its evidence |
 | `/interviews` | Monthly interview calendar |
 | `/stats` | Application statistics |
 | `/settings` | Profile, search defaults, CVs and Google Calendar |
-| `/login` | Sign in |
+| `/login` | Sign in with email and password, or with Google |
+
+## Tests
+
+`npm test` runs the Vitest unit tests, which need no database or network. `npm run test:e2e` runs Playwright. It starts the dev server if one isn't running and signs in as the test account, so it needs the database and the seeded test user.
 
 ## Scripts
 
 ```bash
-npm run dev
-npm run build
-npm run start
-npm run lint
-npm test
-npm run test:e2e
-npm run db:migrate
-npm run db:generate
-npm run db:studio
-npm run db:reset
+npm run dev            # development server
+npm run build          # production build
+npm run start          # serve the production build
+npm run lint           # eslint
+npm test               # unit tests (vitest)
+npm run test:watch     # unit tests in watch mode
+npm run test:coverage  # unit tests with coverage
+npm run test:e2e       # end-to-end tests (playwright)
+npm run db:migrate     # prisma migrate dev (needs a role that can create vector)
+npm run db:generate    # generate the Prisma client
+npm run db:studio      # browse the database
+npm run db:reset       # wipe the database and re-run every migration
 ```
