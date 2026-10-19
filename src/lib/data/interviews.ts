@@ -2,13 +2,13 @@ import { unstable_cache } from "next/cache";
 import type { CalendarEvent, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { CalendarEntry } from "@/types";
+import { MS_PER_DAY } from "@/lib/time";
 
 const INTERVIEWS_TAG = "interviews";
 export const interviewTag = (userId: string) => `${INTERVIEWS_TAG}:${userId}`;
 
 const CALENDAR_CACHE_SECONDS = 60;
-const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-const PADDING_COVERING_EVERY_UTC_OFFSET_MS = ONE_DAY_MS;
+const PADDING_COVERING_EVERY_UTC_OFFSET_MS = MS_PER_DAY;
 
 const INTERVIEW_INCLUDE = {
   application: { include: { job: true } },

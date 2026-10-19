@@ -1,11 +1,11 @@
 import { prisma } from "@/lib/prisma";
+import { isRecord } from "@/lib/guards";
+import { MS_PER_MINUTE, MS_PER_SECOND } from "@/lib/time";
 
 const GOOGLE_PROVIDER = "google";
 const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 const PRIMARY_CALENDAR_EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
 const TOKEN_REFRESH_LEEWAY_SECONDS = 60;
-const MS_PER_SECOND = 1000;
-const MS_PER_MINUTE = 60 * MS_PER_SECOND;
 const ALREADY_DELETED_STATUSES = new Set([404, 410]);
 const DEFAULT_TIMEZONE = "UTC";
 
@@ -41,10 +41,6 @@ const jsonRequestHeaders = (accessToken: string) => ({
   ...bearerHeader(accessToken),
   "Content-Type": "application/json",
 });
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
 
 function isRefreshedToken(value: unknown): value is RefreshedToken {
   return isRecord(value) && typeof value.access_token === "string" && typeof value.expires_in === "number";

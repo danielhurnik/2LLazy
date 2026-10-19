@@ -1,8 +1,9 @@
 import type { JobSource as JobSourceEnum } from "@prisma/client";
 import type { CountryCode, RawJob } from "./sources/types";
-import { canonicalUrl, dedupeRepeatedHalf, normalizeText } from "./dedupe";
+import { normalizeText } from "@/lib/text";
+import { canonicalUrl, dedupeRepeatedHalf } from "./dedupe";
 
-export type WorkType = "Remote" | "Hybrid" | "Onsite";
+type WorkType = "Remote" | "Hybrid" | "Onsite";
 
 export type Seniority = "junior" | "mid" | "senior" | "lead";
 
@@ -25,7 +26,7 @@ export interface NormalizedJob {
   skills: string[];
 }
 
-export interface ParsedSalary {
+interface ParsedSalary {
   min: number | null;
   max: number | null;
   currency: string | null;

@@ -17,6 +17,7 @@ import {
 import { CalendarMonthNav } from "./CalendarMonthNav";
 import { CalendarGrid } from "./CalendarGrid";
 import type { CalendarEntry, CalendarEventForm } from "@/types";
+import { errorMessage } from "@/lib/guards";
 
 const DATETIME_LOCAL_FORMAT = "YYYY-MM-DDTHH:mm";
 const TOAST_AUTO_HIDE_MS = 5000;
@@ -81,8 +82,6 @@ function withLocalTimeAsInstant(form: CalendarEventForm): CalendarEventForm {
 
 const entriesWithinMonth = ({ month, entries }: DisplayedMonth) =>
   entries.filter((entry) => dayjs(entry.scheduledAt).isSame(month, "month"));
-
-const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 function describeMonth(entryCount: number, monthName: string) {
   if (entryCount === 0) {
@@ -192,7 +191,7 @@ export function InterviewsClient({ initialEntries, month, year, followsLocalToda
       try {
         await mutate();
       } catch (err) {
-        setToast({ message: errorText(err), severity: "error" });
+        setToast({ message: errorMessage(err), severity: "error" });
         setIsSaving(false);
         return;
       }

@@ -1,5 +1,6 @@
 import type { AtsKind, Employer } from "../config";
 import { fetchJson, htmlToText } from "../http";
+import { isRecord, type JsonRecord } from "@/lib/guards";
 
 export interface AtsPosting {
   id: string;
@@ -31,9 +32,7 @@ const HTML_ENTITY_DECODES: Array<[RegExp, string]> = [
   [/&amp;/g, "&"],
 ];
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-const records = (value: unknown): Record<string, unknown>[] => (Array.isArray(value) ? value.filter(isRecord) : []);
+const records = (value: unknown): JsonRecord[] => (Array.isArray(value) ? value.filter(isRecord) : []);
 const text = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
 const finiteNumber = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) ? value : undefined;

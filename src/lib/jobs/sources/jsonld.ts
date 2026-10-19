@@ -1,5 +1,6 @@
 import type { CheerioAPI } from "cheerio";
 import { htmlToText } from "../http";
+import { isRecord } from "@/lib/guards";
 
 export interface JsonLdJobPosting {
   title: string;
@@ -16,8 +17,6 @@ const JSON_LD_SELECTOR = "script[type='application/ld+json']";
 const JOB_POSTING_TYPE = "JobPosting";
 const TELECOMMUTE = "TELECOMMUTE";
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 const text = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
 const finiteNumber = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) ? value : undefined;

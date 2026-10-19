@@ -5,6 +5,7 @@ import { resolveIntent } from "@/lib/jobs/intent";
 import { runSearch } from "@/lib/jobs/pipeline";
 import { sourcesFor } from "@/lib/jobs/registry";
 import { DEFAULT_COUNTRY, isSupportedCountry, type CountryCode, type SearchRequest } from "@/lib/jobs/sources/types";
+import { isRecord, type JsonRecord } from "@/lib/guards";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -18,23 +19,18 @@ const SSE_HEADERS = {
   "X-Accel-Buffering": "no",
 };
 
-type JsonObject = Record<string, unknown>;
-
 const lastSearchAtByClient = new Map<string, number>();
 
 const ignoreFailure = () => {};
 
 const jsonError = (error: string, status: number) => new Response(JSON.stringify({ error }), { status });
 
-const isJsonObject = (value: unknown): value is JsonObject =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-function stringField(body: JsonObject, key: string): string {
+function stringField(body: JsonRecord, key: string): string {
   const value = body[key];
   return typeof value === "string" ? value : "";
 }
 
-function numberField(body: JsonObject, key: string): number | null {
+function numberField(body: JsonRecord, key: string): number | null {
   const value = body[key];
   return typeof value === "number" ? value : null;
 }
@@ -56,7 +52,7 @@ function isRateLimited(client: string): boolean {
   return false;
 }
 
-function parseSearchRequest(body: JsonObject): SearchRequest | null {
+function parseSearchRequest(body: JsonRecord): SearchRequest | null {
   const query = stringField(body, "query").trim();
   if (!query) return null;
   return {
@@ -103,7 +99,7 @@ export async function POST(req: NextRequest) {
   if (isRateLimited(clientIdentifier(req))) return jsonError("Too many requests", 429);
 
   const body: unknown = await req.json().catch(() => null);
-  const request = parseSearchRequest(isJsonObject(body) ? body : {});
+  const request = parseSearchRequest(isRecord(body) ? body : {});
   if (!request) return new Response("Missing query", { status: 400 });
 
   return streamSearch(userId, request, req.signal);

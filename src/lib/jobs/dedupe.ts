@@ -1,11 +1,13 @@
 import { createHash } from "crypto";
+import { normalizeText } from "@/lib/text";
+
+export { normalizeText };
 
 const CAMPAIGN_PARAM_PREFIX = "utm_";
 const VISITOR_AND_SEARCH_SESSION_PARAMS = new Set([
   "searchid", "rps", "ref", "source", "src", "fbclid", "gclid", "msclkid",
   "mc_cid", "mc_eid", "_ga", "yclid", "igshid", "trk", "trackingid",
 ]);
-const COMBINING_DIACRITICS = /[̀-ͯ]/g;
 const CONTENT_HASH_SAMPLE_LENGTH = 2000;
 
 function identifiesPostingNotVisitor(paramName: string): boolean {
@@ -30,15 +32,6 @@ export function canonicalUrl(input: string): string {
   const query = kept.toString();
   url.search = query ? `?${query}` : "";
   return url.toString();
-}
-
-export function normalizeText(text: string): string {
-  return text
-    .normalize("NFD")
-    .replace(COMBINING_DIACRITICS, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
 }
 
 export function jobKey(job: { company: string; title: string; city?: string | null }): string {

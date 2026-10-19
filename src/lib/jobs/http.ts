@@ -5,10 +5,11 @@ import path from "path";
 import * as cheerio from "cheerio";
 import type { AnyNode } from "domhandler";
 import { Agent } from "undici";
+import { isRecord } from "@/lib/guards";
+import { MS_PER_MINUTE } from "@/lib/time";
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
-const MS_PER_MINUTE = 60_000;
 const REQUEST_TIMEOUT_MS = 20_000;
 const CONNECT_TIMEOUT_MS = 30_000;
 const MAX_CONCURRENT_REQUESTS_PER_HOST = 2;
@@ -41,14 +42,14 @@ export class HttpError extends Error {
   }
 }
 
-export class RobotsBlockedError extends Error {
+class RobotsBlockedError extends Error {
   constructor(public readonly url: string) {
     super(`robots.txt disallows ${url} (set ROBOTS_ALLOW=<host>/<path> to opt in)`);
     this.name = "RobotsBlockedError";
   }
 }
 
-export interface FetchOptions {
+interface FetchOptions {
   method?: "GET" | "POST";
   headers?: Record<string, string>;
   body?: string;
@@ -56,7 +57,7 @@ export interface FetchOptions {
   cacheTtlMs?: number;
 }
 
-export interface TextResponse {
+interface TextResponse {
   status: number;
   text: string;
   url: string;
@@ -246,10 +247,6 @@ function cacheKey(method: string, url: string, body?: string): string {
 
 function cacheFile(key: string): string {
   return path.join(CACHE_DIR, `${key}.json`);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
 
 function isCacheEntry(value: unknown): value is CacheEntry {

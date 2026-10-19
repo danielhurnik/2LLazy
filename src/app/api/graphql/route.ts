@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { typeDefs } from "@/graphql/schema";
 import { resolvers, type GqlContext } from "@/graphql/resolvers";
 import { auth } from "@/auth";
+import { isRecord } from "@/lib/guards";
 
 export const runtime = "nodejs";
 
@@ -35,14 +36,8 @@ async function ensureStarted() {
 const MISSING_QUERY = "Request must include a GraphQL query string";
 const INVALID_VARIABLES = "Variables must be a JSON object";
 
-type JsonRecord = Record<string, unknown>;
-
 function jsonError(error: string, status: number): NextResponse {
   return NextResponse.json({ error }, { status });
-}
-
-function isJsonRecord(value: unknown): value is JsonRecord {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function parseJson(text: string): { ok: true; value: unknown } | { ok: false } {
@@ -59,7 +54,7 @@ function toGraphQLRequest(
   operationName: unknown,
 ): GraphQLRequestBody | NextResponse {
   if (typeof query !== "string" || !query) return jsonError(MISSING_QUERY, 400);
-  if (variables != null && !isJsonRecord(variables)) return jsonError(INVALID_VARIABLES, 400);
+  if (variables != null && !isRecord(variables)) return jsonError(INVALID_VARIABLES, 400);
   return {
     query,
     variables: variables ?? undefined,
@@ -70,7 +65,7 @@ function toGraphQLRequest(
 function parseRequestBody(body: string): GraphQLRequestBody | NextResponse {
   const parsed = parseJson(body);
   if (!parsed.ok) return jsonError("Invalid JSON", 400);
-  if (!isJsonRecord(parsed.value)) return jsonError(MISSING_QUERY, 400);
+  if (!isRecord(parsed.value)) return jsonError(MISSING_QUERY, 400);
   const { query, variables, operationName } = parsed.value;
   return toGraphQLRequest(query, variables, operationName);
 }

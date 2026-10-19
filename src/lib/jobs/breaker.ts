@@ -1,5 +1,6 @@
+import { MS_PER_MINUTE } from "@/lib/time";
+
 const FAILURES_BEFORE_PAUSE = 3;
-const MS_PER_MINUTE = 60_000;
 const PAUSE_MS = 10 * MS_PER_MINUTE;
 
 interface BreakerState {

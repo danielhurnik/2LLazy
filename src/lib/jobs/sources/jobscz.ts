@@ -1,13 +1,13 @@
 import { isPlaywrightEnabled, pwFetchHtml } from "@/lib/scrapers/playwright-browser";
 import * as cheerio from "cheerio";
-import { normalizeText } from "../dedupe";
+import { normalizeText } from "@/lib/text";
+import { MS_PER_DAY } from "@/lib/time";
 import { absoluteUrl, blockText, collapseWhitespace, fetchHtml, HttpError, mainText } from "../http";
 import type { FetchContext, JobSource, Listing, RawJob } from "./types";
 
 const BASE = "https://www.jobs.cz";
 const QUICK_SEARCH_PAGES = 1;
 const DEEP_SEARCH_PAGES = 3;
-const ONE_DAY_MS = 86_400_000;
 const MONTH_PREFIX_LENGTH = 3;
 const MIN_COMPLETE_DESCRIPTION_LENGTH = 200;
 const GONE_STATUSES = new Set([404, 410]);
@@ -30,7 +30,7 @@ export function parseCzechDate(text: string, now = new Date()): Date | undefined
   const month = CZECH_MONTHS.findIndex((name) => name.startsWith(monthPrefix));
   if (month === -1) return undefined;
   const date = new Date(now.getFullYear(), month, Number(day));
-  const isInTheFuture = date.getTime() > now.getTime() + ONE_DAY_MS;
+  const isInTheFuture = date.getTime() > now.getTime() + MS_PER_DAY;
   if (isInTheFuture) date.setFullYear(now.getFullYear() - 1);
   return date;
 }

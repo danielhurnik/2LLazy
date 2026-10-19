@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ApplyEvent, ApplyOutcome } from "@/lib/apply/types";
 import { readSseStream } from "@/lib/readSseStream";
+import { errorMessage, isRecord } from "@/lib/guards";
 
 const APPLY_ENDPOINT = "/api/apply";
 const APPLY_OUTCOMES: ApplyOutcome[] = ["APPLIED", "NEEDS_MANUAL", "FAILED"];
@@ -27,9 +28,6 @@ const IDLE_RUN: AutoApplyRun = {
   outcome: null,
   error: null,
 };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const isApplyOutcome = (value: unknown): value is ApplyOutcome =>
   APPLY_OUTCOMES.some((outcome) => outcome === value);
@@ -69,8 +67,6 @@ async function describeRejection(response: Response): Promise<string> {
   }
 }
 
-const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
-
 export function useAutoApply(applicationId: string) {
   const router = useRouter();
   const [run, setRun] = useState<AutoApplyRun>(IDLE_RUN);
@@ -92,7 +88,7 @@ export function useAutoApply(applicationId: string) {
         current.outcome || current.error ? current : { ...current, error: NO_RESULT_MESSAGE },
       );
     } catch (err) {
-      setRun((current) => ({ ...current, error: errorText(err) }));
+      setRun((current) => ({ ...current, error: errorMessage(err) }));
     } finally {
       setRun((current) => ({ ...current, isRunning: false }));
       router.refresh();

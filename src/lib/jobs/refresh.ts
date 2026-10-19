@@ -7,10 +7,9 @@ import { normalizeJob } from "./normalize";
 import { sourcesFor } from "./registry";
 import { upsertJob } from "./repo";
 import { DEFAULT_COUNTRY, isSupportedCountry, type CountryCode, type FetchContext, type JobSource, type Listing, type SearchRequest } from "./sources/types";
+import { MS_PER_DAY, MS_PER_MINUTE } from "@/lib/time";
 
-const ONE_MINUTE_MS = 60_000;
-const ONE_DAY_MS = 86_400_000;
-const STALE_AFTER_MS = ONE_DAY_MS;
+const STALE_AFTER_MS = MS_PER_DAY;
 const KEEP_POSTINGS_FOR_DAYS = 60;
 const POSTINGS_PER_RUN = 25;
 const REFRESH_CONCURRENCY = 3;
@@ -19,7 +18,7 @@ const DEFAULT_REFRESH_MINUTES = 180;
 const FIRST_RUN_DELAY_MINUTES = 5;
 const GONE_STATUSES = new Set([404, 410]);
 
-export interface RefreshReport {
+interface RefreshReport {
   checked: number;
   updated: number;
   expired: number;
@@ -84,7 +83,7 @@ async function stalePostings(): Promise<StaleRow[]> {
     where: {
       expiredAt: null,
       scrapedAt: { lt: new Date(Date.now() - STALE_AFTER_MS) },
-      firstSeenAt: { gte: new Date(Date.now() - KEEP_POSTINGS_FOR_DAYS * ONE_DAY_MS) },
+      firstSeenAt: { gte: new Date(Date.now() - KEEP_POSTINGS_FOR_DAYS * MS_PER_DAY) },
     },
     orderBy: { scrapedAt: "asc" },
     take: POSTINGS_PER_RUN,
@@ -125,7 +124,7 @@ async function refreshOne(row: StaleRow, sources: Map<JobSourceEnum, JobSource>)
 }
 
 async function purgeOldPostings(): Promise<number> {
-  const cutoff = new Date(Date.now() - KEEP_POSTINGS_FOR_DAYS * ONE_DAY_MS);
+  const cutoff = new Date(Date.now() - KEEP_POSTINGS_FOR_DAYS * MS_PER_DAY);
   const { count } = await prisma.jobPosting.deleteMany({
     where: { scrapedAt: { lt: cutoff }, applications: { none: {} }, favouritedBy: { none: {} } },
   });
@@ -167,12 +166,12 @@ async function runGuarded(): Promise<void> {
 export function scheduleBackgroundRefresh(): void {
   const minutes = Number(process.env.SEARCH_REFRESH_MINUTES ?? DEFAULT_REFRESH_MINUTES);
   if (!Number.isFinite(minutes) || minutes <= 0 || scheduler.searchRefreshTimer) return;
-  const interval = minutes * ONE_MINUTE_MS;
+  const interval = minutes * MS_PER_MINUTE;
   scheduler.searchRefreshTimer = setTimeout(() => {
     void runGuarded();
     scheduler.searchRefreshTimer = setInterval(() => void runGuarded(), interval);
     scheduler.searchRefreshTimer.unref();
-  }, FIRST_RUN_DELAY_MINUTES * ONE_MINUTE_MS);
+  }, FIRST_RUN_DELAY_MINUTES * MS_PER_MINUTE);
   scheduler.searchRefreshTimer.unref();
   console.log(`[refresh] background refresh every ${minutes} min, first run in ${FIRST_RUN_DELAY_MINUTES} min`);
 }

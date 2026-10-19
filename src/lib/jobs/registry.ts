@@ -31,7 +31,7 @@ const UNAVAILABLE_REASONS: Record<string, string> = {
   skilleto: "Skilleto skipped: needs PLAYWRIGHT_ENABLED=true",
 };
 
-export interface SourceSelection {
+interface SourceSelection {
   sources: JobSource[];
   skipped: string[];
 }

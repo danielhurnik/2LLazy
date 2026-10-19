@@ -14,8 +14,9 @@ import {
 import { isSseEvent, type SSEEvent } from "@/lib/jobs/events";
 import { readSseStream } from "@/lib/readSseStream";
 import type { JobItem } from "@/types";
+import { errorMessage } from "@/lib/guards";
 
-export interface SearchParams {
+interface SearchParams {
   query: string;
   skillLevel: string;
   deepSearch: boolean;
@@ -85,10 +86,6 @@ function appendUnique<T>(items: T[], item: T): T[] {
 
 function isAbortError(err: unknown): boolean {
   return (err instanceof Error || err instanceof DOMException) && err.name === "AbortError";
-}
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 function withArrivedJob(jobs: JobItem[], job: JobItem): JobItem[] {

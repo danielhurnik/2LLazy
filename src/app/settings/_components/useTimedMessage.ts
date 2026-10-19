@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export interface StatusMessage {
+interface StatusMessage {
   type: "success" | "error";
   text: string;
 }

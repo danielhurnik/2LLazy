@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { contentHash } from "./dedupe";
 import type { NormalizedJob } from "./normalize";
 import { DEFAULT_COUNTRY, type CountryCode } from "./sources/types";
+import { MS_PER_DAY } from "@/lib/time";
 
 export interface StoredJob {
   id: string;
@@ -21,7 +22,7 @@ export interface StoredJob {
   city: string | null;
 }
 
-export interface RecentSearch {
+interface RecentSearch {
   titleTerms: string[];
   query: string;
   days: number;
@@ -29,7 +30,6 @@ export interface RecentSearch {
   country?: CountryCode;
 }
 
-const ONE_DAY_MS = 86_400_000;
 const MIN_TITLE_TERM_LENGTH = 2;
 const MIN_DESCRIPTION_QUERY_LENGTH = 3;
 const CASE_INSENSITIVE = "insensitive" as const;
@@ -114,7 +114,7 @@ export async function searchRecent({
   const matchers = keywordMatchers(titleTerms, query);
   if (matchers.length === 0) return [];
   return prisma.jobPosting.findMany({
-    where: { country, expiredAt: null, scrapedAt: { gte: new Date(Date.now() - days * ONE_DAY_MS) }, OR: matchers },
+    where: { country, expiredAt: null, scrapedAt: { gte: new Date(Date.now() - days * MS_PER_DAY) }, OR: matchers },
     orderBy: { scrapedAt: "desc" },
     take: limit,
     select: STORED_JOB_COLUMNS,

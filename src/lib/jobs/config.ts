@@ -1,7 +1,8 @@
 import sourcesCz from "../../../config/sources.cz.json";
 import type { CountryCode } from "./sources/types";
+import { isRecord } from "@/lib/guards";
 
-export const ATS_KINDS = ["greenhouse", "lever", "ashby", "smartrecruiters", "recruitee", "workable"] as const;
+const ATS_KINDS = ["greenhouse", "lever", "ashby", "smartrecruiters", "recruitee", "workable"] as const;
 export type AtsKind = (typeof ATS_KINDS)[number];
 
 export interface Employer {
@@ -10,12 +11,11 @@ export interface Employer {
   name: string;
 }
 
-export interface SourcesConfig {
+interface SourcesConfig {
   robotsAllow: string[];
   employers: Employer[];
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 const isAtsKind = (value: unknown): value is AtsKind => typeof value === "string" && ATS_KINDS.some((kind) => kind === value);
 
 function asEmployer(raw: unknown, index: number): Employer {
