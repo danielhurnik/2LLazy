@@ -1,6 +1,6 @@
+import { normalizeText } from "@/lib/text";
 import * as cheerio from "cheerio";
 import { batchProcess } from "@/lib/scrapers/utils";
-import { normalizeText } from "../dedupe";
 import { absoluteUrl, fetchHtml, fetchText, HttpError } from "../http";
 import { detectCity } from "../normalize";
 import { knownWebHosts, recordWebHost } from "../repo";

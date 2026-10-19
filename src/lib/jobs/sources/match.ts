@@ -1,4 +1,4 @@
-import { normalizeText } from "../dedupe";
+import { normalizeText } from "@/lib/text";
 import { tokens } from "../score";
 import type { SearchRequest } from "./types";
 

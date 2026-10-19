@@ -1,6 +1,8 @@
 import type { QueryIntent } from "@/lib/queryIntent";
 import type { SearchProfile } from "./profile";
-import { normalizeText } from "./dedupe";
+import { EMPTY_FEATURES, type FeatureVector } from "./ranker";
+import { normalizeText } from "@/lib/text";
+import { MS_PER_DAY } from "@/lib/time";
 import { detectCity, detectSeniority, type NormalizedJob, type Seniority } from "./normalize";
 
 export interface ScoreRequest {
@@ -16,6 +18,7 @@ export interface ScoreRequest {
 export interface ScoredJob {
   score: number;
   reasons: string[];
+  features: FeatureVector;
   rejectedBy?: string;
 }
 
@@ -42,10 +45,16 @@ const PROFILE_SHARE_OF_TOTAL = 0.15;
 const PROFILE_WEIGHTS = { skills: 0.7, title: 0.3 };
 const PROFILE_SKILLS_FOR_FULL_SCORE = 6;
 const PROFILE_SKILL_EXAMPLES_IN_REASON = 3;
+const TITLE_PART_INDEX = 0;
+const KEYWORDS_PART_INDEX = 1;
+const LOCATION_PART_INDEX = 2;
+const SENIORITY_PART_INDEX = 3;
+const RECENCY_PART_INDEX = 4;
+const SALARY_PART_INDEX = 5;
+const DESCRIPTION_LENGTH_FOR_FULL_FEATURE = 3000;
 
 const DAYS_IN_WEEK = 7;
 const DAYS_IN_MONTH = 30;
-const ONE_DAY_MS = 86_400_000;
 const KEYWORD_HITS_FOR_FULL_SCORE = 10;
 const KEYWORD_EXAMPLES_IN_REASON = 4;
 const MIN_TOKEN_LENGTH = 2;
@@ -80,7 +89,7 @@ export function tokens(text: string): string[] {
 }
 
 function daysBetween(a: Date, b: Date): number {
-  return Math.abs(a.getTime() - b.getTime()) / ONE_DAY_MS;
+  return Math.abs(a.getTime() - b.getTime()) / MS_PER_DAY;
 }
 
 function wantedSeniority(skillLevel: string): Seniority | undefined {
@@ -221,7 +230,7 @@ export function scoreJob(req: ScoreRequest, job: NormalizedJob, firstSeenAt?: Da
   const nothingInTitleRescuesIt = title.value === 0;
   if (nothingInTitleRescuesIt) {
     const excluded = excludedTitleIn(normalizedTitle, req.intent);
-    if (excluded) return { score: 0, reasons: [`Excluded: ${excluded}`], rejectedBy: excluded };
+    if (excluded) return { score: 0, reasons: [`Excluded: ${excluded}`], features: EMPTY_FEATURES, rejectedBy: excluded };
   }
 
   const weightedContributions: Array<[number, Contribution]> = [
@@ -239,6 +248,24 @@ export function scoreJob(req: ScoreRequest, job: NormalizedJob, firstSeenAt?: Da
   const allParts = [...weightedContributions, ...profileParts];
   const score = allParts.reduce((total, [, part]) => total * (part.totalMultiplier ?? 1), blended);
   const reasons = allParts.flatMap(([, part]) => (part.reason ? [part.reason] : []));
+  const rounded = Math.round(score * SCORE_DECIMAL_PLACES_FACTOR) / SCORE_DECIMAL_PLACES_FACTOR;
+  const [, location] = weightedContributions[LOCATION_PART_INDEX];
+  const features: FeatureVector = {
+    ...EMPTY_FEATURES,
+    deterministic: rounded,
+    title: weightedContributions[TITLE_PART_INDEX][1].value,
+    keywords: weightedContributions[KEYWORDS_PART_INDEX][1].value,
+    location: location.value,
+    seniority: weightedContributions[SENIORITY_PART_INDEX][1].value,
+    recency: weightedContributions[RECENCY_PART_INDEX][1].value,
+    salary: weightedContributions[SALARY_PART_INDEX][1].value,
+    profileSkills: profileParts[0]?.[1].value ?? 0,
+    profileTitle: profileParts[1]?.[1].value ?? 0,
+    remote: job.remote ? 1 : 0,
+    otherCity: location.totalMultiplier === undefined ? 0 : 1,
+    salaryListed: hasParsedSalaryFigures(job) ? 1 : 0,
+    descriptionLength: Math.min(1, job.description.length / DESCRIPTION_LENGTH_FOR_FULL_FEATURE),
+  };
 
-  return { score: Math.round(score * SCORE_DECIMAL_PLACES_FACTOR) / SCORE_DECIMAL_PLACES_FACTOR, reasons };
+  return { score: rounded, reasons, features };
 }

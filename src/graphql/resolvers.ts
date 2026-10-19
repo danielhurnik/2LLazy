@@ -1,4 +1,5 @@
-import { searchProfileFor } from "@/lib/jobs/profile";
+import { embeddingsFor } from "@/lib/jobs/embeddings";
+import { rankWithFeedback, rankingContextFor } from "@/lib/jobs/ranking";
 import { prisma } from "@/lib/prisma";
 import { resolveIntent } from "@/lib/jobs/intent";
 import { storedToNormalized } from "@/lib/jobs/pipeline";
@@ -95,7 +96,7 @@ export const resolvers = {
       { userId }: GqlContext,
     ) => {
       const intent = resolveIntent(query);
-      const [rows, favouriteIds, profile] = await Promise.all([
+      const [rows, favouriteIds, context] = await Promise.all([
         searchRecent({
           titleTerms: [query, intent.scrapingKeyword, ...intent.includedTitles],
           query,
@@ -103,17 +104,19 @@ export const resolvers = {
           limit: SEARCH_CANDIDATE_POOL,
         }),
         favouriteIdsFor(userId),
-        searchProfileFor(userId),
+        rankingContextFor(userId),
       ]);
-      const scoreRequest: ScoreRequest = { query, skillLevel, city: "", intent, salaryMin: null, salaryMax: null, profile };
+      const scoreRequest: ScoreRequest = { query, skillLevel, city: "", intent, salaryMin: null, salaryMax: null, profile: context.profile };
+      const vectors = context.ranker ? await embeddingsFor(rows) : new Map<string, number[]>();
 
       return rows
         .map((row) => {
           const scored = scoreJob(scoreRequest, storedToNormalized(row, DEFAULT_COUNTRY), row.firstSeenAt);
+          const ranked = rankWithFeedback(context, scored, vectors.get(row.id));
           return {
             ...serializeJob(row, favouriteIds.has(row.id)),
-            similarity: scored.score,
-            matchReasons: scored.reasons,
+            similarity: ranked.score,
+            matchReasons: ranked.reasons,
           };
         })
         .filter((job) => job.similarity >= SCORE_THRESHOLD)

@@ -48,6 +48,7 @@ model User {
   cvDocuments    CvDocument[]
   userProfile    UserProfile?
   favourites     UserFavourite[]
+  jobFeedback    JobFeedback[]
 }
 
 model Account {
@@ -99,6 +100,34 @@ model UserFavourite {
   @@id([userId, jobId])
 }
 
+enum JobFeedbackSignal {
+  DISMISSED
+  MODEL_JUDGED
+}
+
+model JobFeedback {
+  id        String            @id @default(cuid())
+  userId    String
+  jobId     String
+  signal    JobFeedbackSignal
+  score     Float?
+  createdAt DateTime          @default(now())
+
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job  JobPosting @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, jobId, signal])
+}
+
+model JobEmbedding {
+  jobId     String   @id
+  vector    Float[]
+  model     String
+  createdAt DateTime @default(now())
+
+  job JobPosting @relation(fields: [jobId], references: [id], onDelete: Cascade)
+}
+
 model UserProfile {
   id                     String    @id @default(cuid())
   userId                 String    @unique
@@ -113,6 +142,8 @@ model UserProfile {
   city                   String?
   searchProfile          Json?
   searchProfileUpdatedAt DateTime?
+  rankerModel            Json?
+  rankerTrainedAt        DateTime?
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 
@@ -143,6 +174,8 @@ model JobPosting {
   expiredAt      DateTime?
   applications   Application[]
   favouritedBy   UserFavourite[]
+  feedback       JobFeedback[]
+  embedding      JobEmbedding?
 
   @@index([country, scrapedAt])
 }

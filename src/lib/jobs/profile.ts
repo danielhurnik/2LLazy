@@ -1,8 +1,9 @@
+import { normalizeText } from "@/lib/text";
+import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { readCvText } from "@/lib/cv";
 import { ollamaAvailable, ollamaChatJson, type OllamaMessage } from "@/lib/ollama";
 import { prisma } from "@/lib/prisma";
-import { normalizeText } from "./dedupe";
 import { detectCity, detectSeniority, extractSkills, type Seniority } from "./normalize";
 import { DEFAULT_COUNTRY, isSupportedCountry, type CountryCode } from "./sources/types";
 
@@ -148,8 +149,14 @@ async function profileCountry(userId: string): Promise<CountryCode> {
   return isSupportedCountry(code) ? code : DEFAULT_COUNTRY;
 }
 
-async function saveSearchProfile(userId: string, profile: SearchProfile): Promise<void> {
-  const data = { searchProfile: profile, searchProfileUpdatedAt: new Date() };
+interface UserProfileFields {
+  searchProfile?: Prisma.InputJsonValue;
+  searchProfileUpdatedAt?: Date | null;
+  rankerModel?: Prisma.InputJsonValue;
+  rankerTrainedAt?: Date | null;
+}
+
+export async function updateUserProfile(userId: string, data: UserProfileFields): Promise<void> {
   const existing = await prisma.userProfile.findUnique({ where: { userId }, select: { id: true } });
   if (existing) {
     await prisma.userProfile.update({ where: { userId }, data });
@@ -157,6 +164,10 @@ async function saveSearchProfile(userId: string, profile: SearchProfile): Promis
   }
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { name: true, email: true } });
   await prisma.userProfile.create({ data: { userId, name: user.name ?? "", email: user.email, ...data } });
+}
+
+async function saveSearchProfile(userId: string, profile: SearchProfile): Promise<void> {
+  await updateUserProfile(userId, { searchProfile: profile, searchProfileUpdatedAt: new Date() });
 }
 
 async function cvTextOrExplain(userId: string): Promise<string> {

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { canonicalUrl, contentHash, dedupeRepeatedHalf, jobKey, normalizeText } from "@/lib/jobs/dedupe";
+import { canonicalUrl, contentHash, dedupeRepeatedHalf, jobKey } from "@/lib/jobs/dedupe";
+import { normalizeText } from "@/lib/text";
 
 describe("canonicalUrl", () => {
   it("strips Jobs.cz search-session params so one posting maps to one row", () => {

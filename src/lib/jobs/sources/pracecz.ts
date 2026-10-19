@@ -1,5 +1,5 @@
+import { normalizeText } from "@/lib/text";
 import * as cheerio from "cheerio";
-import { normalizeText } from "../dedupe";
 import { absoluteUrl, collapseWhitespace, fetchHtml } from "../http";
 import { jobPostingsIn } from "./jsonld";
 import type { FetchContext, JobSource, Listing, RawJob } from "./types";

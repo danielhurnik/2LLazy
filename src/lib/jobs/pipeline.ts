@@ -1,24 +1,28 @@
 import type { JobItem } from "@/types";
+import { errorMessage } from "@/lib/guards";
 import { batchProcess } from "@/lib/scrapers/utils";
+import { MS_PER_DAY } from "@/lib/time";
 import { recordFailure, recordSuccess } from "./breaker";
 import { canonicalUrl } from "./dedupe";
+import { embeddingsFor } from "./embeddings";
 import type { Emit } from "./events";
 import { normalizeJob, type NormalizedJob } from "./normalize";
-import { searchProfileFor, type SearchProfile } from "./profile";
+import type { SearchProfile } from "./profile";
+import { rankWithFeedback, rankingContextFor, type RankingContext } from "./ranking";
 import { favouriteIdsFor, findByUrls, searchRecent, upsertJob, type StoredJob } from "./repo";
 import { SCORE_THRESHOLD, scoreJob, type ScoreRequest } from "./score";
 import type { FetchContext, JobSource, Listing, RawJob, SearchRequest } from "./sources/types";
 
-const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-const SERVE_FROM_DB_WHEN_SCRAPED_WITHIN_MS = ONE_DAY_MS;
-const MARK_NEW_WHEN_FIRST_SEEN_WITHIN_MS = ONE_DAY_MS;
+const SERVE_FROM_DB_WHEN_SCRAPED_WITHIN_MS = MS_PER_DAY;
+const MARK_NEW_WHEN_FIRST_SEEN_WITHIN_MS = MS_PER_DAY;
 const CACHED_DAYS = 30;
 const CACHED_CANDIDATES = 200;
 const CACHED_EMIT_LIMIT = 80;
 const DETAIL_CONCURRENCY = 4;
+const JUDGED_TOP_RESULTS = 10;
 const CACHE_SITE = "Cache";
 
-export interface RunSearchParams {
+interface RunSearchParams {
   userId: string;
   request: SearchRequest;
   sources: JobSource[];
@@ -29,6 +33,11 @@ export interface RunSearchParams {
 interface FreshnessSplit {
   freshRows: StoredJob[];
   staleListings: Listing[];
+}
+
+interface EmittedJob {
+  row: StoredJob;
+  score: number;
 }
 
 export function storedToNormalized(row: StoredJob, country: SearchRequest["country"]): NormalizedJob {
@@ -67,12 +76,6 @@ function toScoreRequest(
   return { query, skillLevel, city, intent, salaryMin, salaryMax, profile };
 }
 
-function errorMessage(err: unknown): string {
-  if (err instanceof Error) return err.cause ? `${err.message} (cause: ${String(err.cause)})` : err.message;
-  if (err && typeof err === "object" && "message" in err) return String(err.message);
-  return typeof err === "string" ? err : JSON.stringify(err);
-}
-
 function withCanonicalUrls(page: Listing[]): Listing[] {
   return page.map((listing) => ({ ...listing, url: canonicalUrl(listing.url) }));
 }
@@ -98,10 +101,29 @@ function sourceContext(source: JobSource, request: SearchRequest, signal?: Abort
   return { request, signal, log: (message) => console.log(`[search:${source.id}] ${message}`) };
 }
 
+async function vectorsWhenRanking(context: RankingContext, rows: StoredJob[]): Promise<Map<string, number[]>> {
+  return context.ranker ? embeddingsFor(rows) : new Map();
+}
+
+function topEmitted(emitted: EmittedJob[]): StoredJob[] {
+  return [...emitted]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, JUDGED_TOP_RESULTS)
+    .map((entry) => entry.row);
+}
+
+function learnFromResultsInBackground(userId: string, context: RankingContext, emitted: EmittedJob[]): void {
+  if (!context.profile || emitted.length === 0) return;
+  void import("./feedback")
+    .then(({ judgeAndLearn }) => judgeAndLearn(userId, topEmitted(emitted)))
+    .catch((err) => console.warn("[ranker] background learning failed:", errorMessage(err)));
+}
+
 export async function runSearch({ userId, request, sources, emit, signal }: RunSearchParams): Promise<void> {
-  const [favourites, profile] = await Promise.all([favouriteIdsFor(userId), searchProfileFor(userId)]);
-  const scoreRequest = toScoreRequest(request, profile);
+  const [favourites, context] = await Promise.all([favouriteIdsFor(userId), rankingContextFor(userId)]);
+  const scoreRequest = toScoreRequest(request, context.profile);
   const isStaleByEmittedId = new Map<string, boolean>();
+  const emitted: EmittedJob[] = [];
 
   const alreadyEmittedAtLeastAsFresh = (id: string, isStale: boolean): boolean => {
     const emittedAsStale = isStaleByEmittedId.get(id);
@@ -110,9 +132,11 @@ export async function runSearch({ userId, request, sources, emit, signal }: RunS
     return !isLiveConfirmationOfCachedJob;
   };
 
-  const toItem = (row: StoredJob, normalized: NormalizedJob, isStale: boolean): JobItem | null => {
+  const toItem = (row: StoredJob, normalized: NormalizedJob, isStale: boolean, vector?: number[]): JobItem | null => {
     const scored = scoreJob(scoreRequest, normalized, row.firstSeenAt);
     if (scored.score < SCORE_THRESHOLD) return null;
+    const ranked = rankWithFeedback(context, scored, vector);
+    if (ranked.score < SCORE_THRESHOLD) return null;
     return {
       id: row.id,
       title: row.title,
@@ -123,19 +147,21 @@ export async function runSearch({ userId, request, sources, emit, signal }: RunS
       source: row.source,
       salary: row.salary ?? undefined,
       workType: row.workType ?? undefined,
-      similarity: scored.score,
-      matchReasons: scored.reasons,
+      similarity: ranked.score,
+      matchReasons: ranked.reasons,
       favourited: favourites.has(row.id),
+      dismissed: context.dismissed.has(row.id),
       isNew: row.firstSeenAt.getTime() > Date.now() - MARK_NEW_WHEN_FIRST_SEEN_WITHIN_MS,
       isStale,
     };
   };
 
-  const emitJob = async (row: StoredJob, normalized: NormalizedJob, isStale: boolean): Promise<void> => {
+  const emitJob = async (row: StoredJob, normalized: NormalizedJob, isStale: boolean, vector?: number[]): Promise<void> => {
     if (alreadyEmittedAtLeastAsFresh(row.id, isStale)) return;
-    const item = toItem(row, normalized, isStale);
+    const item = toItem(row, normalized, isStale, vector);
     if (!item) return;
     isStaleByEmittedId.set(row.id, isStale);
+    emitted.push({ row, score: item.similarity ?? 0 });
     await emit({ type: "job", data: item });
   };
 
@@ -148,13 +174,15 @@ export async function runSearch({ userId, request, sources, emit, signal }: RunS
       limit: CACHED_CANDIDATES,
       country: request.country,
     });
+    const vectors = await vectorsWhenRanking(context, rows);
     const ranked = rows
       .map((row) => ({ row, normalized: storedToNormalized(row, request.country) }))
       .map((entry) => ({ ...entry, scored: scoreJob(scoreRequest, entry.normalized, entry.row.firstSeenAt) }))
       .filter((entry) => entry.scored.score >= SCORE_THRESHOLD)
-      .sort((a, b) => b.scored.score - a.scored.score)
+      .map((entry) => ({ ...entry, ranked: rankWithFeedback(context, entry.scored, vectors.get(entry.row.id)) }))
+      .sort((a, b) => b.ranked.score - a.ranked.score)
       .slice(0, CACHED_EMIT_LIMIT);
-    for (const { row, normalized } of ranked) await emitJob(row, normalized, true);
+    for (const { row, normalized } of ranked) await emitJob(row, normalized, true, vectors.get(row.id));
   };
 
   const storeAndEmit = async (listing: Listing, source: JobSource, ctx: FetchContext): Promise<true | null> => {
@@ -163,7 +191,9 @@ export async function runSearch({ userId, request, sources, emit, signal }: RunS
     if (!raw?.title) return null;
     const normalized = normalizeJob({ ...raw, url: listing.url }, request.country);
     if (!normalized.title) return null;
-    await emitJob(await upsertJob(normalized), normalized, false);
+    const stored = await upsertJob(normalized);
+    const vectors = await vectorsWhenRanking(context, [stored]);
+    await emitJob(stored, normalized, false, vectors.get(stored.id));
     return true;
   };
 
@@ -174,7 +204,8 @@ export async function runSearch({ userId, request, sources, emit, signal }: RunS
       const known = await findByUrls(listings.map((listing) => listing.url));
       const { freshRows, staleListings } = splitByFreshness(listings, known);
 
-      for (const row of freshRows) await emitJob(row, storedToNormalized(row, request.country), false);
+      const vectors = await vectorsWhenRanking(context, freshRows);
+      for (const row of freshRows) await emitJob(row, storedToNormalized(row, request.country), false, vectors.get(row.id));
 
       if (staleListings.length > 0) {
         await emit({
@@ -220,4 +251,5 @@ export async function runSearch({ userId, request, sources, emit, signal }: RunS
 
   await emit({ type: "scrapersDone", total: isStaleByEmittedId.size });
   await emit({ type: "complete", total: isStaleByEmittedId.size });
+  if (!signal?.aborted) learnFromResultsInBackground(userId, context, emitted);
 }

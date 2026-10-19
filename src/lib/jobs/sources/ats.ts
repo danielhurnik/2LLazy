@@ -1,6 +1,6 @@
+import { normalizeText } from "@/lib/text";
 import { batchProcess } from "@/lib/scrapers/utils";
 import { sourcesConfigFor, type Employer } from "../config";
-import { normalizeText } from "../dedupe";
 import { detectCity } from "../normalize";
 import { tokens } from "../score";
 import { fetchEmployerPostings, withDescription, type AtsPosting } from "./atsAdapters";
