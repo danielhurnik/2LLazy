@@ -78,6 +78,7 @@ export interface JobItem {
   similarity?: number;
   matchReasons?: string[];
   favourited?: boolean;
+  dismissed?: boolean;
   isNew?: boolean;
   isStale?: boolean;
 }

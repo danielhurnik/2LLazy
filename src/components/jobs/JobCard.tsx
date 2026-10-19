@@ -28,6 +28,8 @@ interface JobCardProps {
   isToggling?: boolean;
   onApply?: (job: JobItem) => void;
   onToggleFavourite: (job: JobItem) => void;
+  onDismiss?: (job: JobItem) => void;
+  onUndismiss?: (job: JobItem) => void;
 }
 
 const LONG_DESCRIPTION_LENGTH = 200;
@@ -44,6 +46,15 @@ export const lineClampSx = (lines: number) => ({
   WebkitBoxOrient: "vertical",
   overflow: "hidden",
 }) as const;
+
+const quietLinkSx = {
+  font: "inherit",
+  color: ui.textMuted,
+  textDecoration: "underline",
+  textDecorationColor: ui.lineStrong,
+  textUnderlineOffset: 3,
+  "&:hover": { color: ui.text, textDecorationColor: ui.accent },
+} as const;
 
 const savedButtonSx = {
   color: ui.accent,
@@ -256,6 +267,30 @@ function FreshnessChip({ isNew, isStale }: { isNew?: boolean; isStale?: boolean 
   return null;
 }
 
+interface DismissedJobRowProps {
+  job: JobItem;
+  onUndo: (job: JobItem) => void;
+}
+
+function DismissedJobRow({ job, onUndo }: DismissedJobRowProps) {
+  return (
+    <Card data-testid="dismissed-job" sx={{ borderStyle: "dashed", backgroundColor: "transparent" }}>
+      <Stack direction="row" alignItems="center" gap={1.5} sx={{ px: 2, py: 1 }}>
+        <Typography sx={{ flexShrink: 0, fontFamily: fonts.mono, fontSize: "0.72rem", color: ui.textFaint }}>
+          hidden
+        </Typography>
+        <Typography variant="body2" noWrap sx={{ flexGrow: 1, minWidth: 0, color: ui.textMuted }}>
+          {job.title}
+          <Box component="span" sx={{ color: ui.textFaint }}> · {job.company}</Box>
+        </Typography>
+        <ButtonBase onClick={() => onUndo(job)} sx={{ ...quietLinkSx, flexShrink: 0, fontSize: "0.8125rem" }}>
+          Undo
+        </ButtonBase>
+      </Stack>
+    </Card>
+  );
+}
+
 export function JobCard({
   job,
   variant = "search",
@@ -263,8 +298,12 @@ export function JobCard({
   isToggling,
   onApply,
   onToggleFavourite,
+  onDismiss,
+  onUndismiss,
 }: JobCardProps) {
   const toggleFavourite = () => onToggleFavourite(job);
+
+  if (job.dismissed && onUndismiss) return <DismissedJobRow job={job} onUndo={onUndismiss} />;
 
   return (
     <Card
@@ -304,6 +343,12 @@ export function JobCard({
               onTrack={() => onApply?.(job)}
               onRemove={toggleFavourite}
             />
+          )}
+
+          {onDismiss && (
+            <Button size="small" variant="text" onClick={() => onDismiss(job)} sx={{ color: ui.textFaint }}>
+              Not interested
+            </Button>
           )}
 
           <Box sx={{ flexGrow: 1 }} />
