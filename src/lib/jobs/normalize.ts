@@ -1,5 +1,5 @@
 import type { JobSource as JobSourceEnum } from "@prisma/client";
-import type { CountryCode, RawJob } from "./sources/types";
+import type { ApplyPath, CountryCode, RawJob } from "./sources/types";
 import { normalizeText } from "@/lib/text";
 import { canonicalUrl, dedupeRepeatedHalf } from "./dedupe";
 
@@ -24,6 +24,7 @@ export interface NormalizedJob {
   salaryMax: number | null;
   salaryCurrency: string | null;
   skills: string[];
+  applyPath?: ApplyPath;
 }
 
 interface ParsedSalary {
@@ -256,5 +257,6 @@ export function normalizeJob(raw: RawJob, country: CountryCode): NormalizedJob {
     salaryMax: parsedSalary.max,
     salaryCurrency: parsedSalary.currency,
     skills: extractSkills(`${title} ${description}`),
+    applyPath: raw.applyPath,
   };
 }

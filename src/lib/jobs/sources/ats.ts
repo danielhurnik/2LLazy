@@ -5,7 +5,7 @@ import { detectCity } from "../normalize";
 import { tokens } from "../score";
 import { fetchEmployerPostings, withDescription, type AtsPosting } from "./atsAdapters";
 import { titleMatches } from "./match";
-import type { CountryCode, FetchContext, JobSource, Listing, RawJob, SearchRequest } from "./types";
+import type { ApplyPath, CountryCode, FetchContext, JobSource, Listing, RawJob, SearchRequest } from "./types";
 
 const EMPLOYER_CONCURRENCY = 4;
 const DESCRIPTION_CONCURRENCY = 4;
@@ -30,6 +30,18 @@ export function mentionsQuery(posting: Pick<AtsPosting, "description">, request:
   return queryTokens.every((token) => description.includes(token));
 }
 
+const ATS_WITH_PUBLIC_APPLY_API = new Set<Employer["ats"]>(["recruitee", "smartrecruiters"]);
+
+function applyPathFor(posting: AtsPosting, employer: Employer): ApplyPath {
+  return {
+    kind: ATS_WITH_PUBLIC_APPLY_API.has(employer.ats) ? "ats-api" : "ats-form",
+    url: posting.url,
+    ats: employer.ats,
+    slug: employer.slug,
+    postingId: posting.id,
+  };
+}
+
 function toRawJob(posting: AtsPosting, employer: Employer): RawJob {
   return {
     title: posting.title,
@@ -41,6 +53,7 @@ function toRawJob(posting: AtsPosting, employer: Employer): RawJob {
     salary: posting.salary,
     workType: posting.remote ? "Remote" : undefined,
     postedAt: posting.postedAt,
+    applyPath: applyPathFor(posting, employer),
   };
 }
 

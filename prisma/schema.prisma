@@ -101,6 +101,22 @@ model UserFavourite {
   @@id([userId, jobId])
 }
 
+enum ApplyObstacleKind {
+  CAPTCHA
+  LOGIN
+}
+
+model ApplyObstacle {
+  id            String            @id @default(cuid())
+  host          String
+  kind          ApplyObstacleKind
+  applicationId String
+  jobId         String
+  createdAt     DateTime          @default(now())
+
+  @@index([host, createdAt])
+}
+
 enum JobFeedbackSignal {
   DISMISSED
   MODEL_JUDGED
@@ -173,6 +189,7 @@ model JobPosting {
   skills         String[]        @default([])
   contentHash    String?
   expiredAt      DateTime?
+  applyPath      Json?
   applications   Application[]
   favouritedBy   UserFavourite[]
   feedback       JobFeedback[]

@@ -74,6 +74,7 @@ function persistedFields(job: NormalizedJob) {
     salaryCurrency: job.salaryCurrency,
     skills: job.skills,
     contentHash: contentHash(job.description),
+    ...(job.applyPath ? { applyPath: job.applyPath } : {}),
   };
 }
 
