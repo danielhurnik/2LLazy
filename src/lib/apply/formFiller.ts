@@ -72,7 +72,7 @@ export async function buildPlan(ctx: ApplyContext, scan: PageScan): Promise<Fill
   const freeTextFields = plan.unfillable.filter((entry) => (entry.key === "message" || entry.key === "coverLetter") && entry.field.tag === "textarea");
   for (const entry of freeTextFields.slice(0, 2)) {
     ctx.emit({ type: "progress", message: `Drafting "${describeField(entry.field)}" with Ollama` });
-    const draft = await draftFreeText(entry.field, profile, ctx.job);
+    const draft = await draftFreeText(entry.field, profile, ctx.job, (reason) => ctx.evidence.log(`draft rejected: ${reason}`));
     if (draft) {
       plan.fills.push({ field: entry.field, key: entry.key, score: 0.6, value: { kind: "text", value: draft.text } });
       ctx.evidence.log(`drafted ${describeField(entry.field)} with ${draft.model} (${draft.text.length} chars)`);
