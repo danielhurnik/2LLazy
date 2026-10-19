@@ -3,6 +3,7 @@ import type { CountryCode } from "@/lib/jobs/sources/types";
 export type AppStatus =
   | "PENDING"
   | "APPLYING"
+  | "WAITING_FOR_USER"
   | "NEEDS_MANUAL"
   | "APPLIED"
   | "REJECTED"
@@ -13,6 +14,7 @@ export type AppStatus =
 export const ALL_STATUSES: AppStatus[] = [
   "PENDING",
   "APPLYING",
+  "WAITING_FOR_USER",
   "NEEDS_MANUAL",
   "APPLIED",
   "INTERVIEW",
@@ -24,6 +26,7 @@ export const ALL_STATUSES: AppStatus[] = [
 export const STATUS_LABEL: Record<AppStatus, string> = {
   PENDING: "To apply",
   APPLYING: "Applying…",
+  WAITING_FOR_USER: "Needs you",
   NEEDS_MANUAL: "Needs manual",
   APPLIED: "Applied",
   INTERVIEW: "Interview",
@@ -34,13 +37,16 @@ export const STATUS_LABEL: Record<AppStatus, string> = {
 
 export const AUTO_APPLY_STATUSES: AppStatus[] = ["PENDING", "FAILED", "NEEDS_MANUAL"];
 
-export const MANUAL_STATUSES: AppStatus[] = ALL_STATUSES.filter((status) => status !== "APPLYING");
+const AUTOMATION_ONLY_STATUSES: AppStatus[] = ["APPLYING", "WAITING_FOR_USER"];
+
+export const MANUAL_STATUSES: AppStatus[] = ALL_STATUSES.filter((status) => !AUTOMATION_ONLY_STATUSES.includes(status));
 
 type StatusColor = "default" | "primary" | "info" | "success" | "error" | "warning";
 
 export const STATUS_COLOR: Record<AppStatus, StatusColor> = {
   PENDING: "default",
   APPLYING: "info",
+  WAITING_FOR_USER: "warning",
   NEEDS_MANUAL: "warning",
   APPLIED: "info",
   INTERVIEW: "success",

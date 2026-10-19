@@ -28,6 +28,7 @@ enum ApplicationStatus {
   FAILED
   APPLYING
   NEEDS_MANUAL
+  WAITING_FOR_USER
 }
 
 model User {

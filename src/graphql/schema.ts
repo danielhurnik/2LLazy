@@ -21,6 +21,7 @@ export const typeDefs = `#graphql
     FAILED
     APPLYING
     NEEDS_MANUAL
+    WAITING_FOR_USER
   }
 
   type JobPosting {
