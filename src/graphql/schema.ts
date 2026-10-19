@@ -8,6 +8,8 @@ export const typeDefs = `#graphql
     JOBSCZ
     JOOBLE
     GLASSDOOR
+    ATS
+    WEB
   }
 
   enum ApplicationStatus {

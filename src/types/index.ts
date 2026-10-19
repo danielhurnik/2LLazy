@@ -57,6 +57,8 @@ const SOURCE_HOST: Record<string, string> = {
   NOFLUFFJOBS: "nofluffjobs.com",
   JOBSCZ: "jobs.cz",
   JOOBLE: "jooble.org",
+  ATS: "company careers",
+  WEB: "web",
 };
 
 export function sourceLabel(source: string): string {
@@ -124,10 +126,6 @@ interface ScheduledNoteFields {
   scheduledAt: string;
   durationMinutes: number;
   notes: string;
-}
-
-export interface ScheduleInterviewForm extends ScheduledNoteFields {
-  applicationId: string;
 }
 
 export interface CalendarEntry {
