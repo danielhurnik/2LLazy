@@ -1,7 +1,6 @@
 import { createHash } from "crypto";
 import { normalizeText } from "@/lib/text";
 
-
 const CAMPAIGN_PARAM_PREFIX = "utm_";
 const VISITOR_AND_SEARCH_SESSION_PARAMS = new Set([
   "searchid", "rps", "ref", "source", "src", "fbclid", "gclid", "msclkid",
