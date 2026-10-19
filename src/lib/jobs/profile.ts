@@ -2,7 +2,7 @@ import { normalizeText } from "@/lib/text";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { readCvText } from "@/lib/cv";
-import { ollamaAvailable, ollamaChatJson, type OllamaMessage } from "@/lib/ollama";
+import { ollamaAvailable, ollamaChatJson, ollamaPickModel, type OllamaMessage } from "@/lib/ollama";
 import { prisma } from "@/lib/prisma";
 import { detectCity, detectSeniority, extractSkills, type Seniority } from "./normalize";
 import { DEFAULT_COUNTRY, isSupportedCountry, type CountryCode } from "./sources/types";
@@ -39,6 +39,7 @@ const LANGUAGE_WORDS: Array<[RegExp, string]> = [
   [/\b(spanish|spanelstina)\b/i, "Spanish"],
 ];
 
+export const PREFERRED_CHAT_MODELS = ["gemma3:4b", "gemma2:9b", "llama3"];
 const MODEL_INSTRUCTIONS =
   "You turn a CV into a job-search profile and answer with JSON only. " +
   "titles: up to 5 job titles this person should search for, in English, most relevant first. " +
@@ -131,7 +132,8 @@ async function modelProfile(cvText: string): Promise<ModelProfile> {
     { role: "system", content: MODEL_INSTRUCTIONS },
     { role: "user", content: cvText.slice(0, CV_TEXT_SENT_TO_MODEL) },
   ];
-  return ollamaChatJson(messages, modelProfileSchema, { numCtx: MODEL_NUM_CTX, signal: AbortSignal.timeout(MODEL_TIMEOUT_MS) });
+  const model = await ollamaPickModel(PREFERRED_CHAT_MODELS);
+  return ollamaChatJson(messages, modelProfileSchema, { model, numCtx: MODEL_NUM_CTX, signal: AbortSignal.timeout(MODEL_TIMEOUT_MS) });
 }
 
 async function enrichWithModel(heuristic: SearchProfile, cvText: string): Promise<SearchProfile> {

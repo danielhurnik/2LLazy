@@ -1,12 +1,12 @@
 import type { ApplicationStatus } from "@prisma/client";
 import { z } from "zod";
 import { errorMessage } from "@/lib/guards";
-import { ollamaAvailable, ollamaChatJson, type OllamaMessage } from "@/lib/ollama";
+import { ollamaAvailable, ollamaChatJson, ollamaPickModel, type OllamaMessage } from "@/lib/ollama";
 import { prisma } from "@/lib/prisma";
 import { embedText, embeddingsFor, profileText } from "./embeddings";
 import { resolveIntent } from "./intent";
 import { storedToNormalized } from "./pipeline";
-import { searchProfileFor, updateUserProfile, type SearchProfile } from "./profile";
+import { PREFERRED_CHAT_MODELS, searchProfileFor, updateUserProfile, type SearchProfile } from "./profile";
 import { trainRanker, type TrainingSample } from "./ranker";
 import { rankingContextFor, similarityFeature } from "./ranking";
 import type { StoredJob } from "./repo";
@@ -138,7 +138,7 @@ export async function rankerStatusFor(userId: string): Promise<RankerStatus | nu
   return { trainedAt: row?.rankerTrainedAt?.toISOString() ?? null, samples, positives };
 }
 
-async function judgeOne(profile: SearchProfile, job: StoredJob): Promise<number | null> {
+async function judgeOne(profile: SearchProfile, job: StoredJob, model: string): Promise<number | null> {
   const messages: OllamaMessage[] = [
     { role: "system", content: JUDGE_INSTRUCTIONS },
     {
@@ -147,7 +147,7 @@ async function judgeOne(profile: SearchProfile, job: StoredJob): Promise<number 
     },
   ];
   try {
-    const result = await ollamaChatJson(messages, judgeResultSchema, { signal: AbortSignal.timeout(JUDGE_TIMEOUT_MS) });
+    const result = await ollamaChatJson(messages, judgeResultSchema, { model, signal: AbortSignal.timeout(JUDGE_TIMEOUT_MS) });
     return result.fit / FIT_SCALE;
   } catch (err) {
     console.warn(`[ranker] judging ${job.id} failed: ${errorMessage(err)}`);
@@ -171,8 +171,9 @@ export async function judgeAndLearn(userId: string, topJobs: StoredJob[]): Promi
   try {
     const profile = await searchProfileFor(userId);
     if (!profile) return;
+    const model = await ollamaPickModel(PREFERRED_CHAT_MODELS);
     for (const job of await unjudged(userId, topJobs)) {
-      const score = await judgeOne(profile, job);
+      const score = await judgeOne(profile, job, model);
       if (score === null) continue;
       await prisma.jobFeedback.upsert({
         where: { userId_jobId_signal: { userId, jobId: job.id, signal: "MODEL_JUDGED" } },

@@ -317,3 +317,26 @@ Out of scope: browser extension, paid APIs, other countries (additive via the re
   board lists them again.
 - Sources now registered for CZ: NoFluffJobs (remote), Jobs.cz, Jooble (key), StartupJobs, Cocuma, Skilleto,
   Jobstack, Prace.cz, Company careers (ATS), Web search. A quick "React" search streams ~90 unique jobs.
+
+### Phase 5 — learned ranker and local model upgrade (2026-10-20, user request)
+
+- **Model**: the user updated Ollama to 0.40; `gemma3:4b` is the shared default (`OLLAMA_MODEL`, set in
+  `src/lib/ollama.ts`) for the CV profile and auto-apply JSON tasks. gemma2:9b does not fit the 8 GB card
+  with an 8k context (spills, 3–4× slower) and stays an optional prose writer only.
+- **Feedback signals** (`JobFeedback`, unique per user/job/signal): `DISMISSED` from the "Not interested"
+  control (server actions `dismissJob` / `undismissJob` in `src/lib/actions/jobFeedbackActions.ts`) and
+  `MODEL_JUDGED` (0–1) from the local model rating the top 10 results of each search in the background.
+  Favourites and applications (weighted by status) are read directly, not copied.
+- **Features**: `scoreJob` now also returns its feature vector (deterministic score, the six components,
+  profile skills/title fit, remote, other-city, salary listed, description length) plus an embedding
+  similarity between the posting and the CV profile (`nomic-embed-text`, vectors cached in `JobEmbedding`,
+  brute-force cosine; no vector index at this corpus size).
+- **Ranker** (`src/lib/jobs/ranker.ts`): a two-layer MLP (6 tanh units, sigmoid output) trained with
+  weighted SGD, standardized inputs, seeded so training is reproducible; needs 8+ samples with 3+ per
+  class. Stored per user in `UserProfile.rankerModel`. The blend share ramps from 0 to 50 % as feedback
+  grows (full share at 200 samples); results carry "Learned from your feedback (±N %)" when it moves a
+  score by 2 points or more. `retrainRankerAction` / `loadRankerStatus` exist for a Settings note.
+- **Loop**: search → score → blend → stream; after `complete`, `judgeAndLearn` rates unjudged top results
+  with the local model, stores them, retrains. One pass per user at a time; skipped when Ollama is down.
+- Measured: 16 labelled jobs (11 positive, 5 dismissed) train in ~2 s; embeddings for 40 postings are
+  cached after the first search; React roles gained +3–4 % and the dismissed C++/Python/FPGA roles sank.

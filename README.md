@@ -25,6 +25,8 @@ Nothing in it calls an AI service. The only model it can use is an optional loca
 | Jobstack | Always |
 | Prace.cz | Always. Plain HTML listing, JSON-LD detail pages |
 | Web search | Always. Two DuckDuckGo queries per search, pages read for schema.org JobPosting data, robots.txt honoured; sites that yield postings are remembered |
+
+Ranking learns from you: favourites, applications, "Not interested" and the local model's own ratings train a small per-user ranker (see docs/scraping-v2-plan.md, Phase 5). Nothing leaves the machine.
 | NoFluffJobs (fully remote roles) | Always. Its Czech site serves the same Central-European pool, so only postings marked fully remote are kept. Its robots.txt disallows the API; `config/sources.cz.json` opts in to it |
 | Company careers | Always. Reads employers' own public job boards on Greenhouse, Lever, Ashby, SmartRecruiters, Recruitee and Workable |
 | StartupJobs | `PLAYWRIGHT_ENABLED=true` |
