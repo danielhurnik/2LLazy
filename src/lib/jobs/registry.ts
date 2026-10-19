@@ -1,4 +1,5 @@
 import { pausedForMinutes } from "./breaker";
+import { atsSource } from "./sources/ats";
 import { cocumaSource } from "./sources/cocuma";
 import { jobsczSource } from "./sources/jobscz";
 import { jobstackSource } from "./sources/jobstack";
@@ -16,6 +17,7 @@ const ALL_SOURCES: JobSource[] = [
   cocumaSource,
   skilletoSource,
   jobstackSource,
+  atsSource,
 ];
 
 const UNAVAILABLE_REASONS: Record<string, string> = {

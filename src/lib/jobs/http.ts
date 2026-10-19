@@ -1,3 +1,4 @@
+import { configuredRobotsAllow } from "./config";
 import { createHash } from "crypto";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
@@ -142,8 +143,7 @@ function robotsAreIgnored(): boolean {
 }
 
 function robotsOverrides(): RobotsOverride[] {
-  return (process.env.ROBOTS_ALLOW ?? "")
-    .split(",")
+  return [...configuredRobotsAllow(), ...(process.env.ROBOTS_ALLOW ?? "").split(",")]
     .map((entry) => entry.trim().toLowerCase())
     .filter(Boolean)
     .map((entry) => {

@@ -1,3 +1,4 @@
+import { configuredRobotsAllow } from "../config";
 import { fetchJson, htmlToText } from "../http";
 import type { CountryCode, JobSource, Listing, RawJob } from "./types";
 
@@ -53,7 +54,8 @@ interface NfjPostingDetail {
 
 function robotsOptInPresent(): boolean {
   if (process.env.ROBOTS_POLICY === "ignore") return true;
-  return (process.env.ROBOTS_ALLOW ?? "").toLowerCase().includes(HOST);
+  const optIns = [...configuredRobotsAllow(), process.env.ROBOTS_ALLOW ?? ""];
+  return optIns.some((entry) => entry.toLowerCase().includes(HOST));
 }
 
 function searchUrl(region: string, page: number): string {

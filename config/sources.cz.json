@@ -1,0 +1,25 @@
+{
+  "robotsAllow": ["nofluffjobs.com/api/"],
+  "employers": [
+    { "ats": "greenhouse", "slug": "purestorage", "name": "Pure Storage" },
+    { "ats": "greenhouse", "slug": "jetbrains", "name": "JetBrains" },
+    { "ats": "greenhouse", "slug": "bloomreach", "name": "Bloomreach" },
+    { "ats": "greenhouse", "slug": "wrike", "name": "Wrike" },
+    { "ats": "greenhouse", "slug": "wolt", "name": "Wolt" },
+    { "ats": "greenhouse", "slug": "shipmonk", "name": "ShipMonk" },
+    { "ats": "greenhouse", "slug": "emplifi", "name": "Emplifi" },
+    { "ats": "greenhouse", "slug": "gitlab", "name": "GitLab" },
+    { "ats": "greenhouse", "slug": "grafanalabs", "name": "Grafana Labs" },
+    { "ats": "greenhouse", "slug": "mozilla", "name": "Mozilla" },
+    { "ats": "greenhouse", "slug": "netlify", "name": "Netlify" },
+    { "ats": "recruitee", "slug": "trask", "name": "Trask" },
+    { "ats": "recruitee", "slug": "livesport", "name": "Livesport" },
+    { "ats": "recruitee", "slug": "twisto", "name": "Twisto" },
+    { "ats": "ashby", "slug": "phrase", "name": "Phrase" },
+    { "ats": "ashby", "slug": "deepnote", "name": "Deepnote" },
+    { "ats": "ashby", "slug": "supabase", "name": "Supabase" },
+    { "ats": "ashby", "slug": "linear", "name": "Linear" },
+    { "ats": "ashby", "slug": "posthog", "name": "PostHog" },
+    { "ats": "workable", "slug": "inventi", "name": "Inventi" }
+  ]
+}
