@@ -21,6 +21,7 @@ import {
   VALIDATION_TEXT,
 } from "./pageActions";
 import { ApplyAbort, type ApplyContext, type ApplyProfile, type ApplyResult } from "./types";
+import { blockingCaptcha, captchaSolved, waitForHuman } from "./humanWait";
 import { errorMessage } from "@/lib/guards";
 
 const MAX_STEPS = 6;
@@ -38,13 +39,16 @@ async function snap(ctx: ApplyContext, label: string): Promise<void> {
   if (file) ctx.emit({ type: "screenshot", url: ctx.evidence.urlFor(file) });
 }
 
-function guardPage(scan: PageScan): void {
-  if (scan.signals.captcha) {
-    throw new ApplyAbort("NEEDS_MANUAL", `A CAPTCHA is blocking the form (${scan.signals.captcha}); solve it in the apply window and submit there`);
-  }
-  if (scan.signals.loginWall) {
-    throw new ApplyAbort("NEEDS_MANUAL", "The job board asks for a login; sign in once in the apply window and retry");
-  }
+async function pastLoginWall(ctx: ApplyContext, scan: PageScan): Promise<PageScan> {
+  if (!scan.signals.loginWall) return scan;
+  ctx.emit({ type: "progress", message: "The job board asks for a login" });
+  return waitForHuman(ctx, "login");
+}
+
+async function pastCaptcha(ctx: ApplyContext, scan: PageScan): Promise<PageScan> {
+  if (!blockingCaptcha(scan) || (await captchaSolved(ctx.page))) return scan;
+  ctx.emit({ type: "progress", message: "A CAPTCHA is in the way" });
+  return waitForHuman(ctx, "captcha");
 }
 
 function nationalPhone(phone: string | null, scan: PageScan): string | null {
@@ -255,15 +259,13 @@ async function openForm(ctx: ApplyContext, scan: PageScan, entry: ButtonDescript
   const outcome = await clickButton(ctx.page.context(), ctx.page, scan, entry);
   ctx.page = outcome.page;
   await ctx.page.waitForTimeout(800);
-  const next = await rescan(ctx.page);
-  guardPage(next);
+  const next = await pastLoginWall(ctx, await rescan(ctx.page));
   ctx.evidence.log(`form opened at ${next.signals.url}`);
   return next;
 }
 
 export async function runGenericFlow(ctx: ApplyContext, options: GenericFlowOptions = {}): Promise<ApplyResult> {
-  const scan = await rescan(ctx.page);
-  guardPage(scan);
+  const scan = await pastLoginWall(ctx, await rescan(ctx.page));
   await snap(ctx, "posting");
 
   const payload: Record<string, string> = {};
@@ -324,30 +326,62 @@ async function fillAndSubmit(
       ctx.emit({ type: "progress", message: `Continuing to the next step ("${next.text}")` });
       const outcome = await clickButton(ctx.page.context(), ctx.page, scan, next);
       ctx.page = outcome.page;
-      scan = await rescan(ctx.page);
-      guardPage(scan);
+      scan = await pastLoginWall(ctx, await rescan(ctx.page));
       continue;
     }
     if (!submit) throw new ApplyAbort("NEEDS_MANUAL", "Form filled but no submit button was recognised; submit it in the apply window");
 
+    if (plan.requiredMissing.length === 0 && plan.confidence >= AUTO_SUBMIT_CONFIDENCE) {
+      const afterCaptcha = await pastCaptcha(ctx, scan);
+      if (afterCaptcha !== scan) scan = afterCaptcha;
+    }
     assertReadyToSubmit(ctx, plan);
-    ctx.emit({ type: "progress", message: `Submitting ("${submit.text}")` });
-    ctx.evidence.log(`submitting via "${submit.text}" with confidence ${plan.confidence}`);
-    const before = scan;
-    const outcome = await clickButton(ctx.page.context(), ctx.page, scan, submit);
-    ctx.page = outcome.page;
-    await ctx.page.waitForTimeout(1_500);
+    const submitNow = findSubmit(scan, options) ?? submit;
+    if (await submitAndConfirm(ctx, scan, submitNow, filledSelectors, options, plan.confidence)) return;
     scan = await scanPage(ctx.page);
-    guardPage(scan);
-    await snap(ctx, "after-submit");
-
-    if (isConfirmed(before, scan, filledSelectors)) {
-      lastConfirmation = scan.signals.bodyText.match(/.{0,80}(d[eě]kujeme|thank you|odesl[aá]n).{0,120}/i)?.[0]?.trim();
-      return;
-    }
-    if (VALIDATION_TEXT.test(scan.signals.bodyText) && scan.fields.some((f) => filledSelectors.has(selectorKey(f)))) {
-      throw new ApplyAbort("NEEDS_MANUAL", "The form reported validation errors after submitting; check the apply window");
-    }
   }
   throw new ApplyAbort("NEEDS_MANUAL", "Could not confirm that the application was submitted; check the apply window");
+}
+
+function findSubmit(scan: PageScan, options: GenericFlowOptions): ButtonDescriptor | null {
+  return options.submit ? findButton(scan, options.submit) : findButton(scan, SUBMIT_BUTTON);
+}
+
+async function submitAndConfirm(
+  ctx: ApplyContext,
+  before: PageScan,
+  submit: ButtonDescriptor,
+  filledSelectors: Set<string>,
+  options: GenericFlowOptions,
+  confidence: number,
+): Promise<boolean> {
+  ctx.emit({ type: "progress", message: `Submitting ("${submit.text}")` });
+  ctx.evidence.log(`submitting via "${submit.text}" with confidence ${confidence}`);
+  const outcome = await clickButton(ctx.page.context(), ctx.page, before, submit);
+  ctx.page = outcome.page;
+  await ctx.page.waitForTimeout(1_500);
+  let scan = await scanPage(ctx.page);
+  await snap(ctx, "after-submit");
+
+  if (blockingCaptcha(scan) && !(await captchaSolved(ctx.page)) && !isConfirmed(before, scan, filledSelectors)) {
+    scan = await pastCaptcha(ctx, scan);
+    const again = findSubmit(scan, options);
+    if (again && !isConfirmed(before, scan, filledSelectors)) {
+      ctx.emit({ type: "progress", message: `Submitting again ("${again.text}")` });
+      const retry = await clickButton(ctx.page.context(), ctx.page, scan, again);
+      ctx.page = retry.page;
+      await ctx.page.waitForTimeout(1_500);
+      scan = await scanPage(ctx.page);
+      await snap(ctx, "after-resubmit");
+    }
+  }
+
+  if (isConfirmed(before, scan, filledSelectors)) {
+    lastConfirmation = scan.signals.bodyText.match(/.{0,80}(d[eě]kujeme|thank you|odesl[aá]n).{0,120}/i)?.[0]?.trim();
+    return true;
+  }
+  if (VALIDATION_TEXT.test(scan.signals.bodyText) && scan.fields.some((f) => filledSelectors.has(selectorKey(f)))) {
+    throw new ApplyAbort("NEEDS_MANUAL", "The form reported validation errors after submitting; check the apply window");
+  }
+  return false;
 }

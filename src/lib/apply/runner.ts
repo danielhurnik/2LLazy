@@ -70,7 +70,7 @@ export async function loadApplyInput(applicationId: string, userId: string): Pro
     include: { job: true, user: { include: { userProfile: true } } },
   });
   if (!application) return { code: 404, message: "Application not found" };
-  if (application.status === "APPLYING" || isApplyRunning(applicationId)) {
+  if (application.status === "APPLYING" || application.status === "WAITING_FOR_USER" || isApplyRunning(applicationId)) {
     return { code: 409, message: "This application is already being submitted" };
   }
   const userProfile = application.user.userProfile;
@@ -115,7 +115,18 @@ async function executeInBrowser(
 ): Promise<{ result: ApplyResult; via: string }> {
   emit({ type: "progress", message: autoSubmit ? "Opening the apply browser" : "Opening the apply browser (dry run, nothing will be submitted)" });
   const page = await openApplyPage();
-  const ctx: ApplyContext = { page, profile: input.profile, job: input.job, evidence, emit, autoSubmit };
+  const setWaiting = async (message: string | null) => {
+    await prisma.application
+      .update({
+        where: { id: input.applicationId },
+        data: message
+          ? { status: "WAITING_FOR_USER", errorMessage: `Waiting for you: ${message}` }
+          : { status: "APPLYING", errorMessage: null },
+      })
+      .catch(() => undefined);
+    refreshDashboardWhenInsideRequestScope();
+  };
+  const ctx: ApplyContext = { applicationId: input.applicationId, page, profile: input.profile, job: input.job, evidence, emit, setWaiting, autoSubmit };
   const adapter = findAdapter(new URL(input.job.sourceUrl));
   const via = adapter?.id ?? "generic";
   evidence.log(`run start job=${input.job.id} url=${input.job.sourceUrl} adapter=${via} cv=${input.profile.cv?.name ?? "none"}`);

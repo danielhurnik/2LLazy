@@ -11,8 +11,9 @@ Owner: the "db overdoer" session. Started 2026-10-13. Status of each item is in 
 
 ## Status flow and schema
 
-`PENDING → APPLYING → APPLIED | NEEDS_MANUAL | FAILED`
+`PENDING → APPLYING (⇄ WAITING_FOR_USER) → APPLIED | NEEDS_MANUAL | FAILED`
 
+- `WAITING_FOR_USER` (added 2026-10-20): the run is paused with the apply window open because a human is needed: a CAPTCHA before the submit click, or a login wall before the form. The form is filled first, the pause comes last. `errorMessage` holds "Waiting for you: …" while paused and is cleared on resume. The run resumes on its own when the CAPTCHA token appears / the password field is gone, or when the dashboard posts `POST /api/apply/continue {applicationId}`; after `APPLY_HUMAN_WAIT_MINUTES` (default 15) it ends as NEEDS_MANUAL. Implemented in `src/lib/apply/humanWait.ts`.
 - `Application.errorMessage` (kept): failure reason / what needs manual completion.
 - `Application.appliedVia`: adapter id (`startupjobs`, `teamio`, …), `generic`, or `ollama-assisted`.
 - `Application.evidencePath`: `uploads/applications/<applicationId>` (gitignored).
@@ -41,6 +42,8 @@ Guards: CAPTCHA detection (frame src contains hcaptcha/recaptcha/turnstile) → 
 ```
 data: {"type":"progress","message":"Opening posting…"}
 data: {"type":"screenshot","url":"/api/apply/evidence/<id>/03-form.png"}
+data: {"type":"waiting","reason":"captcha"|"login","message":"Solve the CAPTCHA in the apply window; …","url":"/api/apply/evidence/<id>/04-waiting-captcha.png"}
+data: {"type":"resumed","message":"Continuing with the form"}
 data: {"type":"done","status":"APPLIED"|"NEEDS_MANUAL","evidenceUrl":"/api/apply/evidence/<id>/","message":"…"}
 data: {"type":"error","message":"…"}
 ```

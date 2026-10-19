@@ -36,15 +36,19 @@ export interface ApplyJob {
 export type ApplyEvent =
   | { type: "progress"; message: string }
   | { type: "screenshot"; url: string }
+  | { type: "waiting"; reason: "captcha" | "login"; message: string; url: string }
+  | { type: "resumed"; message: string }
   | { type: "done"; status: ApplyOutcome; evidenceUrl: string; message?: string }
   | { type: "error"; message: string };
 
 export interface ApplyContext {
+  applicationId: string;
   page: Page;
   profile: ApplyProfile;
   job: ApplyJob;
   evidence: Evidence;
   emit: (event: ApplyEvent) => void;
+  setWaiting: (message: string | null) => Promise<void>;
   autoSubmit: boolean;
 }
 
