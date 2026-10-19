@@ -1,3 +1,4 @@
+import { searchProfileFor } from "@/lib/jobs/profile";
 import { prisma } from "@/lib/prisma";
 import { resolveIntent } from "@/lib/jobs/intent";
 import { storedToNormalized } from "@/lib/jobs/pipeline";
@@ -94,7 +95,7 @@ export const resolvers = {
       { userId }: GqlContext,
     ) => {
       const intent = resolveIntent(query);
-      const [rows, favouriteIds] = await Promise.all([
+      const [rows, favouriteIds, profile] = await Promise.all([
         searchRecent({
           titleTerms: [query, intent.scrapingKeyword, ...intent.includedTitles],
           query,
@@ -102,8 +103,9 @@ export const resolvers = {
           limit: SEARCH_CANDIDATE_POOL,
         }),
         favouriteIdsFor(userId),
+        searchProfileFor(userId),
       ]);
-      const scoreRequest: ScoreRequest = { query, skillLevel, city: "", intent, salaryMin: null, salaryMax: null };
+      const scoreRequest: ScoreRequest = { query, skillLevel, city: "", intent, salaryMin: null, salaryMax: null, profile };
 
       return rows
         .map((row) => {

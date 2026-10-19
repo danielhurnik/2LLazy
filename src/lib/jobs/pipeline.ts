@@ -4,6 +4,7 @@ import { recordFailure, recordSuccess } from "./breaker";
 import { canonicalUrl } from "./dedupe";
 import type { Emit } from "./events";
 import { normalizeJob, type NormalizedJob } from "./normalize";
+import { searchProfileFor, type SearchProfile } from "./profile";
 import { favouriteIdsFor, findByUrls, searchRecent, upsertJob, type StoredJob } from "./repo";
 import { SCORE_THRESHOLD, scoreJob, type ScoreRequest } from "./score";
 import type { FetchContext, JobSource, Listing, RawJob, SearchRequest } from "./sources/types";
@@ -59,8 +60,11 @@ function listingToRaw(listing: Listing, source: JobSource): RawJob {
   };
 }
 
-function toScoreRequest({ query, skillLevel, city, intent, salaryMin, salaryMax }: SearchRequest): ScoreRequest {
-  return { query, skillLevel, city, intent, salaryMin, salaryMax };
+function toScoreRequest(
+  { query, skillLevel, city, intent, salaryMin, salaryMax }: SearchRequest,
+  profile: SearchProfile | null,
+): ScoreRequest {
+  return { query, skillLevel, city, intent, salaryMin, salaryMax, profile };
 }
 
 function errorMessage(err: unknown): string {
@@ -95,8 +99,8 @@ function sourceContext(source: JobSource, request: SearchRequest, signal?: Abort
 }
 
 export async function runSearch({ userId, request, sources, emit, signal }: RunSearchParams): Promise<void> {
-  const scoreRequest = toScoreRequest(request);
-  const favourites = await favouriteIdsFor(userId);
+  const [favourites, profile] = await Promise.all([favouriteIdsFor(userId), searchProfileFor(userId)]);
+  const scoreRequest = toScoreRequest(request, profile);
   const isStaleByEmittedId = new Map<string, boolean>();
 
   const alreadyEmittedAtLeastAsFresh = (id: string, isStale: boolean): boolean => {

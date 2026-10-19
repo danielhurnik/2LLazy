@@ -21,7 +21,7 @@ const ALL_SOURCES: JobSource[] = [
 ];
 
 const UNAVAILABLE_REASONS: Record<string, string> = {
-  nofluffjobs: "NoFluffJobs skipped: its JSON API is disallowed by robots.txt (opt in with ROBOTS_ALLOW=nofluffjobs.com/api/)",
+  nofluffjobs: "NoFluffJobs skipped: its JSON API is disallowed by robots.txt (opt in via robotsAllow in config/sources.cz.json or ROBOTS_ALLOW=nofluffjobs.com/api/)",
   jooble: "Jooble skipped: set JOOBLE_API_KEY (free key from jooble.org/api/about)",
   startupjobs: "StartupJobs skipped: needs PLAYWRIGHT_ENABLED=true",
   skilleto: "Skilleto skipped: needs PLAYWRIGHT_ENABLED=true",

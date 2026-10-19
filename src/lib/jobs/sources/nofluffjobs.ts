@@ -1,12 +1,14 @@
 import { configuredRobotsAllow } from "../config";
 import { fetchJson, htmlToText } from "../http";
+import { titleMatches } from "./match";
 import type { CountryCode, JobSource, Listing, RawJob } from "./types";
 
 const HOST = "nofluffjobs.com";
 const BASE = `https://${HOST}`;
 const PAGE_SIZE = 40;
-const QUICK_SEARCH_PAGES = 2;
-const DEEP_SEARCH_PAGES = 5;
+const QUICK_SEARCH_PAGES = 1;
+const DEEP_SEARCH_PAGES = 4;
+const MAX_LISTINGS_PER_SEARCH = 60;
 const MAX_LISTED_CITIES = 3;
 const REMOTE = "Remote";
 const MONTHLY_PERIOD = "month";
@@ -60,8 +62,8 @@ function robotsOptInPresent(): boolean {
 
 function searchUrl(region: string, page: number): string {
   const params = new URLSearchParams({
-    limit: String(PAGE_SIZE),
-    offset: String(page * PAGE_SIZE),
+    pageTo: String(page + 1),
+    pageSize: String(PAGE_SIZE),
     salaryCurrency: "CZK",
     salaryPeriod: MONTHLY_PERIOD,
     region,
@@ -89,15 +91,22 @@ function formatSalary(salary: NfjSalary | undefined): string | undefined {
 function describeLocation(posting: NfjPosting, iso3: string): string {
   const places = posting.location?.places ?? [];
   const localCities = places.flatMap((place) => (place.country?.code === iso3 && place.city ? [place.city] : []));
-  const isRemote = posting.fullyRemote || places.some((place) => place.city?.toLowerCase() === REMOTE.toLowerCase());
   const parts = Array.from(new Set(localCities)).slice(0, MAX_LISTED_CITIES);
-  if (isRemote) parts.push(REMOTE);
+  if (isFullyRemote(posting)) {
+    const abroad = Array.from(new Set(places.flatMap((place) => (place.country?.code && place.country.code !== iso3 ? [place.country.code] : []))));
+    parts.push(localCities.length === 0 && abroad.length ? `${REMOTE} (${abroad.join(", ")})` : REMOTE);
+  }
   return parts.join(", ");
 }
 
-function isInCountry(posting: NfjPosting, region: string, iso3: string): boolean {
+function isFullyRemote(posting: NfjPosting): boolean {
+  return posting.fullyRemote === true || (posting.location?.places ?? []).some((place) => place.city?.toLowerCase() === REMOTE.toLowerCase());
+}
+
+function isInCountryOrRemote(posting: NfjPosting, region: string, iso3: string): boolean {
   if (posting.regions?.includes(region)) return true;
-  return (posting.location?.places ?? []).some((place) => place.country?.code === iso3);
+  if ((posting.location?.places ?? []).some((place) => place.country?.code === iso3)) return true;
+  return isFullyRemote(posting);
 }
 
 function requirementValues(requirements: NfjRequirement[] | undefined): string[] {
@@ -127,14 +136,17 @@ export const nofluffjobsSource: JobSource = {
   isAvailable: robotsOptInPresent,
 
   async *list(ctx) {
-    const { query, city, deepSearch, country } = ctx.request;
+    const { query, deepSearch, country } = ctx.request;
     const { region, iso3 } = COUNTRY_CODES[country];
     const maxPages = deepSearch ? DEEP_SEARCH_PAGES : QUICK_SEARCH_PAGES;
+    const seenUrls = new Set<string>();
+    const seenJobs = new Set<string>();
+    let listed = 0;
 
-    for (let page = 0; page < maxPages; page++) {
+    for (let page = 0; page < maxPages && listed < MAX_LISTINGS_PER_SEARCH; page++) {
       const data = await fetchJson<NfjSearchResponse>(searchUrl(region, page), {
         method: "POST",
-        body: JSON.stringify({ rawSearch: city ? `${query} ${city}` : query }),
+        body: JSON.stringify({ rawSearch: query }),
         signal: ctx.signal,
       });
       const postings = data.postings ?? [];
@@ -142,18 +154,26 @@ export const nofluffjobsSource: JobSource = {
 
       const listings: Listing[] = [];
       for (const posting of postings) {
-        if (!posting.url || !posting.title || !isInCountry(posting, region, iso3)) continue;
+        if (!posting.url || !posting.title || seenUrls.has(posting.url)) continue;
+        const jobKey = `${posting.name ?? ""}|${posting.title}`.toLowerCase();
+        if (seenJobs.has(jobKey)) continue;
+        if (!isInCountryOrRemote(posting, region, iso3) || !titleMatches(posting.title, ctx.request)) continue;
+        if (listed >= MAX_LISTINGS_PER_SEARCH) break;
+        seenUrls.add(posting.url);
+        seenJobs.add(jobKey);
+        listed++;
         listings.push({
           url: `${BASE}/${region}/job/${posting.url}`,
           title: posting.title,
           company: posting.name,
           location: describeLocation(posting, iso3),
           salary: formatSalary(posting.salary),
-          workType: posting.fullyRemote ? REMOTE : undefined,
+          workType: isFullyRemote(posting) ? REMOTE : undefined,
           postedAt: posting.posted ? new Date(posting.posted) : undefined,
         });
       }
-      ctx.log(`page ${page + 1}: ${listings.length}/${postings.length} postings in ${country}`);
+      ctx.log(`page ${page + 1}: ${listings.length}/${postings.length} postings in ${country} or fully remote, matching the title`);
+      if (listings.length === 0 && seenUrls.size > 0) return;
       yield listings;
       if (postings.length < PAGE_SIZE) return;
     }

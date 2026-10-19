@@ -265,5 +265,33 @@ Out of scope: browser extension, paid APIs, other countries (additive via the re
   jobs rank above it even with a weaker title. Regression test in `score.test.ts`.
 - **Pipeline** (cleaner session): a job first sent as cached is re-sent as live once a board confirms it,
   and the client replaces the stale copy; the per-source circuit breaker is now actually wired.
-- Still open for Phase 1: ATS sources + `config/sources.cz.json`; Cocuma only matches titles of its ~60
-  listed jobs (no search endpoint allowed by robots); NoFluffJobs / Jooble remain opt-in.
+- Cocuma only matches titles of its ~60 listed jobs (no search endpoint allowed by robots); Jooble still
+  needs the free `JOOBLE_API_KEY`.
+
+### Phase 1 — sources finished, Phase 2 — search profile delivered (2026-10-20)
+
+- **RoleProfile dropped** (migration `20261019214000_drop_role_profile_add_web_sources`), `JobSource`
+  gained `ATS` and `WEB`, and a `WebDomain` table records hosts that yielded postings (used by web discovery).
+- **Company careers (ATS)**: `sources/ats.ts` + `sources/atsAdapters.ts` read the public JSON of Greenhouse,
+  Lever, Ashby, SmartRecruiters, Recruitee and Workable for the employers in `config/sources.cz.json`
+  (every slug verified live; add a company with one line). A posting is kept when it is located in the
+  country or remote without a single-country qualifier (plain "Remote", "Europe", "EMEA", "Global"), and when
+  its title or description mentions the query. "React" → 26 postings from 11 employers.
+- **Robots opt-ins moved into config**: `robotsAllow` in `config/sources.cz.json` (NoFluffJobs API on by
+  default); `ROBOTS_ALLOW` in `.env` still adds more.
+- **NoFluffJobs**: its API ignores `region=cz` and its Czech site serves the same Central-European pool, and
+  the city filters for Prague/Brno return zero, so there is no Czech-located inventory. The source now keeps
+  fully remote postings (labelled "Remote (POL)" when every listed office is abroad), paginates with
+  `pageTo/pageSize` (the API ignores `limit/offset`), filters by title, de-duplicates per job rather than per
+  listed city, and caps at 60 per search.
+- **Search profile (Phase 2)**: `src/lib/jobs/profile.ts` builds `UserProfile.searchProfile` from the
+  uploaded CV — deterministic first (titles from title-like lines, skills via `extractSkills`, seniority from
+  title words or years of experience, city, remote preference, languages), then refined by Ollama `llama3`
+  via `ollamaChatJson` when the local server answers (≈19 s on this machine; falls back silently). Server
+  actions in `src/lib/actions/searchProfileActions.ts`; Settings card `SearchProfileCard`.
+- **Scoring with the profile**: 15 % of the total comes from shared skills (70 %) and title fit (30 %) with
+  reasons "Matches your CV skills (…)" and "Title fits your CV"; the CV seniority is used when the search
+  says "Any level". Without a profile the scores are unchanged. Both the streaming search and the GraphQL
+  `searchJobs` load the profile once per request.
+- Known data quirk: a CV row written outside Prisma carried a local-time timestamp stored as UTC (about two
+  hours in the future), so `readCvText` picked it over a newer upload; rows written by the app are fine.

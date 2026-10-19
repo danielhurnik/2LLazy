@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { lookupIntent } from "@/lib/queryIntent";
 import { normalizeJob } from "@/lib/jobs/normalize";
+import type { SearchProfile } from "@/lib/jobs/profile";
 import { SCORE_THRESHOLD, scoreJob, type ScoreRequest } from "@/lib/jobs/score";
 import type { RawJob } from "@/lib/jobs/sources/types";
 
@@ -67,6 +68,35 @@ describe("scoreJob", () => {
     expect(smallTown.reasons).toContain("Located in Český Krumlov, not Brno");
     expect(remoteRegion.reasons).not.toContainEqual(expect.stringMatching(/^Located in/));
     expect(brno.score).toBeGreaterThan(smallTown.score);
+  });
+
+  it("ranks a job sharing the CV profile skills and titles above an otherwise equal one", () => {
+    const profile: SearchProfile = {
+      titles: ["React developer"],
+      skills: ["React", "TypeScript", "Next.js"],
+      seniority: null,
+      cities: [],
+      remote: null,
+      languages: [],
+      summary: "",
+      source: "cv",
+      builtAt: new Date().toISOString(),
+    };
+    const matching = scoreJob(scoreRequest({ profile }), normalizedJob());
+    const unrelated = scoreJob(scoreRequest({ profile }), normalizedJob({ title: "React engineer", description: "Vue, PHP, MySQL." }));
+    const withoutProfile = scoreJob(scoreRequest(), normalizedJob());
+    expect(matching.reasons).toEqual(expect.arrayContaining(["Title fits your CV", expect.stringMatching(/^Matches your CV skills/)]));
+    expect(matching.score).toBeGreaterThan(unrelated.score);
+    expect(withoutProfile.reasons).not.toContain("Title fits your CV");
+  });
+
+  it("ranks a remote role from an employer abroad below a local one and a plain remote one", () => {
+    const local = scoreJob(scoreRequest(), normalizedJob()).score;
+    const remote = scoreJob(scoreRequest(), normalizedJob({ location: "Remote", workType: "Remote" }));
+    const abroad = scoreJob(scoreRequest(), normalizedJob({ location: "Remote (POL)", workType: "Remote" }));
+    expect(abroad.reasons).toContain("Remote, employer abroad");
+    expect(remote.score).toBeGreaterThan(abroad.score);
+    expect(local).toBeGreaterThan(abroad.score);
   });
 
   it("prefers the requested city and treats remote as a match", () => {

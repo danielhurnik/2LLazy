@@ -1,4 +1,5 @@
 import type { QueryIntent } from "@/lib/queryIntent";
+import type { SearchProfile } from "./profile";
 import { normalizeText } from "./dedupe";
 import { detectCity, detectSeniority, type NormalizedJob, type Seniority } from "./normalize";
 
@@ -9,6 +10,7 @@ export interface ScoreRequest {
   intent: QueryIntent;
   salaryMin?: number | null;
   salaryMax?: number | null;
+  profile?: SearchProfile | null;
 }
 
 export interface ScoredJob {
@@ -28,12 +30,18 @@ export const SCORE_THRESHOLD = 0.3;
 const WEIGHTS = { title: 0.35, keywords: 0.25, location: 0.15, seniority: 0.1, recency: 0.1, salary: 0.05 };
 
 const TITLE_SCORE = { containsQuery: 1, containsIncludedTitle: 0.9, allQueryTokens: 0.7 };
-const LOCATION_SCORE = { noCity: 0.5, remote: 1, remoteButCityWanted: 0.8, sameCity: 1, otherCity: 0.2, anyCity: 0.7 };
+const LOCATION_SCORE = { noCity: 0.5, remote: 1, remoteButCityWanted: 0.8, remoteAbroad: 0.6, sameCity: 1, otherCity: 0.2, anyCity: 0.7 };
+const FOREIGN_COUNTRY_IN_LOCATION =
+  /\b(POL|SVK|HUN|DEU|AUT|GBR|USA|NLD|ESP|FRA|ITA|ROU|BGR|UKR|Poland|Polska|Germany|Slovakia|Hungary|Austria|United Kingdom|United States|Netherlands|Spain|France|Italy|Romania|Bulgaria|Ukraine)\b/;
 const OTHER_CITY_TOTAL_MULTIPLIER = 0.5;
 const REMOTE_IN_LOCATION_TEXT = /remote|home ?office|vzdalen|z domova/i;
 const SENIORITY_SCORE = { noPreference: 0.6, match: 1, undetected: 0.5, mismatch: 0 };
 const RECENCY_SCORE = { unknownDate: 0.3, thisWeek: 1, thisMonth: 0.5, older: 0 };
 const SALARY_SCORE = { notParsed: 0, listed: 1, inRange: 1, outOfRange: 0.3 };
+const PROFILE_SHARE_OF_TOTAL = 0.15;
+const PROFILE_WEIGHTS = { skills: 0.7, title: 0.3 };
+const PROFILE_SKILLS_FOR_FULL_SCORE = 6;
+const PROFILE_SKILL_EXAMPLES_IN_REASON = 3;
 
 const DAYS_IN_WEEK = 7;
 const DAYS_IN_MONTH = 30;
@@ -126,6 +134,9 @@ function namedLocationOutside(job: NormalizedJob, wantedCity: string): string | 
 function locationContribution(req: ScoreRequest, job: NormalizedJob): Contribution {
   const requestedCity = req.city.trim();
   const wantedCity = requestedCity ? (detectCity(req.city, job.country) ?? requestedCity) : null;
+  if (job.remote && !job.city && FOREIGN_COUNTRY_IN_LOCATION.test(job.location)) {
+    return contribution(LOCATION_SCORE.remoteAbroad, "Remote, employer abroad");
+  }
   if (job.remote) return contribution(wantedCity ? LOCATION_SCORE.remoteButCityWanted : LOCATION_SCORE.remote, "Remote");
   if (!job.city) {
     const elsewhere = wantedCity ? namedLocationOutside(job, wantedCity) : null;
@@ -141,10 +152,12 @@ function locationContribution(req: ScoreRequest, job: NormalizedJob): Contributi
 }
 
 function seniorityContribution(req: ScoreRequest, job: NormalizedJob): Contribution {
-  const wanted = wantedSeniority(req.skillLevel);
+  const chosen = wantedSeniority(req.skillLevel);
+  const wanted = chosen ?? req.profile?.seniority ?? undefined;
   if (!wanted) return contribution(SENIORITY_SCORE.noPreference);
   const actual = detectSeniority(job.title);
-  if (actual === wanted) return contribution(SENIORITY_SCORE.match, `Seniority: ${req.skillLevel}`);
+  const label = chosen ? req.skillLevel : `${wanted} (from your CV)`;
+  if (actual === wanted) return contribution(SENIORITY_SCORE.match, `Seniority: ${label}`);
   if (actual === null) return contribution(SENIORITY_SCORE.undetected);
   return contribution(SENIORITY_SCORE.mismatch, `Seniority mismatch (${actual})`);
 }
@@ -176,6 +189,31 @@ function salaryContribution(req: ScoreRequest, job: NormalizedJob): Contribution
     : contribution(SALARY_SCORE.outOfRange, "Salary listed");
 }
 
+function profileSkillsContribution(profile: SearchProfile, job: NormalizedJob): Contribution {
+  const wanted = new Set(profile.skills.map(normalizeText));
+  if (wanted.size === 0) return contribution(0);
+  const shared = job.skills.filter((skill) => wanted.has(normalizeText(skill)));
+  const value = Math.min(1, shared.length / Math.min(wanted.size, PROFILE_SKILLS_FOR_FULL_SCORE));
+  if (shared.length === 0) return contribution(value);
+  const extra = shared.length - PROFILE_SKILL_EXAMPLES_IN_REASON;
+  const examples = shared.slice(0, PROFILE_SKILL_EXAMPLES_IN_REASON).join(", ");
+  const more = extra > 0 ? ` +${extra}` : "";
+  return contribution(value, `Matches your CV skills (${examples}${more})`);
+}
+
+function profileTitleContribution(profile: SearchProfile, normalizedTitle: string): Contribution {
+  const fits = profile.titles.some((title) => normalizedTitle.includes(normalizeText(title)));
+  return fits ? contribution(1, "Title fits your CV") : contribution(0);
+}
+
+function profileContributions(req: ScoreRequest, job: NormalizedJob, normalizedTitle: string): Array<[number, Contribution]> {
+  if (!req.profile) return [];
+  return [
+    [PROFILE_WEIGHTS.skills, profileSkillsContribution(req.profile, job)],
+    [PROFILE_WEIGHTS.title, profileTitleContribution(req.profile, normalizedTitle)],
+  ];
+}
+
 export function scoreJob(req: ScoreRequest, job: NormalizedJob, firstSeenAt?: Date): ScoredJob {
   const normalizedTitle = normalizeText(job.title);
   const title = titleContribution(req, normalizedTitle);
@@ -194,9 +232,13 @@ export function scoreJob(req: ScoreRequest, job: NormalizedJob, firstSeenAt?: Da
     [WEIGHTS.recency, recencyContribution(job, firstSeenAt)],
     [WEIGHTS.salary, salaryContribution(req, job)],
   ];
+  const profileParts = profileContributions(req, job, normalizedTitle);
   const weightedSum = weightedContributions.reduce((sum, [weight, part]) => sum + weight * part.value, 0);
-  const score = weightedContributions.reduce((total, [, part]) => total * (part.totalMultiplier ?? 1), weightedSum);
-  const reasons = weightedContributions.flatMap(([, part]) => (part.reason ? [part.reason] : []));
+  const profileFit = profileParts.reduce((sum, [weight, part]) => sum + weight * part.value, 0);
+  const blended = req.profile ? weightedSum * (1 - PROFILE_SHARE_OF_TOTAL) + PROFILE_SHARE_OF_TOTAL * profileFit : weightedSum;
+  const allParts = [...weightedContributions, ...profileParts];
+  const score = allParts.reduce((total, [, part]) => total * (part.totalMultiplier ?? 1), blended);
+  const reasons = allParts.flatMap(([, part]) => (part.reason ? [part.reason] : []));
 
   return { score: Math.round(score * SCORE_DECIMAL_PLACES_FACTOR) / SCORE_DECIMAL_PLACES_FACTOR, reasons };
 }
