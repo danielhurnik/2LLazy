@@ -140,6 +140,7 @@ model JobPosting {
   salaryCurrency String?
   skills         String[]        @default([])
   contentHash    String?
+  expiredAt      DateTime?
   applications   Application[]
   favouritedBy   UserFavourite[]
 

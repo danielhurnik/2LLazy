@@ -82,7 +82,7 @@ export async function upsertJob(job: NormalizedJob): Promise<StoredJob> {
   return prisma.jobPosting.upsert({
     where: { sourceUrl: job.sourceUrl },
     create: { ...fields, sourceUrl: job.sourceUrl, source: job.source },
-    update: { ...fields, scrapedAt: new Date() },
+    update: { ...fields, scrapedAt: new Date(), expiredAt: null },
     select: STORED_JOB_COLUMNS,
   });
 }
@@ -114,10 +114,24 @@ export async function searchRecent({
   const matchers = keywordMatchers(titleTerms, query);
   if (matchers.length === 0) return [];
   return prisma.jobPosting.findMany({
-    where: { country, scrapedAt: { gte: new Date(Date.now() - days * ONE_DAY_MS) }, OR: matchers },
+    where: { country, expiredAt: null, scrapedAt: { gte: new Date(Date.now() - days * ONE_DAY_MS) }, OR: matchers },
     orderBy: { scrapedAt: "desc" },
     take: limit,
     select: STORED_JOB_COLUMNS,
+  });
+}
+
+export async function knownWebHosts(): Promise<Set<string>> {
+  const rows = await prisma.webDomain.findMany({ select: { host: true } });
+  return new Set(rows.map((row) => row.host));
+}
+
+export async function recordWebHost(host: string): Promise<void> {
+  if (!host) return;
+  await prisma.webDomain.upsert({
+    where: { host },
+    create: { host, jobPostings: 1 },
+    update: { jobPostings: { increment: 1 }, lastSeenAt: new Date() },
   });
 }
 

@@ -5,9 +5,11 @@ import { jobsczSource } from "./sources/jobscz";
 import { jobstackSource } from "./sources/jobstack";
 import { joobleSource } from "./sources/jooble";
 import { nofluffjobsSource } from "./sources/nofluffjobs";
+import { praceczSource } from "./sources/pracecz";
 import { skilletoSource } from "./sources/skilleto";
 import { startupjobsSource } from "./sources/startupjobs";
 import type { CountryCode, JobSource } from "./sources/types";
+import { webSource } from "./sources/web";
 
 const ALL_SOURCES: JobSource[] = [
   nofluffjobsSource,
@@ -17,7 +19,9 @@ const ALL_SOURCES: JobSource[] = [
   cocumaSource,
   skilletoSource,
   jobstackSource,
+  praceczSource,
   atsSource,
+  webSource,
 ];
 
 const UNAVAILABLE_REASONS: Record<string, string> = {

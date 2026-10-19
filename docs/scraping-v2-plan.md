@@ -295,3 +295,25 @@ Out of scope: browser extension, paid APIs, other countries (additive via the re
   `searchJobs` load the profile once per request.
 - Known data quirk: a CV row written outside Prisma carried a local-time timestamp stored as UTC (about two
   hours in the future), so `readCvText` picked it over a newer upload; rows written by the app are fine.
+
+### Phase 3 — web discovery, Phase 4 — background refresh delivered (2026-10-20)
+
+- **Web search source** (`sources/web.ts`, JobSource `WEB`): two DuckDuckGo HTML queries per search (the
+  English phrasing and a localized one, e.g. "React vývojář Brno nabídka práce"; `html.duckduckgo.com`
+  allows crawling and needs no key), boards we already cover and sites without readable postings are
+  skipped, every page is read politely with robots.txt honoured, and postings are taken from schema.org
+  `JobPosting` JSON-LD (`sources/jsonld.ts`). When a result is a listing page rather than a posting, up to
+  three same-host links that mention the query and look like detail pages are followed (one hop). Hosts
+  that yielded postings are recorded in `WebDomain` and read first next time.
+- **Prace.cz source** (`sources/pracecz.ts`, stored as `WEB`): the search listing is plain HTML (title,
+  city, company, salary, employment type per card; city as a path segment) and every detail page carries
+  JSON-LD, so descriptions are complete. Its robots.txt only forbids `/hledat/`, which is not used.
+- **Background refresh** (`src/lib/jobs/refresh.ts`): `src/instrumentation.ts` schedules a pass every
+  `SEARCH_REFRESH_MINUTES` (default 180, `0` disables; first run five minutes after boot). A pass re-reads
+  up to 25 postings not scraped for 24 h (oldest first, 45 s per posting), marks postings that are gone
+  (404/410, or no longer a posting) as `expiredAt` when they are favourited or applied to and deletes them
+  otherwise, and purges unreferenced postings not seen for 60 days. `POST /api/scrape/refresh` runs a pass
+  on demand and returns the counts. Expired postings never appear in cached results and are revived if a
+  board lists them again.
+- Sources now registered for CZ: NoFluffJobs (remote), Jobs.cz, Jooble (key), StartupJobs, Cocuma, Skilleto,
+  Jobstack, Prace.cz, Company careers (ATS), Web search. A quick "React" search streams ~90 unique jobs.
