@@ -23,10 +23,13 @@ Nothing in it calls an AI service. The only model it can use is an optional loca
 | Jobs.cz | Always. `PLAYWRIGHT_ENABLED=true` adds fuller descriptions for postings that render client-side |
 | Cocuma | Always |
 | Jobstack | Always |
+| NoFluffJobs (CZ listings) | Always. Its robots.txt disallows the API; `config/sources.cz.json` opts in to it |
+| Company careers | Always. Reads employers' own public job boards on Greenhouse, Lever, Ashby, SmartRecruiters, Recruitee and Workable |
 | StartupJobs | `PLAYWRIGHT_ENABLED=true` |
 | Skilleto | `PLAYWRIGHT_ENABLED=true` |
 | Jooble | `JOOBLE_API_KEY` is set (free key from jooble.org/api/about) |
-| NoFluffJobs | `ROBOTS_ALLOW=nofluffjobs.com/api/`, because its robots.txt disallows the API |
+
+The companies behind "Company careers" are listed in [config/sources.cz.json](config/sources.cz.json). To add one, add a line such as `{ "ats": "greenhouse", "slug": "jetbrains", "name": "JetBrains" }`, where `ats` is one of `greenhouse`, `lever`, `ashby`, `smartrecruiters`, `recruitee` or `workable`. The same file's `robotsAllow` list holds the robots.txt opt-ins.
 
 The search pipeline lives in `src/lib/jobs`. `registry.ts` lists the boards, `sources/<board>.ts` holds each board's scraper, and `score.ts` holds the ranking. The roadmap and per-board notes are in [docs/scraping-v2-plan.md](docs/scraping-v2-plan.md).
 
@@ -72,7 +75,7 @@ Optional:
 |---|---|
 | `PLAYWRIGHT_ENABLED=true` | StartupJobs and Skilleto, fuller Jobs.cz descriptions, and auto-apply |
 | `JOOBLE_API_KEY` | The Jooble board |
-| `ROBOTS_ALLOW` | Comma-separated exceptions to robots.txt, e.g. `nofluffjobs.com/api/` for NoFluffJobs |
+| `ROBOTS_ALLOW` | Further comma-separated `host/path` exceptions to robots.txt, added to the ones in `config/sources.cz.json` |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Google sign-in and Google Calendar sync |
 | `APPLY_HEADLESS=true` | Runs auto-apply without a visible browser window |
 | `APPLY_PROFILE_DIR` | Puts the auto-apply browser profile somewhere other than `.apply-profile` |
