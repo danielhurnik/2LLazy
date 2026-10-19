@@ -113,6 +113,25 @@ export interface DraftResult {
   model: string;
 }
 
+const CLAIM_TOKEN = /\b[A-Z][A-Za-z0-9+#]*(?:\.[A-Za-z]+)?\b|\.NET\b/g;
+const CLAIM_STOPWORDS = new Set(["dobrý", "den", "hello", "dear", "s", "best", "kind", "regards", "cv", "ai", "it"]);
+
+export function findUnsupportedClaims(draft: string, cvText: string, jobDescription: string, allow: string[]): string[] {
+  const cv = cvText.toLowerCase();
+  const job = jobDescription.toLowerCase();
+  const allowed = new Set(allow.flatMap((a) => a.toLowerCase().split(/\s+/)));
+  const unsupported = new Set<string>();
+  for (const line of draft.split("\n").slice(1)) {
+    for (const token of line.match(CLAIM_TOKEN) ?? []) {
+      const lower = token.toLowerCase();
+      if (lower.length < 2 || CLAIM_STOPWORDS.has(lower) || allowed.has(lower)) continue;
+      if (/^[A-Z][a-záčďéěíňóřšťúůýž]+$/.test(token) && line.trimStart().startsWith(token)) continue;
+      if (job.includes(lower) && !cv.includes(lower)) unsupported.add(token);
+    }
+  }
+  return [...unsupported];
+}
+
 function detectCzech(field: FieldDescriptor, job: ApplyJob): boolean {
   const formText = `${field.label} ${field.placeholder} ${field.ariaLabel} ${field.value}`;
   if (CZECH_LETTERS.test(formText)) return true;
@@ -164,31 +183,45 @@ export async function draftFreeText(field: FieldDescriptor, profile: ApplyProfil
     .filter(Boolean)
     .join("\n");
 
-  for (const temperature of [0.4, 0.15]) {
+  const allow = [profile.name, job.company, title, profile.city ?? ""];
+  let forbidden: string[] = [];
+  for (const temperature of [0.4, 0.15, 0.1]) {
+    const banLine = forbidden.length
+      ? czech
+        ? `\nTyto výrazy v životopise nejsou, proto je vůbec nezmiňuj jako svou zkušenost: ${forbidden.join(", ")}.`
+        : `\nThese terms are not in the CV, so do not mention them as my experience at all: ${forbidden.join(", ")}.`
+      : "";
     try {
       const raw = await ollamaChat(
         [
           { role: "system", content: system },
-          { role: "user", content: user },
+          { role: "user", content: user + banLine },
         ],
         { model, temperature, numCtx: 8192, keepAlive: "10m", signal: AbortSignal.timeout(120_000) },
       );
       const text = cleanDraft(raw);
-      if (draftIsUsable(text)) {
-        const polished = czech ? await proofreadCzech(text, model) : text;
-        return { text: enforceShape(polished, czech, profile.name), model };
+      if (!draftIsUsable(text)) continue;
+      if (cv) {
+        const claims = findUnsupportedClaims(text, profile.cvText ?? "", job.description, allow);
+        if (claims.length > 0) {
+          forbidden = [...new Set([...forbidden, ...claims])];
+          continue;
+        }
       }
+      const polished = czech ? await proofreadCzech(text, model) : text;
+      return { text: enforceShape(polished, czech, profile.name), model };
     } catch {
       return null;
     }
   }
+  if (cv) return draftFreeText(field, { ...profile, cvText: null }, job);
   return null;
 }
 
-const GREETING_LINE = /^(dobr[ýy] (den|r[áa]no|ve[čc]er)|ahoj|zdrav[íi]m( v[áa]s)?|v[áa][žz]en[ýíé].{0,40}|hello|hi|dear .{0,40}|good (morning|afternoon|evening))[,!.]?$/i;
+const GREETING_LINE = /^(dobr[ýyéá] (den|r[áa]no|ve[čc]er|odpoledne)|ahoj|zdrav[íi]m( v[áa]s)?|v[áa][žz]en[ýíé].{0,40}|hello|hi|dear .{0,40}|good (morning|afternoon|evening))[,!.]?$/i;
 const SIGNOFF_LINE = /^(s (pozdravem|úctou|přáním hezkého dne)|best regards|kind regards|regards|sincerely|yours sincerely)[,.]?$/i;
 
-function enforceShape(text: string, czech: boolean, name: string): string {
+export function enforceShape(text: string, czech: boolean, name: string): string {
   const lines = text.split("\n").map((l) => l.trim());
   const greeting = czech ? "Dobrý den," : "Hello,";
   if (lines.length && GREETING_LINE.test(lines[0])) lines[0] = greeting;
