@@ -35,7 +35,7 @@ interface StatusTab {
 export const sumStatusCounts = (statusCounts: Record<string, number>) =>
   Object.values(statusCounts).reduce((total, count) => total + count, 0);
 
-const HIDDEN_WHEN_EMPTY: AppStatus[] = ["APPLYING", "NEEDS_MANUAL"];
+const HIDDEN_WHEN_EMPTY: AppStatus[] = ["APPLYING", "WAITING_FOR_USER", "NEEDS_MANUAL"];
 
 const isTabShown = (status: AppStatus, count: number, activeStatus: string) =>
   count > 0 || status === activeStatus || !HIDDEN_WHEN_EMPTY.includes(status);

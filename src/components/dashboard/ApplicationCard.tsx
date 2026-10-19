@@ -17,7 +17,7 @@ import { StatusChip } from "@/components/ui/StatusChip";
 import { JobHeading, SourceLinkChip, lineClampSx } from "@/components/jobs/JobCard";
 import { updateApplicationNotes } from "@/lib/actions/applicationActions";
 import { ui, fonts } from "@/theme/tokens";
-import { useAutoApply } from "./useAutoApply";
+import { useAutoApply, type AutoApplyRun } from "./useAutoApply";
 import { EvidenceDialog } from "./EvidenceDialog";
 import {
   AutoApplyConfirmDialog,
@@ -37,6 +37,11 @@ type ScheduledInterview = NonNullable<Application["interview"]>;
 const DATE_LOCALE = "en-GB";
 const NOTES_SAVE_FAILED_MESSAGE = "Could not save the note. Try again.";
 const COLLAPSED_DESCRIPTION_LINES = 2;
+
+function liveStatus(run: AutoApplyRun): AppStatus | null {
+  if (run.waiting) return "WAITING_FOR_USER";
+  return run.isRunning ? "APPLYING" : null;
+}
 
 const formatAppliedDate = (iso: string) =>
   new Date(iso).toLocaleDateString(DATE_LOCALE, { day: "numeric", month: "short", year: "numeric" });
@@ -151,7 +156,7 @@ export function ApplicationCard({ application, onStatusClick }: ApplicationCardP
   const [notesSaveError, setNotesSaveError] = useState<string | null>(null);
   const [isConfirmingAutoApply, setIsConfirmingAutoApply] = useState(false);
   const [shownEvidenceUrl, setShownEvidenceUrl] = useState<string | null>(null);
-  const { run, start: startAutoApply } = useAutoApply(application.id);
+  const { run, start: startAutoApply, resume, resumeState } = useAutoApply(application.id);
 
   const canAutoApply = run.isRunning || AUTO_APPLY_STATUSES.includes(application.status);
   const savedEvidenceUrl = evidenceUrlFor(application);
@@ -184,7 +189,7 @@ export function ApplicationCard({ application, onStatusClick }: ApplicationCardP
         <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={2}>
           <JobHeading title={job.title} company={job.company} location={job.location} />
           <Box sx={{ flexShrink: 0, pt: "1px" }}>
-            <StatusChip status={run.isRunning ? "APPLYING" : application.status} />
+            <StatusChip status={liveStatus(run) ?? application.status} />
           </Box>
         </Stack>
 
@@ -218,7 +223,13 @@ export function ApplicationCard({ application, onStatusClick }: ApplicationCardP
 
         {interview && <InterviewBanner interview={interview} />}
 
-        <AutoApplyPanel application={application} run={run} onShowEvidence={setShownEvidenceUrl} />
+        <AutoApplyPanel
+          application={application}
+          run={run}
+          resumeState={resumeState}
+          onContinue={resume}
+          onShowEvidence={setShownEvidenceUrl}
+        />
 
         <Stack
           direction="row"

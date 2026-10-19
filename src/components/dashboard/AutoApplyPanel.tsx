@@ -13,11 +13,13 @@ import {
   Typography,
 } from "@mui/material";
 import type { Application } from "@/types";
-import type { AutoApplyRun } from "./useAutoApply";
+import type { AutoApplyRun, ResumeState } from "./useAutoApply";
 import { ui, fonts } from "@/theme/tokens";
 
 const SCREENSHOT_MAX_HEIGHT = 220;
 const RUN_IN_PROGRESS_NOTE = "A run is in progress. Refresh to see the result.";
+const WAITING_PREFIX = "Waiting for you:";
+const NEEDS_YOU_TITLE = "Needs you";
 
 interface CalloutView {
   tone: string;
@@ -26,6 +28,7 @@ interface CalloutView {
   screenshotUrl: string | null;
   evidenceUrl: string | null;
   canFinishManually: boolean;
+  canContinue: boolean;
 }
 
 export const calloutSx = (tone: string) => ({
@@ -50,12 +53,26 @@ export const panelLinkSx = {
 export const evidenceUrlFor = (application: Application) =>
   application.evidencePath ? `/api/apply/evidence/${application.id}/` : null;
 
+const withoutWaitingPrefix = (message: string | null) =>
+  message?.startsWith(WAITING_PREFIX) ? message.slice(WAITING_PREFIX.length).trim() : message;
+
 function describeLiveRun(run: AutoApplyRun, application: Application): CalloutView | null {
   const shared = {
     screenshotUrl: run.screenshotUrl,
     evidenceUrl: run.outcome?.evidenceUrl ?? evidenceUrlFor(application),
     canFinishManually: false,
+    canContinue: false,
   };
+  if (run.isRunning && run.waiting) {
+    return {
+      ...shared,
+      tone: ui.orange,
+      title: NEEDS_YOU_TITLE,
+      detail: run.waiting.message,
+      evidenceUrl: null,
+      canContinue: true,
+    };
+  }
   if (run.isRunning) {
     return { ...shared, tone: ui.blue, title: "Applying", detail: run.message, evidenceUrl: null };
   }
@@ -74,8 +91,22 @@ function describeLiveRun(run: AutoApplyRun, application: Application): CalloutVi
 }
 
 function describeSavedState(application: Application): CalloutView | null {
-  const shared = { screenshotUrl: null, evidenceUrl: evidenceUrlFor(application), canFinishManually: false };
+  const shared = {
+    screenshotUrl: null,
+    evidenceUrl: evidenceUrlFor(application),
+    canFinishManually: false,
+    canContinue: false,
+  };
   switch (application.status) {
+    case "WAITING_FOR_USER":
+      return {
+        ...shared,
+        tone: ui.orange,
+        title: NEEDS_YOU_TITLE,
+        detail: withoutWaitingPrefix(application.errorMessage),
+        evidenceUrl: null,
+        canContinue: true,
+      };
     case "APPLYING":
       return { ...shared, tone: ui.blue, title: "Applying", detail: RUN_IN_PROGRESS_NOTE, evidenceUrl: null };
     case "NEEDS_MANUAL":
@@ -114,16 +145,39 @@ function ScreenshotThumbnail({ url }: { url: string }) {
   );
 }
 
+interface ContinueControlProps {
+  resumeState: ResumeState;
+  onContinue: () => void;
+}
+
+function ContinueControl({ resumeState, onContinue }: ContinueControlProps) {
+  return (
+    <Stack direction="row" alignItems="center" gap={1.5} sx={{ mt: 1 }}>
+      <Button size="small" variant="contained" onClick={onContinue} disabled={resumeState.isResuming}>
+        {resumeState.isResuming ? "Continuing…" : "Continue"}
+      </Button>
+      {resumeState.error && (
+        <Typography variant="body2" sx={{ color: ui.red }}>
+          {resumeState.error}
+        </Typography>
+      )}
+    </Stack>
+  );
+}
+
 interface AutoApplyPanelProps {
   application: Application;
   run: AutoApplyRun;
+  resumeState: ResumeState;
+  onContinue: () => void;
   onShowEvidence: (evidenceUrl: string) => void;
 }
 
-export function AutoApplyPanel({ application, run, onShowEvidence }: AutoApplyPanelProps) {
+export function AutoApplyPanel({ application, run, resumeState, onContinue, onShowEvidence }: AutoApplyPanelProps) {
   const view = describeLiveRun(run, application) ?? describeSavedState(application);
   if (!view) return null;
   const { evidenceUrl } = view;
+  const isProgressLine = run.isRunning && !run.waiting;
 
   return (
     <Box sx={calloutSx(view.tone)} role="status" aria-live="polite">
@@ -132,16 +186,18 @@ export function AutoApplyPanel({ application, run, onShowEvidence }: AutoApplyPa
         {view.detail && (
           <Box
             component="span"
-            sx={run.isRunning
+            sx={isProgressLine
               ? { ml: 1, fontFamily: fonts.mono, fontSize: "0.78rem", color: ui.textMuted }
               : { color: ui.textMuted }}
           >
-            {run.isRunning ? view.detail : ` · ${view.detail}`}
+            {isProgressLine ? view.detail : ` · ${view.detail}`}
           </Box>
         )}
       </Typography>
 
       {view.screenshotUrl && <ScreenshotThumbnail url={view.screenshotUrl} />}
+
+      {view.canContinue && <ContinueControl resumeState={resumeState} onContinue={onContinue} />}
 
       {(view.canFinishManually || evidenceUrl) && (
         <Stack direction="row" spacing={2} sx={{ mt: 0.75 }}>
