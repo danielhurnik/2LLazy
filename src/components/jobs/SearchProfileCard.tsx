@@ -14,6 +14,7 @@ import {
   Typography,
 } from "@mui/material";
 import { loadSearchProfile, rebuildSearchProfile } from "@/lib/actions/searchProfileActions";
+import { loadRankerStatus, retrainRankerAction } from "@/lib/actions/jobFeedbackActions";
 import type { SearchProfile } from "@/lib/jobs/profile";
 import { ui, fonts } from "@/theme/tokens";
 
@@ -31,6 +32,14 @@ const DATE_LOCALE = "en-GB";
 const LABEL_WIDTH = 96;
 const COLLAPSED_VALUE_COUNT = 12;
 const SKELETON_ROW_COUNT = 3;
+const NOT_PERSONALISED = "Not personalised yet: save, apply to, or hide a few jobs.";
+
+type RankerStatus = Awaited<ReturnType<typeof loadRankerStatus>>;
+
+interface RankerNote {
+  text: string;
+  isError: boolean;
+}
 
 const formatBuiltAt = (iso: string) =>
   new Date(iso).toLocaleString(DATE_LOCALE, {
@@ -40,6 +49,17 @@ const formatBuiltAt = (iso: string) =>
     hour: "2-digit",
     minute: "2-digit",
   });
+
+const formatTrainedAt = (iso: string) =>
+  new Date(iso).toLocaleString(DATE_LOCALE, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+
+function describeRanker(status: RankerStatus): string {
+  if (!status?.trainedAt) return NOT_PERSONALISED;
+  return `Learned from ${status.samples} signals (${status.positives} positive), last trained ${formatTrainedAt(status.trainedAt)}.`;
+}
+
+const notEnoughFeedback = (samples: number) =>
+  `Not enough feedback yet (${samples} signals, needs 3+ positive and 3+ hidden).`;
 
 const labelSx = {
   width: { sm: LABEL_WIDTH },
@@ -112,6 +132,55 @@ function ProfileDetails({ profile }: { profile: SearchProfile }) {
   );
 }
 
+function RankerRow() {
+  const [status, setStatus] = useState<RankerStatus>(null);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [note, setNote] = useState<RankerNote | null>(null);
+  const [isRetraining, startRetrain] = useTransition();
+
+  useEffect(() => {
+    loadRankerStatus()
+      .then(setStatus)
+      .catch(() => setStatus(null))
+      .finally(() => setIsLoaded(true));
+  }, []);
+
+  const retrain = () => {
+    setNote(null);
+    startRetrain(async () => {
+      const result = await retrainRankerAction();
+      if ("error" in result) {
+        setNote({ text: `Retraining failed: ${result.error}`, isError: true });
+        return;
+      }
+      if (!result.trained) {
+        setNote({ text: notEnoughFeedback(result.samples), isError: false });
+        return;
+      }
+      setStatus(await loadRankerStatus());
+    });
+  };
+
+  return (
+    <Stack direction={{ xs: "column", sm: "row" }} gap={{ xs: 0.25, sm: 2 }} sx={{ mb: 2.5 }}>
+      <Typography sx={labelSx}>ranking</Typography>
+      <Box sx={{ minWidth: 0 }}>
+        <Typography variant="body2" sx={{ color: ui.text }}>
+          {isLoaded ? describeRanker(status) : "Loading…"}{" "}
+          <ButtonBase onClick={retrain} disabled={isRetraining || !isLoaded} sx={moreLinkSx}>
+            {isRetraining ? "retraining…" : "retrain now"}
+          </ButtonBase>
+        </Typography>
+        {note && (
+          <Typography variant="body2" sx={{ mt: 0.25, color: note.isError ? ui.red : ui.textMuted }}>
+            {note.text}
+          </Typography>
+        )}
+      </Box>
+    </Stack>
+  );
+}
+
 function ProfileSkeleton() {
   return (
     <Stack spacing={1}>
@@ -167,6 +236,8 @@ export function SearchProfileCard() {
             </Typography>
           )}
         </Box>
+
+        <RankerRow />
 
         <Button
           variant={profile ? "outlined" : "contained"}
