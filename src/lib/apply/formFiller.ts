@@ -169,6 +169,7 @@ function sameField(a: FieldDescriptor, b: FieldDescriptor): boolean {
 async function relocate(ctx: ApplyContext, field: FieldDescriptor): Promise<{ scan: PageScan; field: FieldDescriptor } | null> {
   const fresh = await scanPage(ctx.page);
   const match = fresh.fields.find((candidate) => candidate.visible && sameField(candidate, field));
+  if (!match) ctx.evidence.log(`relocate failed: ${describeScan(fresh)}`);
   return match ? { scan: fresh, field: match } : null;
 }
 

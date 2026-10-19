@@ -49,6 +49,7 @@ export interface ApplyContext {
   evidence: Evidence;
   emit: (event: ApplyEvent) => void;
   setWaiting: (message: string | null) => Promise<void>;
+  lock: { release(): void; acquire(): Promise<void> };
   autoSubmit: boolean;
 }
 

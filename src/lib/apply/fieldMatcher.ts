@@ -92,6 +92,7 @@ interface KeyRule {
 const WEAK_PHRASE_FACTOR = 0.7;
 const SINGLE_FILL_KEYS: ReadonlySet<ProfileKey> = new Set(["cv", "coverLetter"]);
 const SALARY_OPTION = /^(k[cč]|czk|eur|€|usd|\$|gbp|pln|za m[eě]s[ií]c|m[eě]s[ií][cč]n[eě]|per month|monthly|ro[cč]n[eě]|per year|yearly|hodinov[eě]|per hour|hourly|md|man ?day)$/i;
+const PERSONAL_SITE_LABEL = /\b(web|website|webova|webove|stranka|stranky|site|homepage|portfolio|blog)\b/;
 
 const RULES: Record<ProfileKey, KeyRule> = {
   fullName: {
@@ -329,7 +330,9 @@ export function resolveValue(key: ProfileKey, profile: ApplyProfile, field: Fiel
     case "githubUrl":
       return text(profile.githubUrl);
     case "website":
-      return text(profile.linkedInUrl ?? profile.githubUrl);
+      return PERSONAL_SITE_LABEL.test(normalizeText(`${field.label} ${field.placeholder} ${field.ariaLabel} ${field.name}`))
+        ? text(profile.githubUrl)
+        : text(profile.linkedInUrl ?? profile.githubUrl);
     case "city":
       return text(profile.city);
     case "country":

@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/auth";
-import { requestResume } from "@/lib/apply/humanWait";
+import { requestResume, requestResumeAll, waitingApplicationIds } from "@/lib/apply/humanWait";
 import { isRecord } from "@/lib/guards";
 import { prisma } from "@/lib/prisma";
 
@@ -18,6 +18,15 @@ export async function POST(req: NextRequest) {
 
   const body: unknown = await req.json().catch(() => null);
   const fields = isRecord(body) ? body : {};
+
+  if (fields.all === true) {
+    const waiting = waitingApplicationIds();
+    const owned = waiting.length
+      ? await prisma.application.findMany({ where: { id: { in: waiting }, userId }, select: { id: true } })
+      : [];
+    return Response.json({ ok: true, resumed: requestResumeAll(owned.map((row) => row.id)) });
+  }
+
   const applicationId = typeof fields.applicationId === "string" ? fields.applicationId : "";
   if (!APPLICATION_ID.test(applicationId)) return jsonError("Missing applicationId", 400);
 

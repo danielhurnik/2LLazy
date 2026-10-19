@@ -1,4 +1,5 @@
 import type { Page } from "playwright";
+import { prisma } from "@/lib/prisma";
 import { MS_PER_MINUTE, MS_PER_SECOND } from "@/lib/time";
 import { scanPage, type PageScan } from "./fieldScanner";
 import { ApplyAbort, type ApplyContext } from "./types";
@@ -21,6 +22,18 @@ export function requestResume(applicationId: string): boolean {
   const wasWaiting = waitingRuns.has(applicationId);
   if (wasWaiting) resumeRequests.add(applicationId);
   return wasWaiting;
+}
+
+export function requestResumeAll(applicationIds: Iterable<string>): number {
+  let count = 0;
+  for (const id of applicationIds) {
+    if (requestResume(id)) count += 1;
+  }
+  return count;
+}
+
+export function waitingApplicationIds(): string[] {
+  return [...waitingRuns.keys()];
 }
 
 export function waitingReason(applicationId: string): BlockerReason | null {
@@ -64,10 +77,24 @@ async function blockerCleared(page: Page, reason: BlockerReason): Promise<{ clea
   return { cleared, scan };
 }
 
+async function recordObstacle(ctx: ApplyContext, reason: BlockerReason): Promise<void> {
+  let host = "";
+  try {
+    host = new URL(ctx.page.url()).hostname.replace(/^www\./, "");
+  } catch {
+    host = "";
+  }
+  if (!host) return;
+  await prisma.applyObstacle
+    .create({ data: { host, kind: reason === "captcha" ? "CAPTCHA" : "LOGIN", applicationId: ctx.applicationId, jobId: ctx.job.id } })
+    .catch(() => undefined);
+}
+
 export async function waitForHuman(ctx: ApplyContext, reason: BlockerReason): Promise<PageScan> {
   const message = blockerMessage(reason);
   const file = await ctx.evidence.screenshot(ctx.page, `waiting-${reason}`);
   ctx.evidence.log(`waiting for user: ${reason}`);
+  await recordObstacle(ctx, reason);
   resumeRequests.delete(ctx.applicationId);
   waitingRuns.set(ctx.applicationId, reason);
   await ctx.setWaiting(message);
@@ -75,22 +102,30 @@ export async function waitForHuman(ctx: ApplyContext, reason: BlockerReason): Pr
   await ctx.page.bringToFront().catch(() => undefined);
 
   const deadline = Date.now() + WAIT_MINUTES * MS_PER_MINUTE;
+  ctx.lock.release();
+  let resumedScan: PageScan | null = null;
   try {
     while (Date.now() < deadline) {
-      await ctx.page.waitForTimeout(POLL_MS).catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, POLL_MS));
       if (ctx.page.isClosed()) throw new ApplyAbort("FAILED", "The apply window was closed while waiting for you");
       const manual = takeResume(ctx.applicationId);
       const { cleared, scan } = await blockerCleared(ctx.page, reason);
       if (manual || cleared) {
         ctx.evidence.log(`resumed after ${reason} (${manual ? "Continue pressed" : "cleared on the page"})`);
-        ctx.emit({ type: "resumed", message: "Continuing with the form" });
-        return scan;
+        resumedScan = scan;
+        break;
       }
     }
   } finally {
     waitingRuns.delete(ctx.applicationId);
     resumeRequests.delete(ctx.applicationId);
+    await ctx.lock.acquire();
     await ctx.setWaiting(null);
+  }
+  if (resumedScan) {
+    ctx.emit({ type: "resumed", message: "Continuing with the form" });
+    await ctx.page.bringToFront().catch(() => undefined);
+    return resumedScan;
   }
   const action = reason === "captcha" ? "solve the CAPTCHA" : "sign in";
   throw new ApplyAbort("NEEDS_MANUAL", `Waited ${WAIT_MINUTES} minutes for you to ${action}; finish the form in the apply window`);

@@ -184,6 +184,12 @@ describe("resolveValue", () => {
     expect(resolveValue("marketing", PROFILE, field({ type: "checkbox" }))).toEqual({ kind: "check", value: false });
   });
 
+  it("does not put LinkedIn into a personal-website field", () => {
+    expect(resolveValue("website", PROFILE, field({ type: "url", label: "Osobní web" }))).toBeNull();
+    expect(resolveValue("website", { ...PROFILE, githubUrl: "https://github.com/jana" }, field({ type: "url", label: "Portfolio / website" }))).toEqual({ kind: "text", value: "https://github.com/jana" });
+    expect(resolveValue("website", PROFILE, field({ type: "url", label: "Odkaz na profil" }))).toEqual({ kind: "text", value: PROFILE.linkedInUrl });
+  });
+
   it("returns null for data the profile does not have", () => {
     expect(resolveValue("githubUrl", PROFILE, field({}))).toBeNull();
     expect(resolveValue("salary", PROFILE, field({}))).toBeNull();

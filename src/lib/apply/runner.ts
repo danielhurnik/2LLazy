@@ -2,7 +2,7 @@ import { revalidatePath } from "next/cache";
 import { readCvText } from "@/lib/cv";
 import { prisma } from "@/lib/prisma";
 import { findAdapter } from "./adapters";
-import { openApplyPage, withApplyLock } from "./browser";
+import { applyMutex, openApplyPage, releasePage, withApplyLock } from "./browser";
 import { Evidence } from "./evidence";
 import { runGenericFlow } from "./formFiller";
 import { settle } from "./pageActions";
@@ -126,7 +126,17 @@ async function executeInBrowser(
       .catch(() => undefined);
     refreshDashboardWhenInsideRequestScope();
   };
-  const ctx: ApplyContext = { applicationId: input.applicationId, page, profile: input.profile, job: input.job, evidence, emit, setWaiting, autoSubmit };
+  const ctx: ApplyContext = {
+    applicationId: input.applicationId,
+    page,
+    profile: input.profile,
+    job: input.job,
+    evidence,
+    emit,
+    setWaiting,
+    lock: applyMutex,
+    autoSubmit,
+  };
   const adapter = findAdapter(new URL(input.job.sourceUrl));
   const via = adapter?.id ?? "generic";
   evidence.log(`run start job=${input.job.id} url=${input.job.sourceUrl} adapter=${via} cv=${input.profile.cv?.name ?? "none"}`);
@@ -147,6 +157,8 @@ async function executeInBrowser(
   }
   evidence.log(`result ${result.status}${result.message ? `: ${result.message}` : ""}`);
   if (result.submitted) await evidence.savePayload(result.submitted).catch(() => undefined);
+  releasePage(page);
+  releasePage(ctx.page);
   if (result.status !== "NEEDS_MANUAL") {
     await ctx.page.close().catch(() => undefined);
     if (ctx.page !== page) await page.close().catch(() => undefined);
