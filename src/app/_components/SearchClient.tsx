@@ -27,6 +27,7 @@ import { ErrorAlertList } from "@/components/ui/ErrorAlertList";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SkippedBoardsNote } from "@/components/jobs/SkippedBoardsNote";
+import { useJobDismissal } from "@/components/jobs/useJobDismissal";
 import type { JobItem } from "@/types";
 import { useScrapeProgress, PROGRESS_DONE_EMPTY, PROGRESS_STOPPED } from "@/context/ScrapeProgressContext";
 import { COUNTRY_NAMES, isSupportedCountry, type CountryCode } from "@/lib/jobs/sources/types";
@@ -210,6 +211,7 @@ export function SearchClient({ defaultCountry, defaultCity }: SearchClientProps)
     arrivalIndexRef, startSearch, stopSearch,
   } = useScrapeProgress();
   const [dismissedSkips, setDismissedSkips] = useState<string[] | null>(null);
+  const dismissal = useJobDismissal({ setJobs, setErrors });
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [filters, setFilters] = useState<JobFilters>(DEFAULT_JOB_FILTERS);
 
@@ -252,6 +254,7 @@ export function SearchClient({ defaultCountry, defaultCity }: SearchClientProps)
     if (scraping || !query) return;
     mergeIntoSearchSession({ query, city, country });
     setFilters(DEFAULT_JOB_FILTERS);
+    dismissal.reset();
     void startSearch({ query, skillLevel, deepSearch, city, country });
   };
 
@@ -277,7 +280,8 @@ export function SearchClient({ defaultCountry, defaultCity }: SearchClientProps)
   };
 
   const filteredJobs = jobs.filter((job) => matchesFilters(job, filters));
-  const rankedJobs = [...filteredJobs].sort(bySimilarityDescending);
+  const rankedJobs = filteredJobs.filter(dismissal.isListed).sort(bySimilarityDescending);
+  const hiddenCount = dismissal.countHidden(filteredJobs);
   const cachedCount = filteredJobs.filter((job) => job.isStale).length;
   const statusText = describeSearchStatus(scraping, progress, sourceProgress, jobs.length);
   const showExampleQueries = !scraping && jobs.length === 0 && !progress;
@@ -285,7 +289,14 @@ export function SearchClient({ defaultCountry, defaultCity }: SearchClientProps)
   const showSkippedBoards = skippedSources.length > 0 && dismissedSkips !== skippedSources;
 
   const renderJobCard = (job: JobItem) => (
-    <JobCard key={job.id} job={job} isToggling={togglingId === job.id} onToggleFavourite={handleToggleFavourite} />
+    <JobCard
+      key={job.id}
+      job={job}
+      isToggling={togglingId === job.id}
+      onToggleFavourite={handleToggleFavourite}
+      onDismiss={dismissal.dismiss}
+      onUndismiss={dismissal.undismiss}
+    />
   );
 
   return (
@@ -438,6 +449,14 @@ export function SearchClient({ defaultCountry, defaultCity }: SearchClientProps)
               ? `${jobs.length} results`
               : `${filteredJobs.length} of ${jobs.length} results`}
             {cachedCount > 0 && ` · ${filteredJobs.length - cachedCount} fresh · ${cachedCount} cached`}
+            {hiddenCount > 0 && (
+              <>
+                {` · ${hiddenCount} hidden · `}
+                <ButtonBase onClick={dismissal.toggleShowHidden} sx={{ ...exampleLinkSx, color: ui.textMuted }}>
+                  {dismissal.showHidden ? "hide" : "show"}
+                </ButtonBase>
+              </>
+            )}
           </Typography>
         </>
       )}
