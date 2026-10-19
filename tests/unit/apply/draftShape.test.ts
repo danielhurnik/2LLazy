@@ -25,6 +25,20 @@ describe("anti-template checks", () => {
     expect(findUnsupportedClaims("Dobrý den,\n\nrád bych se naučil Kotlin.\n\nDaniel", cv, job, [])).toEqual([]);
   });
 
+  it("catches inflected domain terms and years borrowed from the ad", () => {
+    const cv = "Jsem vývojář s více než tříletou praxí ve vývoji SaaS aplikací. React, TypeScript.";
+    const job = "Budete pracovat s mapovými daty a geografickými informačními systémy. Požadujeme čtyři roky praxe.";
+    const draft = "Dobrý den,\n\nmám za sebou více než čtyři roky práce s React a v minulosti jsem se podílel na projektu, který využíval mapová data.\n\nDaniel";
+    const skills = ["GIS", "mapová data", "React"];
+    const flagged = findUnsupportedClaims(draft, cv, job, ["Daniel Hurník"], skills);
+    expect(flagged.some((f) => /mapov/i.test(f))).toBe(true);
+    expect(flagged.some((f) => /čtyři roky/i.test(f))).toBe(true);
+    const honest = "Dobrý den,\n\nmám za sebou více než tři roky práce s React a TypeScriptem a rád bych se naučil pracovat s mapovými daty.\n\nDaniel";
+    expect(findUnsupportedClaims(honest, cv, job, ["Daniel Hurník"], skills)).toEqual([]);
+    const ordinary = "Dobrý den,\n\nposledních pár let pracuji s React a využívám moderní nástroje.\n\nDaniel";
+    expect(findUnsupportedClaims(ordinary, cv, "V posledních letech využíváme moderní nástroje.", ["Daniel Hurník"], skills)).toEqual([]);
+  });
+
   it("drops the legal suffix from company names", () => {
     expect(shortCompanyName("Integra Czech Republic, s.r.o.")).toBe("Integra Czech Republic");
     expect(shortCompanyName("Dawiso a.s.")).toBe("Dawiso");
@@ -61,6 +75,15 @@ describe("enforceShape", () => {
   it("moves an inline signature onto its own last line", () => {
     const text = "Hello,\n\nI am applying for the role.\n\nBest regards, Daniel Hurník.";
     expect(enforceShape(text, false, NAME)).toBe("Hello,\n\nI am applying for the role.\n\nBest regards,\nDaniel Hurník");
+  });
+
+  it("drops anything the model wrote under the signature and never signs twice", () => {
+    const text = "Dobrý den,\n\nhlásím se.\n\nDaniel Hurník\nIntegra Czech Republic";
+    expect(enforceShape(text, true, NAME)).toBe("Dobrý den,\n\nhlásím se.\n\nDaniel Hurník");
+  });
+
+  it("lowercases a shouting first word", () => {
+    expect(enforceShape("Dobrý den,\n\nHLÁSÍM SE na pozici.\n\nDaniel Hurník", true, NAME)).toBe("Dobrý den,\n\nhlásím se na pozici.\n\nDaniel Hurník");
   });
 
   it("normalises a trailing period after the name", () => {

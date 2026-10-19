@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const OLLAMA_URL = (process.env.OLLAMA_URL ?? "http://127.0.0.1:11434").replace(/\/$/, "");
-const DEFAULT_MODEL = process.env.OLLAMA_MODEL ?? "llama3";
+const DEFAULT_MODEL = process.env.OLLAMA_MODEL ?? "gemma3:4b";
 const DEFAULT_EMBED_MODEL = process.env.OLLAMA_EMBED_MODEL ?? "nomic-embed-text";
 const OLLAMA_BUILTIN_NUM_CTX_THAT_SILENTLY_TRUNCATES = 4096;
 const DEFAULT_NUM_CTX = OLLAMA_BUILTIN_NUM_CTX_THAT_SILENTLY_TRUNCATES * 2;

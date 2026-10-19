@@ -66,6 +66,18 @@ Update 2026-10-20: dry runs now pass on startupjobs.cz (modal, rich-text message
 
 Not yet: a real (non-dry) submission with the user watching; Phase 2 ATS adapters (Greenhouse, Lever, Workable, SmartRecruiters, Teamtailor, Recruitee) and nofluffjobs/jooble, which need postings in the local DB to test against.
 
+## Model improvement track (brief for a separate session)
+
+The user's priorities, in their words: (1) correctly identifying form fields, (2) a cover letter that is not cringe and does not read as AI. They want to "develop our own ANN". What is realistic on this machine (Ryzen 5 3600, 16 GB RAM, RX 6600 XT 8 GB, Windows: Ollama inference via Vulkan only, no local training on the AMD GPU):
+
+1. **Field classifier (small, trainable here, CPU, seconds).** Input: a field descriptor (label, placeholder, name, id, type, autocomplete, select options) → output: `ProfileKey`. Features: `ollamaEmbed` (nomic-embed-text, 768-d) of the normalised descriptor text + a few one-hot flags (input type, required, has options). Model: logistic regression or a 1-hidden-layer MLP over the embedding. Training data: (a) the synonym tables in `fieldMatcher.ts` expanded into labelled examples, (b) every scanned field from real runs (`uploads/applications/<id>/log.txt` `step N: scan … fields:` lines plus the `plan:` line record what the heuristic decided), (c) corrections. Deployment: the classifier becomes one more signal in `scoreField` (ensemble with the heuristics), never the only one, and checkboxes stay rule-based (never tick an opt-in by prediction). Evaluate on held-out boards before trusting it.
+
+2. **Cover-letter model (LoRA fine-tune, trained off-box).** Base: gemma2:9b or a 2B–4B model for speed. Data: triples (CV text, job description, good letter) in Czech and English, written or curated by the user, plus the user's own edits of drafted messages (the gold signal). Train with QLoRA on a free cloud GPU (Colab/Kaggle), export the adapter as GGUF, load it in Ollama with a Modelfile (`FROM gemma2:9b` + `ADAPTER ./adapter.gguf`), then set `OLLAMA_WRITER_MODEL` to it. The prompt, the anti-template checks and the claims guard in `ollamaMapper.ts` stay in place around any model.
+
+3. **Data capture needed first.** Every draft already lands in `payload.json` and rejections in `log.txt`. Missing: the text the user actually sent when they finished a form by hand, and a thumbs-up/down on drafts. The cheapest way to get both is an optional "review the message before sending" step on the dashboard (the ui specialist can build it against `dryRun: true` + a follow-up submit), storing the edited text next to the draft. Without that signal there is nothing to fine-tune on.
+
+Interfaces the other session will touch: `src/lib/ollama.ts` (`ollamaChat`, `ollamaChatJson`, `ollamaEmbed`, `ollamaPickModel`), `src/lib/apply/ollamaMapper.ts` (`draftFreeText`, `findUnsupportedClaims`, `bannedPhrases`, `copiedPhrases`), `src/lib/apply/fieldMatcher.ts` (`scoreField`, `planFill`, `RULES`), unit tests under `tests/unit/apply/`.
+
 ## Coordination
 
 - Peer sessions (message by name): **ui specialist** (dashboard), **algorithm developer** (`src/lib/jobs/**`, migrations), **cleaner** (comment stripping; owns restarts of the shared `:3000` server).

@@ -30,6 +30,7 @@ export interface ApplyJob {
   sourceUrl: string;
   source: string;
   description: string;
+  skills: string[];
 }
 
 export type ApplyEvent =

@@ -90,6 +90,7 @@ export async function loadApplyInput(applicationId: string, userId: string): Pro
       sourceUrl: application.job.sourceUrl,
       source: application.job.source,
       description: application.job.description,
+      skills: application.job.skills,
     },
     profile: {
       name,

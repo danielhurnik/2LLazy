@@ -73,7 +73,8 @@ export async function mapFieldsWithOllama(fields: FieldDescriptor[], profile: Ap
 
   let parsed: z.infer<typeof MappingSchema>;
   try {
-    parsed = await ollamaChatJson([{ role: "user", content: prompt }], MappingSchema, { signal: AbortSignal.timeout(60_000) });
+    const model = await ollamaPickModel(JSON_MODEL_PREFERENCE);
+    parsed = await ollamaChatJson([{ role: "user", content: prompt }], MappingSchema, { model, signal: AbortSignal.timeout(60_000) });
   } catch {
     return { mapped: [], stillUnmatched: fields, used: true };
   }
@@ -91,7 +92,8 @@ export async function mapFieldsWithOllama(fields: FieldDescriptor[], profile: Ap
   return { mapped, stillUnmatched: fields.filter((f) => !taken.has(f)), used: true };
 }
 
-const WRITER_MODEL_PREFERENCE = [process.env.OLLAMA_WRITER_MODEL ?? "", "gemma3:12b", "gemma3:4b", "gemma2:9b", "qwen2.5:7b", "mistral-nemo", "llama3.1"].filter(Boolean);
+const WRITER_MODEL_PREFERENCE = [process.env.OLLAMA_WRITER_MODEL ?? "", "gemma3:4b", "gemma3:12b", "gemma2:9b", "qwen2.5:7b", "mistral-nemo", "llama3.1"].filter(Boolean);
+const JSON_MODEL_PREFERENCE = [process.env.OLLAMA_MODEL ?? "", "gemma3:4b", "gemma2:9b", "llama3"].filter(Boolean);
 const CZECH_LETTERS = /[ěščřžýáíéůúďťňĚŠČŘŽÝÁÍÉŮÚĎŤŇ]/;
 const PLACEHOLDER_LIKE = /[\[\]{}<>]|your name|jméno a příjmení|\(name\)|lorem ipsum|\*\*/i;
 const MIN_DRAFT_CHARS = 180;
@@ -173,15 +175,26 @@ export function copiedPhrases(draft: string, source: string, allowedText = ""): 
   return [...hits];
 }
 
-const EXPERIENCE_SENTENCE = /(zkušenost|praxi|pracoval|pracuji|dělám|dělal|umím|znám|ovládám|používám|používal|vyvíjel|vyvíjím|postavil|stavím|věnuji|věnoval|experience|worked|working|i know|i use|i used|familiar|proficient|skilled|i built|i develop|i have been)/i;
+const EXPERIENCE_SENTENCE = /(zkušenost|praxi|praxe|pracoval|pracuji|mám za sebou|dělám|dělal|umím|znám|ovládám|používám|používal|využíval|využívám|vyvíjel|vyvíjím|vyvinul|postavil|stavím|stavěl|vytvořil|tvořil|navrhl|navrhoval|implementoval|spolupracoval|podílel|vedl|řídil|věnuji|věnoval|\d+\s*(let|rok)|(let|rok)[yůu]?\b.*prax|experience|worked|working|i know|i use|i used|familiar|proficient|skilled|i built|i develop|i have been|i led|i designed|i implemented|i delivered|i shipped|contributed|years)/i;
+const CLAUSE_SPLIT = /[,;]|\s+a\s+(?=r[áa]d|cht[ěe]l|chci|zaj[ií]m)|\s+and\s+(?=i(?:'d| would| want| am interested)|which)/i;
+const WISH_CLAUSE = /(r[áa]d(a)? bych|cht[ěe]l(a)? bych|chci|zaj[ií]m[áa] m[ěe]|zaj[ií]malo by|nau[čc]il|roz[sš][ií][rř]il|posunout|would like|want to|interested in|learn|keen to|looking to|hope to)/i;
 
-function sentencesOf(text: string): string[] {
-  return text
+function claimClausesOf(text: string): string[] {
+  const clauses: string[] = [];
+  const sentences = text
     .split("\n")
     .slice(1)
     .flatMap((line) => line.split(/(?<=[.!?])\s+/))
     .map((s) => s.trim())
     .filter(Boolean);
+  for (const sentence of sentences) {
+    if (!EXPERIENCE_SENTENCE.test(sentence)) continue;
+    for (const clause of sentence.split(CLAUSE_SPLIT)) {
+      const trimmed = clause.trim();
+      if (trimmed && !WISH_CLAUSE.test(trimmed)) clauses.push(trimmed);
+    }
+  }
+  return clauses;
 }
 
 export function bannedPhrases(draft: string): string[] {
@@ -190,22 +203,67 @@ export function bannedPhrases(draft: string): string[] {
 
 const CLAIM_TOKEN = /\b[A-Z][A-Za-z0-9+#]*(?:\.[A-Za-z]+)?\b|\.NET\b/g;
 const CLAIM_STOPWORDS = new Set(["dobrý", "den", "hello", "dear", "s", "best", "kind", "regards", "cv", "ai", "it"]);
+const STEM_LENGTH = 5;
+const GENERIC_STEMS = new Set([
+  "pozic", "praci", "prace", "firma", "firmy", "firme", "vyvoj", "zkuse", "proje", "aplik", "softw", "techn", "nabid", "spole", "zivot", "pracu", "praxe", "praxi", "zajim", "roky", "rokyp", "tymu", "tymem", "nastr", "reseni", "resen", "pozad", "znalo", "dovedn", "doved", "kodu", "kod", "vyvoja", "vyvij", "pracov", "work", "exper", "posit", "compa", "team", "proje", "devel", "skill", "years", "role", "job", "appli", "build", "using", "with", "tools", "produ", "servi",
+]);
+const YEARS_CLAIM = /(?<![\p{L}\d])(\d{1,2}|jeden|jednoho|dva|dvou|tři|tří|čtyři|čtyř|pět|pěti|šest|šesti|sedm|sedmi|osm|osmi|devět|devíti|deset|deseti|one|two|three|four|five|six|seven|eight|nine|ten)\s*(\+|a více|or more)?\s*-?(let|roky|rok|roků|years?)(?:[ouáéý]\p{L}*)?/giu;
 
-export function findUnsupportedClaims(draft: string, cvText: string, jobDescription: string, allow: string[]): string[] {
+function stemsOf(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const word of wordList(normalizeForStem(text))) {
+    if (word.length >= STEM_LENGTH) out.add(word.slice(0, STEM_LENGTH));
+  }
+  return out;
+}
+
+function normalizeForStem(text: string): string {
+  return text.normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
+function numberKey(raw: string): string {
+  const word = normalizeForStem(raw.toLowerCase());
+  if (/^\d+$/.test(word)) return word;
+  const table: Record<string, string> = { jed: "1", dva: "2", dvo: "2", tri: "3", cty: "4", pet: "5", ses: "6", sed: "7", osm: "8", dev: "9", des: "10", one: "1", two: "2", thr: "3", fou: "4", fiv: "5", six: "6", sev: "7", eig: "8", nin: "9", ten: "10" };
+  return table[word.slice(0, 3)] ?? word;
+}
+
+function claimableTerms(jobDescription: string, skills: string[]): Set<string> {
+  const capitalised = (jobDescription.match(/(?<![.!?]\s)(?<!^)\b\p{Lu}[\p{L}\d+#.]{2,}/gmu) ?? []).filter((t) => !/^[A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ][a-záčďéěíňóřšťúůýž]+$/.test(t));
+  return stemsOf([...skills, ...capitalised].join(" "));
+}
+
+export function findUnsupportedClaims(draft: string, cvText: string, jobDescription: string, allow: string[], skills: string[] = []): string[] {
   const cv = cvText.toLowerCase();
   const job = jobDescription.toLowerCase();
   const allowed = new Set(allow.flatMap((a) => a.toLowerCase().split(/\s+/)));
-  const unsupported = new Set<string>();
-  for (const sentence of sentencesOf(draft)) {
-    if (!EXPERIENCE_SENTENCE.test(sentence)) continue;
+  const cvStems = stemsOf(cvText);
+  const jobStems = claimableTerms(jobDescription, skills);
+  const allowStems = stemsOf(allow.join(" "));
+  const cvNumbers = new Set([...cvText.matchAll(YEARS_CLAIM)].map((m) => numberKey(m[1])));
+  const unsupported = new Map<string, string>();
+  const flag = (term: string) => {
+    const key = normalizeForStem(term.toLowerCase());
+    if (!unsupported.has(key)) unsupported.set(key, term);
+  };
+  for (const sentence of claimClausesOf(draft)) {
     for (const token of sentence.match(CLAIM_TOKEN) ?? []) {
       const lower = token.toLowerCase();
       if (lower.length < 2 || CLAIM_STOPWORDS.has(lower) || allowed.has(lower)) continue;
       if (/^[A-Z][a-záčďéěíňóřšťúůýž]+$/.test(token) && sentence.startsWith(token)) continue;
-      if (job.includes(lower) && !cv.includes(lower)) unsupported.add(token);
+      if (job.includes(lower) && !cv.includes(lower)) flag(token);
+    }
+    for (const word of wordList(normalizeForStem(sentence))) {
+      if (word.length < STEM_LENGTH) continue;
+      const stem = word.slice(0, STEM_LENGTH);
+      if (GENERIC_STEMS.has(stem) || allowStems.has(stem) || cvStems.has(stem) || !jobStems.has(stem)) continue;
+      flag(word);
+    }
+    for (const match of sentence.matchAll(YEARS_CLAIM)) {
+      if (!cvNumbers.has(numberKey(match[1]))) flag(match[0].trim());
     }
   }
-  return [...unsupported];
+  return [...unsupported.values()];
 }
 
 function detectCzech(field: FieldDescriptor, job: ApplyJob): boolean {
@@ -292,7 +350,7 @@ export async function draftFreeText(
         continue;
       }
       const problems = [...bannedPhrases(text), ...copiedPhrases(text, job.description, `${title} ${company}`)];
-      if (cv) problems.push(...findUnsupportedClaims(text, profile.cvText ?? "", job.description, allow));
+      if (cv) problems.push(...findUnsupportedClaims(text, profile.cvText ?? "", job.description, allow, job.skills));
       if (problems.length > 0) {
         onReject(`${model} t=${temperature}: ${problems.join(" | ")}`);
         forbidden = [...new Set([...forbidden, ...problems])];
@@ -314,12 +372,20 @@ const SIGNOFF_LINE = /^(s (pozdravem|úctou|přáním hezkého dne)|best regards
 
 export function enforceShape(text: string, czech: boolean, name: string): string {
   const lines = text.split("\n").map((l) => l.trim());
+  const isNameLine = (line: string) => line.replace(/[.,!]$/, "").trim().toLowerCase() === name.trim().toLowerCase();
+  for (let i = lines.length - 1; i >= Math.max(1, lines.length - 5); i -= 1) {
+    if (isNameLine(lines[i])) {
+      lines.splice(i + 1);
+      break;
+    }
+  }
   const greeting = czech ? "Dobrý den," : "Hello,";
   if (lines.length && GREETING_LINE.test(lines[0])) lines[0] = greeting;
   else lines.unshift(greeting, "");
-  if (czech) {
-    const bodyIndex = lines.findIndex((l, i) => i > 0 && l.length > 0);
-    if (bodyIndex > 0) lines[bodyIndex] = lines[bodyIndex].charAt(0).toLowerCase() + lines[bodyIndex].slice(1);
+  const bodyIndex = lines.findIndex((l, i) => i > 0 && l.length > 0);
+  if (bodyIndex > 0) {
+    lines[bodyIndex] = lines[bodyIndex].replace(/^(\p{Lu}{2,}(?:\s+\p{Lu}{2,})*)/u, (shouting) => shouting.toLowerCase());
+    if (czech) lines[bodyIndex] = lines[bodyIndex].charAt(0).toLowerCase() + lines[bodyIndex].slice(1);
   }
   const nameLine = name.trim();
   const lastLine = lines[lines.length - 1] ?? "";
