@@ -22,14 +22,14 @@ export interface SearchRequest {
 
 export type ApplyPathKind = "board-form" | "ats-form" | "ats-api" | "email";
 
-export interface ApplyPath {
+export type ApplyPath = {
   kind: ApplyPathKind;
   url?: string;
   ats?: string;
   slug?: string;
   postingId?: string;
   email?: string;
-}
+};
 
 export interface RawJob {
   title: string;
