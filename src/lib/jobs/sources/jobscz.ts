@@ -1,7 +1,7 @@
 import { isPlaywrightEnabled, pwFetchHtml } from "@/lib/scrapers/playwright-browser";
 import * as cheerio from "cheerio";
 import { normalizeText } from "../dedupe";
-import { absoluteUrl, blockText, collapseWhitespace, fetchHtml, mainText } from "../http";
+import { absoluteUrl, blockText, collapseWhitespace, fetchHtml, HttpError, mainText } from "../http";
 import type { FetchContext, JobSource, Listing, RawJob } from "./types";
 
 const BASE = "https://www.jobs.cz";
@@ -10,6 +10,7 @@ const DEEP_SEARCH_PAGES = 3;
 const ONE_DAY_MS = 86_400_000;
 const MONTH_PREFIX_LENGTH = 3;
 const MIN_COMPLETE_DESCRIPTION_LENGTH = 200;
+const GONE_STATUSES = new Set([404, 410]);
 
 const CZECH_MONTHS = ["ledna", "února", "března", "dubna", "května", "června", "července", "srpna", "září", "října", "listopadu", "prosince"];
 const CZECH_DAY_AND_MONTH = /^(\d{1,2})\.\s*([a-záéíóúůýčďěňřšťž]+)/i;
@@ -102,6 +103,7 @@ async function serverRenderedDescription(listing: Listing, ctx: FetchContext): P
     const { $ } = await fetchHtml(listing.url, { signal: ctx.signal });
     return { body: descriptionBody($), meta: metaDescription($) };
   } catch (err) {
+    if (err instanceof HttpError && GONE_STATUSES.has(err.status)) throw err;
     ctx.log(`detail fetch failed for ${listing.url}: ${String(err)}`);
     return { body: "", meta: "" };
   }

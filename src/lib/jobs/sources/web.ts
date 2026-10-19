@@ -1,7 +1,7 @@
 import * as cheerio from "cheerio";
 import { batchProcess } from "@/lib/scrapers/utils";
 import { normalizeText } from "../dedupe";
-import { absoluteUrl, fetchHtml, fetchText } from "../http";
+import { absoluteUrl, fetchHtml, fetchText, HttpError } from "../http";
 import { detectCity } from "../normalize";
 import { knownWebHosts, recordWebHost } from "../repo";
 import { tokens } from "../score";
@@ -30,6 +30,7 @@ const LOCAL_TITLE_WORDS: Record<CountryCode, Array<[RegExp, string]>> = {
   ],
 };
 const DETAIL_ID_IN_PATH = /\d{3,}/;
+const GONE_STATUSES = new Set([404, 410]);
 const MIN_DETAIL_PATH_DEPTH = 2;
 const COUNTRY_WORDS: Record<CountryCode, RegExp> = { CZ: /czech|česk|czechia|\bcz\b/i };
 const BOARDS_ALREADY_COVERED = ["jobs.cz", "prace.cz", "startupjobs.cz", "jobstack.it", "cocuma.cz", "skilleto.cz", "nofluffjobs.com", "jooble.org"];
@@ -225,5 +226,17 @@ export const webSource: JobSource = {
     for (const listing of listings) await recordWebHost(hostOf(listing.url));
     ctx.log(`${listings.length} postings found on ${new Set(listings.map((listing) => hostOf(listing.url))).size} sites`);
     if (listings.length > 0) yield listings;
+  },
+
+  async detail(listing, ctx): Promise<RawJob | null> {
+    let page: { $: cheerio.CheerioAPI; url: string };
+    try {
+      page = await fetchHtml(listing.url, { signal: ctx.signal });
+    } catch (err) {
+      if (err instanceof HttpError && GONE_STATUSES.has(err.status)) return null;
+      throw err;
+    }
+    const posting = jobPostingsIn(page.$).find((candidate) => locatedInCountryOrUnknown(candidate, ctx.request.country));
+    return posting ? toRawJob(posting, listing.url) : null;
   },
 };
