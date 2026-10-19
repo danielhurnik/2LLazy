@@ -50,11 +50,6 @@ export interface RetrainResult {
   positives: number;
 }
 
-export async function dismissedIdsFor(userId: string): Promise<Set<string>> {
-  const rows = await prisma.jobFeedback.findMany({ where: { userId, signal: "DISMISSED" }, select: { jobId: true } });
-  return new Set(rows.map((row) => row.jobId));
-}
-
 export async function recordDismissal(userId: string, jobId: string): Promise<void> {
   await prisma.jobFeedback.upsert({
     where: { userId_jobId_signal: { userId, jobId, signal: "DISMISSED" } },
