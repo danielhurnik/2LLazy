@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Box, Typography } from "@mui/material";
-import { ui, fonts } from "@/theme/theme";
+import { ui, fonts } from "@/theme/tokens";
 
 interface PageHeaderProps {
   title: string;

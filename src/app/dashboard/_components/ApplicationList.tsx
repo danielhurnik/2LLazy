@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ApplicationCard } from "@/components/dashboard/ApplicationCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import type { Application, AppStatus } from "@/types";
-import { ui, fonts } from "@/theme/theme";
+import { ui, fonts } from "@/theme/tokens";
 
 interface Props {
   applications: Application[];

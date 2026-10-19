@@ -8,7 +8,10 @@ import { z } from "zod";
 import { applicationTag } from "@/lib/data/applications";
 import { requireUserId } from "@/lib/auth/sessionManager";
 
+const MAX_NOTES_LENGTH = 5000;
+
 const ApplicationStatusSchema = z.enum(ApplicationStatus);
+const ApplicationNotesSchema = z.string().max(MAX_NOTES_LENGTH);
 
 async function updateOwnedApplication(
   userId: string,
@@ -31,5 +34,5 @@ export async function updateApplicationStatus(
 
 export async function updateApplicationNotes(id: string, notes: string): Promise<void> {
   const userId = await requireUserId();
-  await updateOwnedApplication(userId, id, { notes });
+  await updateOwnedApplication(userId, id, { notes: ApplicationNotesSchema.parse(notes) });
 }

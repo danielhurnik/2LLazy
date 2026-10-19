@@ -9,7 +9,7 @@ import {
   PositionFilterField,
   SourceFilterSelect,
 } from "@/components/jobs/JobFilterBar";
-import { ui, fonts } from "@/theme/theme";
+import { ui, fonts } from "@/theme/tokens";
 
 export interface DashboardFilters {
   status: string;

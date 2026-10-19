@@ -7,6 +7,8 @@ const INTERVIEWS_TAG = "interviews";
 export const interviewTag = (userId: string) => `${INTERVIEWS_TAG}:${userId}`;
 
 const CALENDAR_CACHE_SECONDS = 60;
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const PADDING_COVERING_EVERY_UTC_OFFSET_MS = ONE_DAY_MS;
 
 const INTERVIEW_INCLUDE = {
   application: { include: { job: true } },
@@ -14,10 +16,13 @@ const INTERVIEW_INCLUDE = {
 
 type InterviewWithJob = Prisma.InterviewGetPayload<{ include: typeof INTERVIEW_INCLUDE }>;
 
-function withinMonth(month: number, year: number) {
-  const firstDayOfMonth = new Date(year, month - 1, 1);
-  const firstDayOfNextMonth = new Date(year, month, 1);
-  return { gte: firstDayOfMonth, lt: firstDayOfNextMonth } satisfies Prisma.DateTimeFilter;
+function monthWindowInEveryTimezone(month: number, year: number) {
+  const monthStartUtc = Date.UTC(year, month - 1, 1);
+  const nextMonthStartUtc = Date.UTC(year, month, 1);
+  return {
+    gte: new Date(monthStartUtc - PADDING_COVERING_EVERY_UTC_OFFSET_MS),
+    lt: new Date(nextMonthStartUtc + PADDING_COVERING_EVERY_UTC_OFFSET_MS),
+  } satisfies Prisma.DateTimeFilter;
 }
 
 function toInterviewEntry(interview: InterviewWithJob): CalendarEntry {
@@ -51,7 +56,7 @@ async function findCalendarEntriesForMonth(
   month: number,
   year: number,
 ): Promise<CalendarEntry[]> {
-  const scheduledAt = withinMonth(month, year);
+  const scheduledAt = monthWindowInEveryTimezone(month, year);
 
   const [interviews, events] = await Promise.all([
     prisma.interview.findMany({

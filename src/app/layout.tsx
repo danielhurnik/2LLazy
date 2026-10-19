@@ -5,6 +5,7 @@ import "./globals.css";
 import { AppRouterCacheProvider } from "@mui/material-nextjs/v16-appRouter";
 import { Providers } from "@/components/Providers";
 import { AppShell } from "@/components/AppShell";
+import { cssColorVariables } from "@/theme/tokens";
 
 const sansFont = Schibsted_Grotesk({
   subsets: ["latin", "latin-ext"],
@@ -28,7 +29,7 @@ export default function RootLayout({
   children: ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${sansFont.variable} ${monoFont.variable}`}>
+    <html lang="en" className={`${sansFont.variable} ${monoFont.variable}`} style={cssColorVariables}>
       <body>
         <AppRouterCacheProvider>
           <Providers>

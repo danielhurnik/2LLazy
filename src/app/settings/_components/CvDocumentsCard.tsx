@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useTransition, useState } from "react";
+import { useTimedMessage } from "./useTimedMessage";
 import type { ReactNode } from "react";
 import {
   Box,
@@ -16,13 +17,15 @@ import {
 } from "@mui/material";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
-import { ui, fonts } from "@/theme/theme";
+import { ui, fonts } from "@/theme/tokens";
 import type { UploadedFile } from "@/types";
 import { uploadCvAction, deleteUploadedFileAction } from "@/lib/actions/settingsActions";
 
 const UPLOAD_INPUT_ID = "cv-upload-input";
 const ACCEPTED_FILE_TYPES = ".pdf,.docx,.doc,.txt";
 const BYTES_PER_KILOBYTE = 1024;
+const MESSAGE_VISIBLE_MS = 6000;
+const DELETE_FAILED_MESSAGE = "File could not be deleted. Try again.";
 
 const formatKilobytes = (bytes: number) => `${(bytes / BYTES_PER_KILOBYTE).toFixed(1)} KB`;
 
@@ -82,18 +85,33 @@ function UploadedFileRow({
 }
 
 export function CvDocumentsCard({ uploadedFiles }: Props) {
-  const [uploadState, uploadFormAction, isUploading] = useActionState(uploadCvAction, null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const { message, showMessage, clearMessage } = useTimedMessage(MESSAGE_VISIBLE_MS);
+  const [, uploadFormAction, isUploading] = useActionState(
+    async (previous: Awaited<ReturnType<typeof uploadCvAction>> | null, formData: FormData) => {
+      clearMessage();
+      const result = await uploadCvAction(previous, formData);
+      if (result.error) showMessage("error", result.error);
+      else if (result.filename) showMessage("success", `Uploaded: ${result.filename}`);
+      return result;
+    },
+    null,
+  );
   const [deletingFileId, setDeletingFileId] = useState<string | null>(null);
   const [, startDeleteTransition] = useTransition();
   const hasFiles = uploadedFiles.length > 0;
 
   const handleDelete = (id: string) => {
+    clearMessage();
     setDeletingFileId(id);
     startDeleteTransition(async () => {
-      const result = await deleteUploadedFileAction(id);
-      if (result.error) setDeleteError(result.error);
-      setDeletingFileId(null);
+      try {
+        const result = await deleteUploadedFileAction(id);
+        if (result.error) showMessage("error", result.error);
+      } catch {
+        showMessage("error", DELETE_FAILED_MESSAGE);
+      } finally {
+        setDeletingFileId(null);
+      }
     });
   };
 
@@ -102,24 +120,13 @@ export function CvDocumentsCard({ uploadedFiles }: Props) {
       <CardContent>
         <Typography variant="h6">CV and documents</Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25, mb: 2 }}>
-          Files named <InlineCode>cv.*</InlineCode> or{" "}
-          <InlineCode>resume.*</InlineCode> are
-          treated as your main CV.
+          Your most recently uploaded file is used as your CV. Accepted:{" "}
+          <InlineCode>{ACCEPTED_FILE_TYPES}</InlineCode>
         </Typography>
 
-        {uploadState?.error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {uploadState.error}
-          </Alert>
-        )}
-        {deleteError && (
-          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setDeleteError(null)}>
-            {deleteError}
-          </Alert>
-        )}
-        {uploadState?.filename && (
-          <Alert severity="success" sx={{ mb: 2 }}>
-            Uploaded: {uploadState.filename}
+        {message && (
+          <Alert severity={message.type} onClose={clearMessage} sx={{ mb: 2 }}>
+            {message.text}
           </Alert>
         )}
 

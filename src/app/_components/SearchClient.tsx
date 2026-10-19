@@ -30,7 +30,7 @@ import { SkippedBoardsNote } from "@/components/jobs/SkippedBoardsNote";
 import type { JobItem } from "@/types";
 import { useScrapeProgress, PROGRESS_DONE_EMPTY, PROGRESS_STOPPED } from "@/context/ScrapeProgressContext";
 import { COUNTRY_NAMES, isSupportedCountry, type CountryCode } from "@/lib/jobs/sources/types";
-import { ui, fonts } from "@/theme/theme";
+import { ui, fonts } from "@/theme/tokens";
 
 const ANY_LEVEL = "Any";
 const SKILL_LEVELS = ["Junior", "Mid", "Senior", "Lead", ANY_LEVEL];

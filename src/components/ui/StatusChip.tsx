@@ -1,6 +1,6 @@
 import { Box, Chip } from "@mui/material";
 import { STATUS_COLOR, STATUS_LABEL, type AppStatus } from "@/types";
-import { ui } from "@/theme/theme";
+import { ui } from "@/theme/tokens";
 
 type StatusChipColor = (typeof STATUS_COLOR)[AppStatus];
 

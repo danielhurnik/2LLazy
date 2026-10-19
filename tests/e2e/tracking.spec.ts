@@ -1,11 +1,14 @@
 import { test, expect } from "@playwright/test";
-import type { Page } from "@playwright/test";
+import type { Page, Response } from "@playwright/test";
 import path from "path";
 import fs from "fs";
 
 const AUTH_FILE = path.join(__dirname, "../.auth/user.json");
 const LOGIN_PATH = "/login";
 const ABSOLUTE_HTTP_URL = /^https?:\/\//;
+const FIRST_SERVER_ERROR_STATUS = 500;
+const SOURCE_POSTING_LINK_NAME = /^Open posting on /;
+const ERROR_BOUNDARY_TEXT = /Something went wrong|didn.t load|Internal Server Error/i;
 
 function hasSavedAuthState(): boolean {
   if (!fs.existsSync(AUTH_FILE)) return false;
@@ -17,9 +20,10 @@ function hasSavedAuthState(): boolean {
   }
 }
 
-async function openOrSkipWhenLoggedOut(page: Page, route: string): Promise<void> {
-  await page.goto(route);
+async function openOrSkipWhenLoggedOut(page: Page, route: string): Promise<Response | null> {
+  const response = await page.goto(route);
   if (page.url().includes(LOGIN_PATH)) test.skip();
+  return response;
 }
 
 test.describe("Tracking — saved jobs and dashboard", () => {
@@ -28,9 +32,10 @@ test.describe("Tracking — saved jobs and dashboard", () => {
   test.use({ storageState: AUTH_FILE });
 
   test("Saved page loads and shows Track buttons if jobs are saved", async ({ page }) => {
-    await openOrSkipWhenLoggedOut(page, "/favourites");
+    const response = await openOrSkipWhenLoggedOut(page, "/favourites");
 
-    await expect(page.locator("body")).not.toContainText("500");
+    expect(response?.status() ?? 0).toBeLessThan(FIRST_SERVER_ERROR_STATUS);
+    await expect(page.getByText(ERROR_BOUNDARY_TEXT)).toHaveCount(0);
 
     const trackButtons = page.getByRole("button", { name: /track/i });
     if ((await trackButtons.count()) === 0) {
@@ -54,7 +59,7 @@ test.describe("Tracking — saved jobs and dashboard", () => {
       return;
     }
 
-    const openLink = applicationCards.first().locator('a[target="_blank"]');
+    const openLink = applicationCards.first().getByRole("link", { name: SOURCE_POSTING_LINK_NAME });
     await expect(openLink).toBeVisible();
     const href = await openLink.getAttribute("href");
     expect(href).toBeTruthy();

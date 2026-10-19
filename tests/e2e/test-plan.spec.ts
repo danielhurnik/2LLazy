@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import type { Browser, BrowserContext, Locator, Page } from "@playwright/test";
+import type { Browser, Locator, Page, Response } from "@playwright/test";
 import path from "path";
 import fs from "fs";
 
@@ -27,7 +27,8 @@ const TOP_RESULTS_SAMPLE_SIZE = 10;
 const MAX_OFF_DOMAIN_RESULTS = 2;
 const MIN_CARDS_TO_COMPARE_ORDER = 2;
 
-const SERVER_ERROR_STATUS_TEXT = "500";
+const FIRST_SERVER_ERROR_STATUS = 500;
+const ERROR_BOUNDARY_TEXT = /Something went wrong|didn.t load|Internal Server Error/i;
 
 function hasSavedAuthState(): boolean {
   if (!fs.existsSync(AUTH_FILE)) return false;
@@ -49,9 +50,10 @@ const stopButton = (page: Page) => page.getByRole("button", { name: STOP_BUTTON_
 const jobCards = (page: Page) => page.locator(CARD_SELECTOR).filter({ has: page.locator(JOB_TITLE_SELECTOR) });
 const chipsWithText = (page: Page, text: string | RegExp) => page.locator(CHIP_SELECTOR).filter({ hasText: text });
 
-async function openOrSkipWhenLoggedOut(page: Page, route: string): Promise<void> {
-  await page.goto(route);
+async function openOrSkipWhenLoggedOut(page: Page, route: string): Promise<Response | null> {
+  const response = await page.goto(route);
   if (page.url().includes(LOGIN_PATH)) test.skip();
+  return response;
 }
 
 async function submitSearch(page: Page, query: string): Promise<void> {
@@ -90,18 +92,24 @@ function repeatedValues(values: string[]): string[] {
   return values.filter((value, index) => values.indexOf(value) !== index);
 }
 
-async function openLoggedOutPage(
+async function withLoggedOutPage(
   browser: Browser,
   route: string,
-): Promise<{ context: BrowserContext; page: Page }> {
+  check: (page: Page) => Promise<void>,
+): Promise<void> {
   const context = await browser.newContext({ storageState: undefined });
-  const page = await context.newPage();
-  await page.goto(route);
-  return { context, page };
+  try {
+    const page = await context.newPage();
+    await page.goto(route);
+    await check(page);
+  } finally {
+    await context.close();
+  }
 }
 
-async function expectNoServerErrorStatus(page: Page): Promise<void> {
-  await expect(page.locator("body")).not.toContainText(SERVER_ERROR_STATUS_TEXT);
+async function expectRenderedWithoutServerError(page: Page, response: Response | null): Promise<void> {
+  expect(response?.status() ?? 0).toBeLessThan(FIRST_SERVER_ERROR_STATUS);
+  await expect(page.getByText(ERROR_BOUNDARY_TEXT)).toHaveCount(0);
 }
 
 test.describe("1 — Intent Engine + Domain Boundary", () => {
@@ -240,22 +248,21 @@ test.describe("5 — Cached Results (pgvector)", () => {
 
 test.describe("7 — App Health Checks", () => {
   test("Login page renders the sign-in button", async ({ browser }) => {
-    const { context, page } = await openLoggedOutPage(browser, LOGIN_PATH);
-    const signInButton = page.getByRole("button", { name: /continue with google/i });
-    await expect(signInButton).toBeVisible();
-    await context.close();
+    await withLoggedOutPage(browser, LOGIN_PATH, async (page) => {
+      await expect(page.getByRole("button", { name: /continue with google/i })).toBeVisible();
+    });
   });
 
   test("Unauthenticated user is redirected to /login", async ({ browser }) => {
-    const { context, page } = await openLoggedOutPage(browser, HOME_PATH);
-    expect(page.url()).toContain(LOGIN_PATH);
-    await context.close();
+    await withLoggedOutPage(browser, HOME_PATH, async (page) => {
+      expect(page.url()).toContain(LOGIN_PATH);
+    });
   });
 
   test("Dashboard redirects to /login if unauthenticated", async ({ browser }) => {
-    const { context, page } = await openLoggedOutPage(browser, "/dashboard");
-    expect(page.url()).toContain(LOGIN_PATH);
-    await context.close();
+    await withLoggedOutPage(browser, "/dashboard", async (page) => {
+      expect(page.url()).toContain(LOGIN_PATH);
+    });
   });
 
   test("Authenticated user sees the sidebar nav", async ({ page }) => {
@@ -280,23 +287,22 @@ test.describe("7 — App Health Checks", () => {
   });
 
   test("/stats page renders without crashing", async ({ page }) => {
-    await openOrSkipWhenLoggedOut(page, "/stats");
-    await expectNoServerErrorStatus(page);
-    await expect(page.locator("body")).not.toContainText("Internal Server Error");
+    const response = await openOrSkipWhenLoggedOut(page, "/stats");
+    await expectRenderedWithoutServerError(page, response);
   });
 
   test("/interviews page renders without crashing", async ({ page }) => {
-    await openOrSkipWhenLoggedOut(page, "/interviews");
-    await expectNoServerErrorStatus(page);
+    const response = await openOrSkipWhenLoggedOut(page, "/interviews");
+    await expectRenderedWithoutServerError(page, response);
   });
 
   test("/settings page renders without crashing", async ({ page }) => {
-    await openOrSkipWhenLoggedOut(page, "/settings");
-    await expectNoServerErrorStatus(page);
+    const response = await openOrSkipWhenLoggedOut(page, "/settings");
+    await expectRenderedWithoutServerError(page, response);
   });
 
   test("/favourites page renders without crashing", async ({ page }) => {
-    await openOrSkipWhenLoggedOut(page, "/favourites");
-    await expectNoServerErrorStatus(page);
+    const response = await openOrSkipWhenLoggedOut(page, "/favourites");
+    await expectRenderedWithoutServerError(page, response);
   });
 });

@@ -19,7 +19,7 @@ import BookmarkIcon from "@mui/icons-material/Bookmark";
 import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";
 import type { JobItem } from "@/types";
 import { sourceLabel } from "@/types";
-import { ui, fonts } from "@/theme/theme";
+import { ui, fonts } from "@/theme/tokens";
 
 interface JobCardProps {
   job: JobItem;

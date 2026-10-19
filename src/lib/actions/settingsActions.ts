@@ -3,12 +3,10 @@
 import { revalidatePath, updateTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import path from "path";
-import { randomUUID } from "crypto";
 import { settingsTag } from "@/lib/data/settings";
 import { requireUserId } from "@/lib/auth/sessionManager";
 import { isSupportedCountry, type CountryCode } from "@/lib/jobs/sources/types";
 
-const ALLOWED_EXTENSIONS = new Set([".pdf", ".docx", ".doc", ".txt"]);
 const BYTES_PER_MEGABYTE = 1024 * 1024;
 const MAX_FILE_SIZE_MB = 10;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * BYTES_PER_MEGABYTE;
@@ -16,17 +14,16 @@ const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * BYTES_PER_MEGABYTE;
 const PDF_SIGNATURE = [0x25, 0x50, 0x44, 0x46];
 const DOCX_ZIP_SIGNATURE = [0x50, 0x4b, 0x03, 0x04];
 const DOC_OLE2_SIGNATURE = [0xd0, 0xcf, 0x11, 0xe0];
-const BINARY_DOCUMENT_SIGNATURES = [PDF_SIGNATURE, DOCX_ZIP_SIGNATURE, DOC_OLE2_SIGNATURE];
 
-const PLAIN_TEXT_SNIFF_LENGTH = 512;
 const TAB = 0x09;
 const LINE_FEED = 0x0a;
+const FORM_FEED = 0x0c;
 const CARRIAGE_RETURN = 0x0d;
-const FIRST_PRINTABLE_ASCII = 0x20;
-const LAST_PRINTABLE_ASCII = 0x7e;
-const TEXT_WHITESPACE_BYTES = new Set([TAB, LINE_FEED, CARRIAGE_RETURN]);
+const FIRST_NON_CONTROL_CODE = 0x20;
+const DELETE_CODE = 0x7f;
+const TEXT_LAYOUT_CONTROL_CODES = new Set([TAB, LINE_FEED, FORM_FEED, CARRIAGE_RETURN]);
 
-const UNSAFE_FILENAME_CHARACTERS = /[^a-zA-Z0-9._-]/g;
+const UNSAFE_FILENAME_CHARACTERS = /[^\p{L}\p{N}._ -]/gu;
 
 const GOOGLE_PROVIDER = "google";
 const CALENDAR_SCOPE_FRAGMENT = "calendar";
@@ -50,31 +47,40 @@ interface EditableProfileFields extends Omit<UserProfileInput, "country" | "city
   city?: string | null;
 }
 
-function isPlainTextByte(byte: number): boolean {
-  return (
-    TEXT_WHITESPACE_BYTES.has(byte) ||
-    (byte >= FIRST_PRINTABLE_ASCII && byte <= LAST_PRINTABLE_ASCII)
-  );
-}
-
-function looksLikePlainText(content: Buffer): boolean {
-  return content.subarray(0, PLAIN_TEXT_SNIFF_LENGTH).every(isPlainTextByte);
-}
-
 function startsWithSignature(content: Buffer, signature: number[]): boolean {
   return signature.every((byte, index) => content[index] === byte);
 }
 
-function hasRecognisedDocumentContent(content: Buffer): boolean {
-  return (
-    looksLikePlainText(content) ||
-    BINARY_DOCUMENT_SIGNATURES.some((signature) => startsWithSignature(content, signature))
-  );
+function isBinaryOrDeleteControlCode(code: number): boolean {
+  return (code < FIRST_NON_CONTROL_CODE && !TEXT_LAYOUT_CONTROL_CODES.has(code)) || code === DELETE_CODE;
+}
+
+function isUtf8Text(content: Buffer): boolean {
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(content);
+  } catch {
+    return false;
+  }
+  for (let index = 0; index < text.length; index++) {
+    if (isBinaryOrDeleteControlCode(text.charCodeAt(index))) return false;
+  }
+  return true;
+}
+
+const CONTENT_CHECK_BY_EXTENSION: Record<string, (content: Buffer) => boolean> = {
+  ".pdf": (content) => startsWithSignature(content, PDF_SIGNATURE),
+  ".docx": (content) => startsWithSignature(content, DOCX_ZIP_SIGNATURE),
+  ".doc": (content) => startsWithSignature(content, DOC_OLE2_SIGNATURE),
+  ".txt": isUtf8Text,
+};
+
+function contentCheckFor(extension: string): ((content: Buffer) => boolean) | undefined {
+  return Object.hasOwn(CONTENT_CHECK_BY_EXTENSION, extension) ? CONTENT_CHECK_BY_EXTENSION[extension] : undefined;
 }
 
 function toStoredFileName(originalName: string): string {
-  const sanitisedBaseName = path.basename(originalName).replace(UNSAFE_FILENAME_CHARACTERS, "_");
-  return `${randomUUID()}-${sanitisedBaseName}`;
+  return path.basename(originalName).replace(UNSAFE_FILENAME_CHARACTERS, "_");
 }
 
 function revalidateSettings(userId: string): void {
@@ -91,13 +97,11 @@ export async function uploadCvAction(
   if (!file || typeof file === "string" || !file.name) return { error: "No file provided" };
   if (file.size > MAX_FILE_SIZE_BYTES) return { error: `File too large (max ${MAX_FILE_SIZE_MB} MB)` };
 
-  const extension = path.extname(file.name).toLowerCase();
-  if (!ALLOWED_EXTENSIONS.has(extension))
-    return { error: "Only PDF, DOCX, DOC, and TXT files are allowed" };
+  const matchesDeclaredType = contentCheckFor(path.extname(file.name).toLowerCase());
+  if (!matchesDeclaredType) return { error: "Only PDF, DOCX, DOC, and TXT files are allowed" };
 
   const content = Buffer.from(await file.arrayBuffer());
-  if (!hasRecognisedDocumentContent(content))
-    return { error: "File content does not match its declared type" };
+  if (!matchesDeclaredType(content)) return { error: "File content does not match its declared type" };
 
   const storedFileName = toStoredFileName(file.name);
   await prisma.cvDocument.create({

@@ -1,7 +1,7 @@
 import { Box, ButtonBase, Stack, Typography, alpha } from "@mui/material";
 import dayjs from "dayjs";
 import type { CalendarEntry } from "@/types";
-import { ui, fonts } from "@/theme/theme";
+import { ui, fonts } from "@/theme/tokens";
 
 const DAYS_PER_WEEK = 7;
 const DAY_BADGE_SIZE_PX = 22;

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Box, Typography } from "@mui/material";
-import { ui } from "@/theme/theme";
+import { ui } from "@/theme/tokens";
 
 interface EmptyStateProps {
   title: string;

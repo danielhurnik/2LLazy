@@ -14,7 +14,7 @@ import {
 } from "@mui/material";
 import type { Application } from "@/types";
 import type { AutoApplyRun } from "./useAutoApply";
-import { ui, fonts } from "@/theme/theme";
+import { ui, fonts } from "@/theme/tokens";
 
 const SCREENSHOT_MAX_HEIGHT = 220;
 const RUN_IN_PROGRESS_NOTE = "A run is in progress. Refresh to see the result.";

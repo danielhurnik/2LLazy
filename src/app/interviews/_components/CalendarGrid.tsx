@@ -3,7 +3,7 @@ import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
 import { CalendarDayCell } from "./CalendarDayCell";
 import type { CalendarEntry } from "@/types";
-import { ui } from "@/theme/theme";
+import { ui } from "@/theme/tokens";
 
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const DAYS_PER_WEEK = WEEKDAY_LABELS.length;

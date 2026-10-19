@@ -20,6 +20,7 @@ import type { CalendarEntry, CalendarEventForm } from "@/types";
 
 const DATETIME_LOCAL_FORMAT = "YYYY-MM-DDTHH:mm";
 const TOAST_AUTO_HIDE_MS = 5000;
+const REFRESH_FAILED_MESSAGE = "Saved, but the calendar could not be refreshed. Reload the page.";
 
 const DEFAULT_FORM: CalendarEventForm = {
   title: "",
@@ -41,13 +42,23 @@ interface Toast {
   severity: "success" | "error";
 }
 
+interface DisplayedMonth {
+  month: Dayjs;
+  entries: CalendarEntry[];
+}
+
 type MonthStep = 1 | -1;
 
 interface Props {
   initialEntries: CalendarEntry[];
   month: number;
   year: number;
+  followsLocalToday: boolean;
 }
+
+const prefetchIsBestEffort = () => {};
+
+const startOfMonth = (month: number, year: number) => dayjs(new Date(year, month - 1, 1));
 
 const toOneBasedMonth = (date: Dayjs) => date.month() + 1;
 
@@ -63,6 +74,16 @@ const toEventForm = (entry: CalendarEntry): CalendarEventForm => ({
   notes: entry.notes ?? "",
 });
 
+function withLocalTimeAsInstant(form: CalendarEventForm): CalendarEventForm {
+  const localTime = dayjs(form.scheduledAt);
+  return localTime.isValid() ? { ...form, scheduledAt: localTime.toISOString() } : form;
+}
+
+const entriesWithinMonth = ({ month, entries }: DisplayedMonth) =>
+  entries.filter((entry) => dayjs(entry.scheduledAt).isSame(month, "month"));
+
+const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
 function describeMonth(entryCount: number, monthName: string) {
   if (entryCount === 0) {
     return `Nothing scheduled in ${monthName} · double-click a day to add something`;
@@ -70,16 +91,23 @@ function describeMonth(entryCount: number, monthName: string) {
   return `${entryCount} scheduled in ${monthName}`;
 }
 
-export function InterviewsClient({ initialEntries, month, year }: Props) {
+export function InterviewsClient({ initialEntries, month, year, followsLocalToday }: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [isNavigating, setIsNavigating] = useState(false);
 
-  const [initialMonth] = useState(() => dayjs(new Date(year, month - 1, 1)));
-  const [currentMonth, setCurrentMonth] = useState(initialMonth);
-  const [entries, setEntries] = useState<CalendarEntry[]>(initialEntries);
+  const [displayed, setDisplayed] = useState<DisplayedMonth>(() => ({
+    month: startOfMonth(month, year),
+    entries: initialEntries,
+  }));
+  const [entriesFromServer, setEntriesFromServer] = useState(initialEntries);
+  if (initialEntries !== entriesFromServer) {
+    setEntriesFromServer(initialEntries);
+    setDisplayed({ month: startOfMonth(month, year), entries: initialEntries });
+  }
 
   const entriesCache = useRef<Map<string, CalendarEntry[]>>(new Map());
+  const latestNavigation = useRef(0);
 
   const fetchMonthEntries = useCallback(async (target: Dayjs) => {
     const monthEntries = await fetchCalendarEntriesAction(toOneBasedMonth(target), target.year());
@@ -90,50 +118,55 @@ export function InterviewsClient({ initialEntries, month, year }: Props) {
   const prefetch = useCallback(
     (target: Dayjs) => {
       if (entriesCache.current.has(monthCacheKey(target))) return;
-      fetchMonthEntries(target);
+      fetchMonthEntries(target).catch(prefetchIsBestEffort);
     },
     [fetchMonthEntries],
   );
 
+  const showMonth = useCallback(
+    async (target: Dayjs) => {
+      const navigation = ++latestNavigation.current;
+      const isLatestNavigation = () => navigation === latestNavigation.current;
+      const cachedEntries = entriesCache.current.get(monthCacheKey(target));
+      if (cachedEntries) {
+        setDisplayed({ month: target, entries: cachedEntries });
+      } else {
+        setIsNavigating(true);
+        try {
+          const monthEntries = await fetchMonthEntries(target);
+          if (isLatestNavigation()) setDisplayed({ month: target, entries: monthEntries });
+        } catch {
+          router.push(interviewsUrlFor(target));
+          return;
+        } finally {
+          if (isLatestNavigation()) setIsNavigating(false);
+        }
+      }
+      if (isLatestNavigation()) window.history.replaceState(null, "", interviewsUrlFor(target));
+    },
+    [fetchMonthEntries, router],
+  );
+
+  const shownMonth = displayed.month;
   useEffect(() => {
-    prefetch(initialMonth.subtract(1, "month"));
-    prefetch(initialMonth.add(1, "month"));
-  }, [initialMonth, prefetch]);
+    prefetch(shownMonth.subtract(1, "month"));
+    prefetch(shownMonth.add(1, "month"));
+  }, [shownMonth, prefetch]);
 
-  const showMonth = (target: Dayjs, monthEntries: CalendarEntry[]) => {
-    setCurrentMonth(target);
-    setEntries(monthEntries);
-  };
+  useEffect(() => {
+    if (!followsLocalToday) return;
+    const localMonth = dayjs().startOf("month");
+    if (!localMonth.isSame(startOfMonth(month, year), "month")) void showMonth(localMonth);
+  }, [followsLocalToday, month, year, showMonth]);
 
-  const fetchAndShowMonth = async (target: Dayjs) => {
-    try {
-      showMonth(target, await fetchMonthEntries(target));
-    } catch {
-      router.push(interviewsUrlFor(target));
-    } finally {
-      setIsNavigating(false);
-    }
-  };
+  const navigateMonth = (step: MonthStep) => showMonth(displayed.month.add(step, "month"));
 
-  const navigateMonth = async (step: MonthStep) => {
-    const target = currentMonth.add(step, "month");
-    setIsNavigating(true);
-
-    const cachedEntries = entriesCache.current.get(monthCacheKey(target));
-    if (cachedEntries) {
-      showMonth(target, cachedEntries);
-      setIsNavigating(false);
-    } else {
-      await fetchAndShowMonth(target);
-    }
-
-    window.history.replaceState(null, "", interviewsUrlFor(target));
-    prefetch(target.add(step, "month"));
-  };
-
-  const refreshCurrentMonth = () => {
-    entriesCache.current.delete(monthCacheKey(currentMonth));
-    fetchMonthEntries(currentMonth).then(setEntries);
+  const refreshAfterChange = async (target: Dayjs) => {
+    entriesCache.current.clear();
+    const monthEntries = await fetchMonthEntries(target);
+    setDisplayed((current) =>
+      current.month.isSame(target, "month") ? { month: current.month, entries: monthEntries } : current,
+    );
   };
 
   const [selectedEntry, setSelectedEntry] = useState<CalendarEntry | null>(null);
@@ -153,23 +186,28 @@ export function InterviewsClient({ initialEntries, month, year }: Props) {
   const closeEventDialog = () => setEventDialog(CLOSED_EVENT_DIALOG);
 
   const runEventMutation = (mutate: () => Promise<void>, successMessage: string) => {
+    const monthToRefresh = displayed.month;
     setIsSaving(true);
     startTransition(async () => {
       try {
         await mutate();
-        setToast({ message: successMessage, severity: "success" });
-        closeEventDialog();
-        refreshCurrentMonth();
       } catch (err) {
-        setToast({ message: String(err), severity: "error" });
-      } finally {
+        setToast({ message: errorText(err), severity: "error" });
         setIsSaving(false);
+        return;
       }
+      setToast({ message: successMessage, severity: "success" });
+      closeEventDialog();
+      setIsSaving(false);
+      await refreshAfterChange(monthToRefresh).catch(() =>
+        setToast({ message: REFRESH_FAILED_MESSAGE, severity: "error" }),
+      );
     });
   };
 
   const handleSaveEvent = () => {
-    const { editId, form } = eventDialog;
+    const { editId } = eventDialog;
+    const form = withLocalTimeAsInstant(eventDialog.form);
     if (editId) {
       runEventMutation(() => updateCalendarEvent(editId, form), "Event updated.");
     } else {
@@ -184,16 +222,17 @@ export function InterviewsClient({ initialEntries, month, year }: Props) {
   };
 
   const closeToast = () => setToast(null);
+  const monthEntries = entriesWithinMonth(displayed);
 
   return (
     <Box>
       <PageHeader
         title="Interviews"
-        meta={describeMonth(entries.length, currentMonth.format("MMMM"))}
+        meta={describeMonth(monthEntries.length, displayed.month.format("MMMM"))}
         actions={
           <>
             <CalendarMonthNav
-              currentMonth={currentMonth}
+              currentMonth={displayed.month}
               isPending={isNavigating}
               onPrev={() => navigateMonth(-1)}
               onNext={() => navigateMonth(1)}
@@ -206,8 +245,8 @@ export function InterviewsClient({ initialEntries, month, year }: Props) {
       />
 
       <CalendarGrid
-        currentMonth={currentMonth}
-        entries={entries}
+        currentMonth={displayed.month}
+        entries={monthEntries}
         onEntryClick={setSelectedEntry}
         onDayDoubleClick={openCreateDialog}
       />

@@ -25,7 +25,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import type { Session } from "next-auth";
-import { ui, fonts } from "@/theme/theme";
+import { ui, fonts } from "@/theme/tokens";
 import { useScrapeProgress } from "@/context/ScrapeProgressContext";
 import { Wordmark } from "@/components/ui/Wordmark";
 
@@ -53,6 +53,11 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 const SETTINGS_ITEM: NavItem = { label: "Settings", href: "/settings", Icon: SettingsOutlinedIcon };
+
+function isActiveSection(pathname: string, href: string): boolean {
+  if (href === HOME_PATH) return pathname === HOME_PATH;
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
 
 const ACTIVE_NAV_MARKER = {
   content: '""',
@@ -214,7 +219,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <NavLink
               key={item.href}
               item={item}
-              active={pathname === item.href}
+              active={isActiveSection(pathname, item.href)}
               trailing={item.href === HOME_PATH ? searchProgress : undefined}
             />
           ))}
@@ -222,7 +227,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <Box sx={{ mt: "auto", px: 1, pb: 1.5 }}>
           <List disablePadding>
-            <NavLink item={SETTINGS_ITEM} active={pathname === SETTINGS_ITEM.href} />
+            <NavLink item={SETTINGS_ITEM} active={isActiveSection(pathname, SETTINGS_ITEM.href)} />
           </List>
           <Divider sx={{ my: 1.25, mx: 0.5 }} />
           {session?.user && <AccountFooter user={session.user} />}

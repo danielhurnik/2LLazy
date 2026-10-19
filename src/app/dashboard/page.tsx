@@ -2,6 +2,7 @@ import {
   getApplications,
   getApplicationSources,
   getApplicationStatusCounts,
+  isApplicationStatus,
 } from "@/lib/data/applications";
 import type { ApplicationFilters } from "@/lib/data/applications";
 import { DashboardClient } from "./_components/DashboardClient";
@@ -19,6 +20,7 @@ export default async function DashboardPage({
 }) {
   const userId = await requireUserId();
   const query = await searchParams;
+  const status = isApplicationStatus(query.status) ? query.status : ALL_OPTION;
   const hasSalary = query.hasSalary === "true";
   const filtersExceptStatus: Omit<ApplicationFilters, "status"> = {
     source: query.source,
@@ -26,12 +28,12 @@ export default async function DashboardPage({
     hasSalary,
   };
   const [applications, sources, statusCounts] = await Promise.all([
-    getApplications(userId, { status: query.status, ...filtersExceptStatus }),
+    getApplications(userId, { status, ...filtersExceptStatus }),
     getApplicationSources(userId),
     getApplicationStatusCounts(userId, filtersExceptStatus),
   ]);
   const currentFilters: DashboardFilters = {
-    status: query.status ?? ALL_OPTION,
+    status,
     source: query.source ?? ALL_OPTION,
     position: query.position ?? "",
     hasSalary,

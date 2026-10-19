@@ -7,7 +7,7 @@ import { DEFAULT_COUNTRY } from "@/lib/jobs/sources/types";
 import type { ApplicationStatus } from "@prisma/client";
 import { GraphQLError } from "graphql";
 import { revalidatePath, revalidateTag } from "next/cache";
-import { favouriteTag } from "@/lib/data/favourites";
+import { favouriteTag, toggleUserFavourite } from "@/lib/data/favourites";
 import { interviewTag } from "@/lib/data/interviews";
 import { applicationTag } from "@/lib/data/applications";
 
@@ -161,17 +161,11 @@ export const resolvers = {
 
   Mutation: {
     toggleFavourite: async (_: unknown, { jobId }: { jobId: string }, { userId }: GqlContext) => {
-      const favouriteKey = { userId_jobId: { userId, jobId } };
-      const existing = await prisma.userFavourite.findUnique({ where: favouriteKey });
-      if (existing) {
-        await prisma.userFavourite.delete({ where: favouriteKey });
-      } else {
-        await prisma.userFavourite.create({ data: { userId, jobId } });
-      }
       const job = await prisma.jobPosting.findUniqueOrThrow({ where: { id: jobId } });
+      const isFavourited = await toggleUserFavourite(userId, jobId);
       expireTags(favouriteTag(userId));
       revalidatePath("/favourites");
-      return serializeJob(job, !existing);
+      return serializeJob(job, isFavourited);
     },
 
     updateApplicationStatus: async (

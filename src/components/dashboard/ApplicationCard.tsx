@@ -16,7 +16,7 @@ import { AUTO_APPLY_STATUSES, type Application, type AppStatus } from "@/types";
 import { StatusChip } from "@/components/ui/StatusChip";
 import { JobHeading, SourceLinkChip, lineClampSx } from "@/components/jobs/JobCard";
 import { updateApplicationNotes } from "@/lib/actions/applicationActions";
-import { ui, fonts } from "@/theme/theme";
+import { ui, fonts } from "@/theme/tokens";
 import { useAutoApply } from "./useAutoApply";
 import { EvidenceDialog } from "./EvidenceDialog";
 import {
@@ -35,6 +35,7 @@ interface ApplicationCardProps {
 type ScheduledInterview = NonNullable<Application["interview"]>;
 
 const DATE_LOCALE = "en-GB";
+const NOTES_SAVE_FAILED_MESSAGE = "Could not save the note. Try again.";
 const COLLAPSED_DESCRIPTION_LINES = 2;
 
 const formatAppliedDate = (iso: string) =>
@@ -86,11 +87,12 @@ function NotePreview({ note }: { note: string }) {
 interface NotesEditorProps {
   notes: string;
   isSaving: boolean;
+  saveError: string | null;
   onNotesChange: (notes: string) => void;
   onSave: () => void;
 }
 
-function NotesEditor({ notes, isSaving, onNotesChange, onSave }: NotesEditorProps) {
+function NotesEditor({ notes, isSaving, saveError, onNotesChange, onSave }: NotesEditorProps) {
   return (
     <Box sx={{ mt: 1.5 }}>
       <TextField
@@ -103,7 +105,12 @@ function NotesEditor({ notes, isSaving, onNotesChange, onSave }: NotesEditorProp
         value={notes}
         onChange={(event) => onNotesChange(event.target.value)}
       />
-      <Stack direction="row" justifyContent="flex-end" sx={{ mt: 1 }}>
+      <Stack direction="row" justifyContent="flex-end" alignItems="center" gap={1.5} sx={{ mt: 1 }}>
+        {saveError && (
+          <Typography variant="body2" role="alert" sx={{ color: ui.red }}>
+            {saveError}
+          </Typography>
+        )}
         <Button size="small" variant="contained" onClick={onSave} disabled={isSaving}>
           {isSaving ? "Saving…" : "Save note"}
         </Button>
@@ -132,8 +139,16 @@ function InterviewBanner({ interview }: { interview: ScheduledInterview }) {
 export function ApplicationCard({ application, onStatusClick }: ApplicationCardProps) {
   const { job, interview } = application;
   const [isNotesOpen, setIsNotesOpen] = useState(false);
-  const [notes, setNotes] = useState(application.notes ?? "");
+  const savedNotes = application.notes ?? "";
+  const [notes, setNotes] = useState(savedNotes);
+  const [lastSeenSavedNotes, setLastSeenSavedNotes] = useState(savedNotes);
+  if (savedNotes !== lastSeenSavedNotes) {
+    setLastSeenSavedNotes(savedNotes);
+    const hasUnsavedEdits = notes !== lastSeenSavedNotes;
+    if (!hasUnsavedEdits) setNotes(savedNotes);
+  }
   const [isSavingNotes, setIsSavingNotes] = useState(false);
+  const [notesSaveError, setNotesSaveError] = useState<string | null>(null);
   const [isConfirmingAutoApply, setIsConfirmingAutoApply] = useState(false);
   const [shownEvidenceUrl, setShownEvidenceUrl] = useState<string | null>(null);
   const { run, start: startAutoApply } = useAutoApply(application.id);
@@ -152,8 +167,12 @@ export function ApplicationCard({ application, onStatusClick }: ApplicationCardP
 
   const saveNotes = async () => {
     setIsSavingNotes(true);
+    setNotesSaveError(null);
     try {
       await updateApplicationNotes(application.id, notes);
+      setLastSeenSavedNotes(notes);
+    } catch {
+      setNotesSaveError(NOTES_SAVE_FAILED_MESSAGE);
     } finally {
       setIsSavingNotes(false);
     }
@@ -191,6 +210,7 @@ export function ApplicationCard({ application, onStatusClick }: ApplicationCardP
           <NotesEditor
             notes={notes}
             isSaving={isSavingNotes}
+            saveError={notesSaveError}
             onNotesChange={setNotes}
             onSave={saveNotes}
           />

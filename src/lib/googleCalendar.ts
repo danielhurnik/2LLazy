@@ -7,6 +7,7 @@ const TOKEN_REFRESH_LEEWAY_SECONDS = 60;
 const MS_PER_SECOND = 1000;
 const MS_PER_MINUTE = 60 * MS_PER_SECOND;
 const ALREADY_DELETED_STATUSES = new Set([404, 410]);
+const DEFAULT_TIMEZONE = "UTC";
 
 interface CalendarDateTime {
   dateTime: string;
@@ -20,9 +21,19 @@ interface GCalEventPayload {
   end: CalendarDateTime;
 }
 
+interface RefreshedToken {
+  access_token: string;
+  expires_in: number;
+}
+
+interface GoogleClientCredentials {
+  clientId: string;
+  clientSecret: string;
+}
+
 const nowInEpochSeconds = () => Math.floor(Date.now() / MS_PER_SECOND);
 
-const eventUrl = (gcalEventId: string) => `${PRIMARY_CALENDAR_EVENTS_URL}/${gcalEventId}`;
+const eventUrl = (gcalEventId: string) => `${PRIMARY_CALENDAR_EVENTS_URL}/${encodeURIComponent(gcalEventId)}`;
 
 const bearerHeader = (accessToken: string) => ({ Authorization: `Bearer ${accessToken}` });
 
@@ -30,6 +41,33 @@ const jsonRequestHeaders = (accessToken: string) => ({
   ...bearerHeader(accessToken),
   "Content-Type": "application/json",
 });
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isRefreshedToken(value: unknown): value is RefreshedToken {
+  return isRecord(value) && typeof value.access_token === "string" && typeof value.expires_in === "number";
+}
+
+function createdEventId(value: unknown): string | null {
+  return isRecord(value) && typeof value.id === "string" ? value.id : null;
+}
+
+function googleClientCredentials(): GoogleClientCredentials | null {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
+
+function logCalendarFailure(action: string, detail: unknown): void {
+  console.error(`[GCal] ${action} failed`, detail);
+}
+
+async function failedResponseDetail(res: Response): Promise<string> {
+  const body = await res.text().catch(() => "");
+  return `HTTP ${res.status} ${body}`.trim();
+}
 
 function isExpiringSoon(expiresAtEpochSeconds: number | null): boolean {
   if (!expiresAtEpochSeconds) return false;
@@ -48,28 +86,32 @@ async function getValidAccessToken(userId: string): Promise<string | null> {
 }
 
 async function refreshAccessToken(userId: string, refreshToken: string): Promise<string | null> {
+  const credentials = googleClientCredentials();
+  if (!credentials) return null;
   try {
     const res = await fetch(TOKEN_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
-        client_id: process.env.GOOGLE_CLIENT_ID!,
-        client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+        client_id: credentials.clientId,
+        client_secret: credentials.clientSecret,
         grant_type: "refresh_token",
         refresh_token: refreshToken,
       }),
     });
-    if (!res.ok) return null;
-    const { access_token, expires_in } = (await res.json()) as {
-      access_token: string;
-      expires_in: number;
-    };
+    if (!res.ok) {
+      logCalendarFailure("token refresh", await failedResponseDetail(res));
+      return null;
+    }
+    const token: unknown = await res.json();
+    if (!isRefreshedToken(token)) return null;
     await prisma.account.updateMany({
       where: { userId, provider: GOOGLE_PROVIDER },
-      data: { access_token, expires_at: nowInEpochSeconds() + expires_in },
+      data: { access_token: token.access_token, expires_at: nowInEpochSeconds() + token.expires_in },
     });
-    return access_token;
-  } catch {
+    return token.access_token;
+  } catch (err) {
+    logCalendarFailure("token refresh", err);
     return null;
   }
 }
@@ -82,54 +124,54 @@ export async function hasCalendarSync(userId: string): Promise<boolean> {
   return profile?.googleCalendarSync ?? false;
 }
 
-export async function createGCalEvent(
-  userId: string,
-  payload: GCalEventPayload,
-): Promise<string | null> {
+export async function createGCalEvent(userId: string, payload: GCalEventPayload): Promise<string | null> {
   const accessToken = await getValidAccessToken(userId);
   if (!accessToken) return null;
-
-  const res = await fetch(PRIMARY_CALENDAR_EVENTS_URL, {
-    method: "POST",
-    headers: jsonRequestHeaders(accessToken),
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    console.error("[GCal] create failed", await res.text());
+  try {
+    const res = await fetch(PRIMARY_CALENDAR_EVENTS_URL, {
+      method: "POST",
+      headers: jsonRequestHeaders(accessToken),
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      logCalendarFailure("create", await failedResponseDetail(res));
+      return null;
+    }
+    return createdEventId(await res.json());
+  } catch (err) {
+    logCalendarFailure("create", err);
     return null;
   }
-  const { id } = (await res.json()) as { id: string };
-  return id;
 }
 
-export async function updateGCalEvent(
-  userId: string,
-  gcalEventId: string,
-  payload: GCalEventPayload,
-): Promise<void> {
+export async function updateGCalEvent(userId: string, gcalEventId: string, payload: GCalEventPayload): Promise<void> {
   const accessToken = await getValidAccessToken(userId);
   if (!accessToken) return;
-
-  const res = await fetch(eventUrl(gcalEventId), {
-    method: "PUT",
-    headers: jsonRequestHeaders(accessToken),
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    console.error("[GCal] update failed", await res.text());
+  try {
+    const res = await fetch(eventUrl(gcalEventId), {
+      method: "PUT",
+      headers: jsonRequestHeaders(accessToken),
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) logCalendarFailure("update", await failedResponseDetail(res));
+  } catch (err) {
+    logCalendarFailure("update", err);
   }
 }
 
 export async function deleteGCalEvent(userId: string, gcalEventId: string): Promise<void> {
   const accessToken = await getValidAccessToken(userId);
   if (!accessToken) return;
-
-  const res = await fetch(eventUrl(gcalEventId), {
-    method: "DELETE",
-    headers: bearerHeader(accessToken),
-  });
-  if (!res.ok && !ALREADY_DELETED_STATUSES.has(res.status)) {
-    console.error("[GCal] delete failed", await res.text());
+  try {
+    const res = await fetch(eventUrl(gcalEventId), {
+      method: "DELETE",
+      headers: bearerHeader(accessToken),
+    });
+    if (!res.ok && !ALREADY_DELETED_STATUSES.has(res.status)) {
+      logCalendarFailure("delete", await failedResponseDetail(res));
+    }
+  } catch (err) {
+    logCalendarFailure("delete", err);
   }
 }
 
@@ -138,7 +180,7 @@ export function buildGCalPayload(
   scheduledAt: Date,
   durationMinutes: number,
   description?: string | null,
-  timezone = "UTC",
+  timezone = DEFAULT_TIMEZONE,
 ): GCalEventPayload {
   const endsAt = new Date(scheduledAt.getTime() + durationMinutes * MS_PER_MINUTE);
   return {

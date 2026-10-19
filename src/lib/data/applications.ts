@@ -1,11 +1,11 @@
 import { prisma } from "@/lib/prisma";
-import { JobSource } from "@prisma/client";
-import type { ApplicationStatus, Prisma } from "@prisma/client";
+import { ApplicationStatus, JobSource } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import type { Application } from "@/types";
 import { ALL_STATUSES } from "@/types";
 
-const ALL_OPTION = "ALL";
 const JOB_SOURCES: ReadonlySet<string> = new Set(Object.values(JobSource));
+const APPLICATION_STATUSES: ReadonlySet<string> = new Set(Object.values(ApplicationStatus));
 
 const APPLICATION_INCLUDE = { job: true, interview: true } satisfies Prisma.ApplicationInclude;
 
@@ -26,6 +26,10 @@ export const applicationTag = (userId: string) => `${APPLICATIONS_TAG}:${userId}
 
 function isJobSource(value: string): value is JobSource {
   return JOB_SOURCES.has(value);
+}
+
+export function isApplicationStatus(value: string | undefined): value is ApplicationStatus {
+  return value !== undefined && APPLICATION_STATUSES.has(value);
 }
 
 export function buildJobPostingWhere(
@@ -56,7 +60,7 @@ export async function findDistinctJobSources(where: Prisma.JobPostingWhereInput)
 }
 
 function matchingStatus(status?: string): Prisma.ApplicationWhereInput {
-  return status && status !== ALL_OPTION ? { status: status as ApplicationStatus } : {};
+  return isApplicationStatus(status) ? { status } : {};
 }
 
 function matchingJob(filters?: JobPostingFilters): Prisma.ApplicationWhereInput {

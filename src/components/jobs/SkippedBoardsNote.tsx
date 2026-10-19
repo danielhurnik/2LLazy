@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Box, ButtonBase, Collapse, IconButton, Stack, Typography } from "@mui/material";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
-import { ui, fonts } from "@/theme/theme";
+import { ui, fonts } from "@/theme/tokens";
 
 interface SkippedBoardsNoteProps {
   reasons: string[];

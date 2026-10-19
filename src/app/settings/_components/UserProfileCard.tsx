@@ -17,16 +17,12 @@ import {
 import { saveUserProfile } from "@/lib/actions/settingsActions";
 import { COUNTRY_NAMES, isSupportedCountry } from "@/lib/jobs/sources/types";
 import type { UserProfile } from "@/types";
+import { useTimedMessage } from "./useTimedMessage";
 
 const MESSAGE_VISIBLE_MS = 5000;
 const SUPPORTED_COUNTRIES = Object.keys(COUNTRY_NAMES).filter(isSupportedCountry);
 
 type EditableProfileField = Exclude<keyof UserProfile, "googleCalendarSync" | "country">
-
-interface StatusMessage {
-  type: "success" | "error";
-  text: string;
-}
 
 interface Props {
   profile: UserProfile;
@@ -45,12 +41,7 @@ export function UserProfileCard({ profile: initialProfile }: Props) {
   const [profile, setProfile] = useState<UserProfile>(initialProfile);
   const [saving, setSaving] = useState(false);
   const [, startTransition] = useTransition();
-  const [message, setMessage] = useState<StatusMessage | null>(null);
-
-  const showMessage = (type: StatusMessage["type"], text: string) => {
-    setMessage({ type, text });
-    setTimeout(() => setMessage(null), MESSAGE_VISIBLE_MS);
-  };
+  const { message, showMessage, clearMessage } = useTimedMessage(MESSAGE_VISIBLE_MS);
 
   const fieldProps = (field: EditableProfileField) => ({
     size: "small" as const,
@@ -67,7 +58,7 @@ export function UserProfileCard({ profile: initialProfile }: Props) {
         showMessage("success", "Profile saved.");
         router.refresh();
       } catch (err) {
-        showMessage("error", String(err));
+        showMessage("error", err instanceof Error ? err.message : String(err));
       } finally {
         setSaving(false);
       }
@@ -83,7 +74,7 @@ export function UserProfileCard({ profile: initialProfile }: Props) {
         </Typography>
 
         {message && (
-          <Alert severity={message.type} sx={{ mb: 2 }}>
+          <Alert severity={message.type} onClose={clearMessage} sx={{ mb: 2 }}>
             {message.text}
           </Alert>
         )}

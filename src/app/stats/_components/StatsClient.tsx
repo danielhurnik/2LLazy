@@ -18,7 +18,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { statusTone } from "@/components/ui/StatusChip";
 import type { AppStatus } from "@/types";
 import { ALL_STATUSES, STATUS_LABEL, sourceLabel } from "@/types";
-import { ui, fonts } from "@/theme/theme";
+import { ui, fonts } from "@/theme/tokens";
 
 interface Props {
   byStatus: { status: string; count: number }[];

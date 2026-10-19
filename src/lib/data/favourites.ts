@@ -17,6 +17,13 @@ const favouritesCacheOptions = (userId: string) => ({
   tags: [favouriteTag(userId)],
 });
 
+export async function toggleUserFavourite(userId: string, jobId: string): Promise<boolean> {
+  const removed = await prisma.userFavourite.deleteMany({ where: { userId, jobId } });
+  if (removed.count > 0) return false;
+  await prisma.userFavourite.createMany({ data: [{ userId, jobId }], skipDuplicates: true });
+  return true;
+}
+
 const favouritedByUser = (userId: string) =>
   ({ favouritedBy: { some: { userId } } }) satisfies Prisma.JobPostingWhereInput;
 

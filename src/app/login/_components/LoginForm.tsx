@@ -5,7 +5,7 @@ import GoogleIcon from "@mui/icons-material/Google";
 import { signIn } from "next-auth/react";
 import { useState, type SubmitEvent } from "react";
 import { Wordmark } from "@/components/ui/Wordmark";
-import { ui, fonts } from "@/theme/theme";
+import { ui, fonts } from "@/theme/tokens";
 
 const POST_LOGIN_PATH = "/";
 const CREDENTIALS_MISMATCH_MESSAGE = "That email and password don't match.";

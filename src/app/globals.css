@@ -1,9 +1,4 @@
 :root {
-  --bg: #141413;
-  --text: #ECEAE4;
-  --line-strong: #3D3D39;
-  --accent: #F0B43C;
-  --accent-ink: #1C1608;
   color-scheme: dark;
   scrollbar-color: var(--line-strong) transparent;
   scrollbar-width: thin;

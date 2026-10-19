@@ -14,7 +14,7 @@ import {
   InputAdornment,
 } from "@mui/material";
 import { sourceLabel } from "@/types";
-import { ui } from "@/theme/theme";
+import { ui } from "@/theme/tokens";
 
 export const ALL_OPTION = "ALL";
 
