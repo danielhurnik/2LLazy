@@ -1,3 +1,4 @@
+import { isRecord } from "@/lib/guards";
 import { SSE_DATA_PREFIX } from "@/lib/readSseStream";
 import type { JobItem } from "@/types";
 
@@ -27,5 +28,5 @@ export function sseChunk(event: SSEEvent): string {
 }
 
 export function isSseEvent(value: unknown): value is SSEEvent {
-  return typeof value === "object" && value !== null && "type" in value && SSE_EVENT_TYPES.has(value.type);
+  return isRecord(value) && SSE_EVENT_TYPES.has(value.type);
 }
