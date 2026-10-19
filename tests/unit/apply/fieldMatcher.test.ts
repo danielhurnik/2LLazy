@@ -21,6 +21,7 @@ const PROFILE: ApplyProfile = {
   city: "Praha",
   country: "CZ",
   cv: { name: "cv.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4") },
+  cvText: null,
 };
 
 function field(overrides: Partial<FieldDescriptor>): FieldDescriptor {
@@ -39,6 +40,7 @@ function field(overrides: Partial<FieldDescriptor>): FieldDescriptor {
     required: false,
     visible: true,
     checked: false,
+    value: "",
     options: [],
     ...overrides,
   };
@@ -98,6 +100,8 @@ describe("scoreField — English labels and autocomplete", () => {
     expect(keyOf({ type: "url", label: "GitHub profile" })).toBe("githubUrl");
     expect(keyOf({ type: "url", label: "Portfolio / website" })).toBe("website");
     expect(keyOf({ tag: "textarea", type: "textarea", label: "Why do you want to work with us?" })).toBe("message");
+    expect(keyOf({ tag: "textarea", type: "richtext", label: "Jak mohu vaši firmu posunout vpřed?" })).toBe("message");
+    expect(keyOf({ tag: "textarea", type: "textarea", label: "Něco úplně neznámého" })).toBe("message");
   });
 
   it("ignores hidden, submit and password inputs", () => {
@@ -118,6 +122,56 @@ describe("scoreField — checkboxes", () => {
 
   it("never maps a checkbox to a text field key", () => {
     expect(keyOf({ type: "checkbox", label: "Email" })).toBeNull();
+  });
+
+  it("treats talent-pool and future-position opt-ins as marketing even when worded as consent", () => {
+    const teamio = "I give consent to Thermo Fisher Scientific Brno s.r.o. company to let me know when there is another suitable position for me.";
+    expect(keyOf({ type: "checkbox", label: teamio })).toBe("marketing");
+    expect(keyOf({ type: "checkbox", label: "Souhlasím s evidencí mých údajů pro další vhodné pozice" })).toBe("marketing");
+  });
+
+  it("ticks a vague agreement box only when it is required", () => {
+    expect(keyOf({ type: "checkbox", label: "I agree" })).toBeNull();
+    expect(keyOf({ type: "checkbox", label: "I agree", required: true })).toBe("consent");
+    expect(keyOf({ type: "checkbox", label: "Souhlasím se zpracováním osobních údajů" })).toBe("consent");
+  });
+});
+
+describe("planFill — name splitting", () => {
+  it("puts only the first name into a bare 'Jméno' field when a surname field exists", () => {
+    const form = [
+      field({ selector: "#jmeno", label: "Jméno", placeholder: "Jméno", required: true }),
+      field({ selector: "#prijmeni", label: "Příjmení", required: true }),
+    ];
+    const plan = planFill(form, PROFILE);
+    expect(plan.fills.map((f) => [f.key, (f.value as { value: string }).value])).toEqual([
+      ["firstName", "Jana"],
+      ["lastName", "Nováková"],
+    ]);
+  });
+
+  it("keeps the full name when the field explicitly asks for it", () => {
+    const form = [field({ selector: "#full", label: "Jméno a příjmení" }), field({ selector: "#last", label: "Příjmení" })];
+    expect(planFill(form, PROFILE).fills.map((f) => f.key)).toEqual(["fullName", "lastName"]);
+  });
+
+  it("leaves account-creation opt-ins unchecked and reads currency selects as salary", () => {
+    expect(keyOf({ type: "checkbox", label: "Vytvořit profesní profil na Skilleto" })).toBe("marketing");
+    expect(keyOf({ tag: "select", type: "select", options: [{ value: "czk", text: "Kč" }, { value: "eur", text: "EUR" }] })).toBe("salary");
+  });
+});
+
+describe("planFill — file slots", () => {
+  it("puts the CV into the CV slot only, not into generic attachment slots", () => {
+    const form = [
+      field({ selector: "#cv", type: "file", label: "CV", required: true }),
+      field({ selector: "#att1", type: "file", label: "Attachment 1" }),
+      field({ selector: "#att2", type: "file", label: "Attachment 2" }),
+    ];
+    const plan = planFill(form, PROFILE);
+    expect(plan.fills.map((f) => f.field.selector)).toEqual(["#cv"]);
+    expect(plan.unfillable.map((u) => u.field.selector).sort()).toEqual(["#att1", "#att2"]);
+    expect(plan.requiredMissing).toEqual([]);
   });
 });
 

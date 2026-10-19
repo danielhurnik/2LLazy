@@ -39,6 +39,7 @@ export interface FieldDescriptor {
   required: boolean;
   visible: boolean;
   checked: boolean;
+  value: string;
   options: FieldOption[];
 }
 
@@ -91,9 +92,14 @@ function containsPhrase(haystack: string, phrase: string): boolean {
 interface KeyRule {
   strong?: string[];
   phrases: string[];
+  weak?: string[];
   exclude?: string[];
   autocomplete?: string[];
 }
+
+const WEAK_PHRASE_FACTOR = 0.7;
+const SINGLE_FILL_KEYS: ReadonlySet<ProfileKey> = new Set(["cv", "coverLetter"]);
+const SALARY_OPTION = /^(k[cč]|czk|eur|€|usd|\$|gbp|pln|za m[eě]s[ií]c|m[eě]s[ií][cč]n[eě]|per month|monthly|ro[cč]n[eě]|per year|yearly|hodinov[eě]|per hour|hourly|md|man ?day)$/i;
 
 const RULES: Record<ProfileKey, KeyRule> = {
   fullName: {
@@ -139,14 +145,15 @@ const RULES: Record<ProfileKey, KeyRule> = {
     autocomplete: ["country", "country-name"],
   },
   cv: {
-    phrases: ["cv", "zivotopis", "resume", "resume cv", "curriculum vitae", "prilozit zivotopis", "upload cv", "attach cv", "attachment", "priloha", "soubor", "nahrat"],
+    phrases: ["cv", "zivotopis", "resume", "resume cv", "curriculum vitae", "prilozit zivotopis", "upload cv", "attach cv", "nahrat zivotopis"],
+    weak: ["attachment", "priloha", "prilohy", "soubor", "nahrat", "upload", "file"],
     exclude: ["motivacni", "cover", "pruvodni", "foto", "photo", "portfolio"],
   },
   coverLetter: {
     phrases: ["motivacni dopis", "cover letter", "pruvodni dopis", "motivation letter", "letter of motivation", "motivacni"],
   },
   message: {
-    phrases: ["zprava", "message", "poznamka", "note", "comment", "komentar", "vzkaz", "proc", "why", "tell us", "about you", "o vas", "neco o sobe", "dalsi informace", "additional information"],
+    phrases: ["zprava", "message", "poznamka", "note", "comment", "komentar", "vzkaz", "proc", "why", "tell us", "about you", "o vas", "neco o sobe", "dalsi informace", "additional information", "posunout", "proc prave vy", "proc vas", "co muzete nabidnout", "what can you", "pruvodni text", "vzkaz pro firmu", "zprava pro", "dejte firme vedet", "napiste nam", "tell us why", "motivace", "motivation", "o sobe", "about yourself", "text", "doplnujici"],
   },
   salary: {
     phrases: ["mzda", "plat", "salary", "mzdove ocekavani", "salary expectation", "expected salary", "ocekavana mzda", "financni ocekavani"],
@@ -155,10 +162,11 @@ const RULES: Record<ProfileKey, KeyRule> = {
     phrases: ["nastup", "datum nastupu", "start date", "available from", "moznost nastupu", "availability", "dostupnost"],
   },
   consent: {
-    phrases: ["souhlas", "souhlasim", "zpracovani osobnich udaju", "osobni udaje", "osobnich udaju", "gdpr", "privacy", "privacy policy", "ochrana osobnich udaju", "terms", "podminky", "podminkami", "zasady", "agree", "consent", "i agree", "i accept", "accept"],
+    strong: ["zpracovani osobnich udaju", "zpracovanim osobnich udaju", "osobni udaje", "osobnich udaju", "gdpr", "privacy", "privacy policy", "ochrana osobnich udaju", "ochranou osobnich udaju", "terms", "terms and conditions", "podminky", "podminkami", "zasady", "zasadami"],
+    phrases: ["souhlas", "souhlasim", "agree", "consent", "i agree", "i accept", "accept"],
   },
   marketing: {
-    phrases: ["newsletter", "marketing", "marketingove", "obchodni sdeleni", "obchodnich sdeleni", "novinky", "zasilani", "nabidky prace", "job alerts", "job offers", "subscribe", "odber", "informovat", "podobne nabidky", "similar offers", "talent pool", "databaze uchazecu", "evidovat", "budouci", "future"],
+    phrases: ["newsletter", "marketing", "marketingove", "obchodni sdeleni", "obchodnich sdeleni", "novinky", "zasilani", "nabidky prace", "job alerts", "job offers", "subscribe", "odber", "informovat", "podobne nabidky", "similar offers", "talent pool", "databaze uchazecu", "evidovat", "budouci", "future", "another suitable position", "other positions", "other vacancies", "suitable position", "let me know", "dalsi vhodnou", "dalsi vhodne", "vhodnou pozici", "vhodne pozice", "jine pozice", "jinou pozici", "jinych pozic", "dalsich pozic", "dalsi pozice", "dalsi nabidky", "jine nabidky", "evidenci", "evidence", "nabidnout", "v budoucnu", "future positions", "keep my", "retain my", "store my", "uchovat", "uchovavat", "po dobu", "contact me", "kontaktovat", "oslovit", "vytvorit profil", "vytvorit ucet", "vytvorit", "profesni profil", "create profile", "create account", "create an account", "registrovat", "zaregistrovat", "sign me up", "remember me"],
   },
 };
 
@@ -167,7 +175,7 @@ const TYPE_EVIDENCE: Record<string, Partial<Record<ProfileKey, number>>> = {
   tel: { phone: 0.95 },
   url: { website: 0.5 },
   file: { cv: 0.6 },
-  textarea: { message: 0.4 },
+  textarea: { message: 0.5 },
 };
 
 const SIGNAL_WEIGHTS: Array<[keyof FieldDescriptor, number]> = [
@@ -188,15 +196,23 @@ function phraseStrength(text: string, phrase: string): number {
   return 0;
 }
 
-function keyEvidence(text: string, rule: KeyRule): number {
+function strongEvidence(text: string, rule: KeyRule): number {
   let best = 0;
   for (const phrase of rule.strong ?? []) {
     best = Math.max(best, phraseStrength(text, normalizeText(phrase)));
   }
+  return best;
+}
+
+function keyEvidence(text: string, rule: KeyRule): number {
+  let best = strongEvidence(text, rule);
   if (best > 0) return best;
   if (rule.exclude?.some((phrase) => containsPhrase(text, normalizeText(phrase)))) return 0;
   for (const phrase of rule.phrases) {
     best = Math.max(best, phraseStrength(text, normalizeText(phrase)));
+  }
+  for (const phrase of rule.weak ?? []) {
+    best = Math.max(best, phraseStrength(text, normalizeText(phrase)) * WEAK_PHRASE_FACTOR);
   }
   return best;
 }
@@ -224,8 +240,10 @@ export function scoreField(field: FieldDescriptor): FieldScore | null {
   for (const [key, score] of Object.entries(TYPE_EVIDENCE[typeKey] ?? {}) as Array<[ProfileKey, number]>) {
     addScore(scores, key, score);
   }
+  if (field.tag === "select" && field.options.some((o) => SALARY_OPTION.test(o.text))) addScore(scores, "salary", 0.6);
 
   const checkable = isCheckable(field);
+  let explicitConsent = false;
   for (const [prop, weight] of SIGNAL_WEIGHTS) {
     const text = normalizeText(String(field[prop] ?? ""));
     if (!text) continue;
@@ -234,7 +252,11 @@ export function scoreField(field: FieldDescriptor): FieldScore | null {
       if (checkable !== isCheckKey) continue;
       const evidence = keyEvidence(text, rule);
       if (evidence > 0) addScore(scores, key, weight * evidence);
+      if (key === "consent" && strongEvidence(text, rule) > 0) explicitConsent = true;
     }
+  }
+  if (checkable && scores.has("consent") && !scores.has("marketing") && !explicitConsent && !field.required) {
+    scores.delete("consent");
   }
 
   if (field.tag === "input" && field.type === "file" && scores.has("coverLetter") && !scores.has("cv")) {
@@ -337,12 +359,21 @@ export function isFillableField(field: FieldDescriptor): boolean {
   return true;
 }
 
+const EXPLICIT_FULL_NAME = /(cele jmeno|jmeno a prijmeni|full name|fullname|name and surname)/;
+
+function splitsName(field: FieldDescriptor): boolean {
+  const text = normalizeText([field.label, field.placeholder, field.ariaLabel, field.name].join(" "));
+  return !EXPLICIT_FULL_NAME.test(text);
+}
+
 export function planFill(fields: FieldDescriptor[], profile: ApplyProfile): FillPlan {
   const plan: FillPlan = { fills: [], unmatched: [], unfillable: [], requiredMissing: [], confidence: 0 };
   const candidates = fields.filter(isFillableField);
+  const scoredFields = candidates.map((field) => ({ field, scored: scoreField(field) }));
+  const hasLastName = scoredFields.some((s) => s.scored?.key === "lastName");
 
-  for (const field of candidates) {
-    const scored = scoreField(field);
+  for (const { field, scored: initial } of scoredFields) {
+    const scored = initial?.key === "fullName" && hasLastName && splitsName(field) ? { key: "firstName" as ProfileKey, score: initial.score } : initial;
     if (!scored) {
       plan.unmatched.push(field);
       continue;
@@ -352,6 +383,14 @@ export function planFill(fields: FieldDescriptor[], profile: ApplyProfile): Fill
       plan.fills.push({ field, key: scored.key, score: scored.score, value });
     } else {
       plan.unfillable.push({ field, ...scored });
+    }
+  }
+
+  for (const key of SINGLE_FILL_KEYS) {
+    const sameKey = plan.fills.filter((f) => f.key === key).sort((a, b) => b.score - a.score);
+    for (const extra of sameKey.slice(1)) {
+      plan.fills = plan.fills.filter((f) => f !== extra);
+      plan.unfillable.push({ field: extra.field, key: extra.key, score: extra.score });
     }
   }
 
@@ -373,10 +412,9 @@ function computeConfidence(plan: FillPlan, requiredCount: number, candidateCount
   if (plan.fills.length === 0) return 0;
   const coverage = requiredCount === 0 ? 1 : (requiredCount - plan.requiredMissing.length) / requiredCount;
   const avgScore = plan.fills.reduce((sum, f) => sum + f.score, 0) / plan.fills.length;
-  const optionalGaps = plan.unmatched.length + plan.unfillable.length - plan.requiredMissing.length;
-  const gapPenalty = Math.min(0.2, Math.max(0, optionalGaps) * 0.05);
-  const filledShare = plan.fills.length / Math.max(1, candidateCount);
-  let confidence = coverage * (0.6 + 0.25 * avgScore + 0.15 * filledShare) - gapPenalty;
+  const unrecognisedPenalty = Math.min(0.15, plan.unmatched.length * 0.03);
+  const understoodShare = (plan.fills.length + plan.unfillable.length) / Math.max(1, candidateCount);
+  let confidence = coverage * (0.6 + 0.25 * avgScore + 0.15 * understoodShare) - unrecognisedPenalty;
   if (plan.requiredMissing.length > 0) confidence = Math.min(confidence, AUTO_SUBMIT_CONFIDENCE - 0.2);
   return Math.max(0, Math.min(1, Number(confidence.toFixed(3))));
 }

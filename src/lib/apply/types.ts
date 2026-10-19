@@ -20,6 +20,7 @@ export interface ApplyProfile {
   city: string | null;
   country: string;
   cv: ApplyFile | null;
+  cvText: string | null;
 }
 
 export interface ApplyJob {
@@ -28,6 +29,7 @@ export interface ApplyJob {
   company: string;
   sourceUrl: string;
   source: string;
+  description: string;
 }
 
 export type ApplyEvent =

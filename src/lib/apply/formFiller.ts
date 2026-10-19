@@ -8,6 +8,7 @@ import {
   type FillPlan,
   type PlannedFill,
 } from "./fieldMatcher";
+import type { Locator } from "playwright";
 import { describeScan, findButton, locatorFor, scanPage, type ButtonDescriptor, type PageScan } from "./fieldScanner";
 import { draftFreeText, mapFieldsWithOllama } from "./ollamaMapper";
 import {
@@ -68,21 +69,62 @@ export async function buildPlan(ctx: ApplyContext, scan: PageScan): Promise<Fill
     ctx.evidence.log(`ollama mapper used=${llm.used} mapped=${llm.mapped.length}`);
     plan.fills.push(...llm.mapped);
   }
-  for (const entry of plan.unfillable) {
-    const wantsText = (entry.key === "message" || entry.key === "coverLetter") && entry.field.tag === "textarea";
-    if (!wantsText || !entry.field.required) continue;
+  const freeTextFields = plan.unfillable.filter((entry) => (entry.key === "message" || entry.key === "coverLetter") && entry.field.tag === "textarea");
+  for (const entry of freeTextFields.slice(0, 2)) {
     ctx.emit({ type: "progress", message: `Drafting "${describeField(entry.field)}" with Ollama` });
-    const text = await draftFreeText(entry.field, profile, ctx.job);
-    if (text) plan.fills.push({ field: entry.field, key: entry.key, score: 0.6, value: { kind: "text", value: text } });
+    const draft = await draftFreeText(entry.field, profile, ctx.job);
+    if (draft) {
+      plan.fills.push({ field: entry.field, key: entry.key, score: 0.6, value: { kind: "text", value: draft.text } });
+      ctx.evidence.log(`drafted ${describeField(entry.field)} with ${draft.model} (${draft.text.length} chars)`);
+    } else {
+      ctx.evidence.log(`no usable draft for ${describeField(entry.field)}`);
+    }
   }
   return finalizePlan(plan, scan.fields);
+}
+
+async function setValueThroughDom(locator: Locator, value: string): Promise<void> {
+  await locator.evaluate((el, next) => {
+    const input = el as HTMLInputElement | HTMLTextAreaElement;
+    const proto = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+    input.focus();
+    if (setter) setter.call(input, next);
+    else input.value = next;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    input.blur();
+  }, value);
+}
+
+async function setCheckedThroughDom(locator: Locator, checked: boolean): Promise<void> {
+  await locator.evaluate((el, next) => {
+    const input = el as HTMLInputElement;
+    const label = input.labels?.[0] ?? input.closest("label");
+    if (label) {
+      (label as HTMLElement).click();
+      if (input.checked === next) return;
+    }
+    input.checked = next;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }, checked);
 }
 
 async function applyFill(scan: PageScan, fill: PlannedFill): Promise<void> {
   const locator = locatorFor(scan, fill.field);
   switch (fill.value.kind) {
     case "text":
-      await locator.fill(fill.value.value, { timeout: 5_000 });
+      if (fill.field.type === "richtext") {
+        await locator.click({ timeout: 4_000 });
+        await locator.fill(fill.value.value, { timeout: 4_000 });
+        return;
+      }
+      try {
+        await locator.fill(fill.value.value, { timeout: 4_000 });
+      } catch {
+        await setValueThroughDom(locator, fill.value.value);
+      }
       return;
     case "file":
       await locator.setInputFiles({ name: fill.value.file.name, mimeType: fill.value.file.mimeType, buffer: fill.value.file.buffer }, { timeout: 5_000 });
@@ -91,12 +133,12 @@ async function applyFill(scan: PageScan, fill: PlannedFill): Promise<void> {
       await locator.selectOption(fill.value.value, { timeout: 5_000 });
       return;
     case "check": {
-      const checked = await locator.isChecked({ timeout: 2_000 }).catch(() => false);
+      const checked = await locator.evaluate((el) => (el as HTMLInputElement).checked).catch(() => false);
       if (checked === fill.value.value) return;
       try {
         await locator.setChecked(fill.value.value, { timeout: 3_000 });
       } catch {
-        await locator.evaluate((el) => ((el as HTMLInputElement).labels?.[0] ?? (el as HTMLElement)).click());
+        await setCheckedThroughDom(locator, fill.value.value);
       }
     }
   }
@@ -113,18 +155,45 @@ function payloadValue(fill: PlannedFill): string {
   }
 }
 
+function sameField(a: FieldDescriptor, b: FieldDescriptor): boolean {
+  if (a.frameIndex !== b.frameIndex || a.tag !== b.tag || a.type !== b.type) return false;
+  if (a.name && b.name) return a.name === b.name;
+  return a.label === b.label && a.placeholder === b.placeholder && a.ariaLabel === b.ariaLabel;
+}
+
+async function relocate(ctx: ApplyContext, field: FieldDescriptor): Promise<{ scan: PageScan; field: FieldDescriptor } | null> {
+  const fresh = await scanPage(ctx.page);
+  const match = fresh.fields.find((candidate) => candidate.visible && sameField(candidate, field));
+  return match ? { scan: fresh, field: match } : null;
+}
+
+async function isStillAttached(scan: PageScan, field: FieldDescriptor): Promise<boolean> {
+  return (await locatorFor(scan, field).count().catch(() => 0)) > 0;
+}
+
 export async function fillFields(ctx: ApplyContext, scan: PageScan, plan: FillPlan): Promise<Record<string, string>> {
   const payload: Record<string, string> = {};
   const failed: PlannedFill[] = [];
+  let current = scan;
   for (const fill of plan.fills) {
     const label = describeField(fill.field);
     try {
-      await applyFill(scan, fill);
+      let target = fill;
+      let targetScan = current;
+      if (!(await isStillAttached(current, fill.field))) {
+        const found = await relocate(ctx, fill.field);
+        if (!found) throw new Error("element disappeared after the page re-rendered");
+        current = found.scan;
+        targetScan = found.scan;
+        target = { ...fill, field: found.field };
+        ctx.evidence.log(`relocated ${label} -> ${found.field.selector}`);
+      }
+      await applyFill(targetScan, target);
       payload[label] = payloadValue(fill);
       ctx.evidence.log(`filled ${label} <- ${fill.key} (${fill.score.toFixed(2)})`);
     } catch (err) {
       failed.push(fill);
-      ctx.evidence.log(`could not fill ${label}: ${(err as Error).message.split("\n")[0]}`);
+      ctx.evidence.log(`could not fill ${label} [frame ${fill.field.frameIndex} ${fill.field.selector}]: ${(err as Error).message.split("\n")[0]}`);
     }
   }
   if (failed.length > 0) {

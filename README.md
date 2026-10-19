@@ -23,7 +23,7 @@ Nothing in it calls an AI service. The only model it can use is an optional loca
 | Jobs.cz | Always. `PLAYWRIGHT_ENABLED=true` adds fuller descriptions for postings that render client-side |
 | Cocuma | Always |
 | Jobstack | Always |
-| NoFluffJobs (CZ listings) | Always. Its robots.txt disallows the API; `config/sources.cz.json` opts in to it |
+| NoFluffJobs (fully remote roles) | Always. Its Czech site serves the same Central-European pool, so only postings marked fully remote are kept. Its robots.txt disallows the API; `config/sources.cz.json` opts in to it |
 | Company careers | Always. Reads employers' own public job boards on Greenhouse, Lever, Ashby, SmartRecruiters, Recruitee and Workable |
 | StartupJobs | `PLAYWRIGHT_ENABLED=true` |
 | Skilleto | `PLAYWRIGHT_ENABLED=true` |
@@ -35,9 +35,9 @@ The search pipeline lives in `src/lib/jobs`. `registry.ts` lists the boards, `so
 
 ## Auto-apply
 
-The Auto-apply button on the dashboard opens the posting in Playwright, fills the application form and, when it is confident, submits it. It uses a separate, persistent Chromium profile in `.apply-profile`, so it never touches your own browser. StartupJobs has a dedicated adapter; every other site goes through a generic form filler.
+The Auto-apply button on the dashboard opens the posting in Playwright, fills the application form and, when it is confident, submits it. It uses a separate, persistent Chromium profile in `.apply-profile`, so it never touches your own browser. StartupJobs and jobs.cz/Teamio have dedicated adapters; every other site goes through a generic form filler.
 
-- Fields are matched by their labels, names and placeholders. A local Ollama, if you run one, maps fields the matcher can't place and drafts free-text answers. Without Ollama, those fields stay empty.
+- Fields are matched by their labels, names and placeholders. A local Ollama, if you run one, maps fields the matcher can't place and drafts the free-text message from your CV text and the job description, in the posting's language. The writer prefers `gemma3:12b`, then `gemma3:4b`, then the default model (`ollama pull gemma3:4b` is enough); set `OLLAMA_WRITER_MODEL` to override. Without Ollama, those fields stay empty.
 - The form is submitted only when every required field is filled and the mapping confidence is at least 0.8.
 - Otherwise the run stops as NEEDS_MANUAL, with the reason shown and the browser left open on the filled form for you to finish. A CAPTCHA or a login wall always ends the run as NEEDS_MANUAL; nothing is bypassed.
 - Every run saves screenshots, the submitted values (`payload.json`) and a log (`log.txt`) to `uploads/applications/<applicationId>`. The dashboard shows them in the Evidence dialog.

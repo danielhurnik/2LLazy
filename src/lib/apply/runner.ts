@@ -1,4 +1,5 @@
 import { revalidatePath } from "next/cache";
+import { readCvText } from "@/lib/cv";
 import { prisma } from "@/lib/prisma";
 import { findAdapter } from "./adapters";
 import { openApplyPage, withApplyLock } from "./browser";
@@ -78,6 +79,7 @@ export async function loadApplyInput(applicationId: string, userId: string): Pro
   if (!name || !email) return { code: 422, message: "Fill in your name and e-mail in Settings before auto-applying" };
   if (!/^https?:\/\//i.test(application.job.sourceUrl)) return { code: 422, message: "The job posting has no usable URL" };
 
+  const cvText = await readCvText(userId).catch(() => "");
   return {
     applicationId,
     userId,
@@ -87,6 +89,7 @@ export async function loadApplyInput(applicationId: string, userId: string): Pro
       company: application.job.company,
       sourceUrl: application.job.sourceUrl,
       source: application.job.source,
+      description: application.job.description,
     },
     profile: {
       name,
@@ -98,6 +101,7 @@ export async function loadApplyInput(applicationId: string, userId: string): Pro
       city: userProfile?.city?.trim() || null,
       country: userProfile?.country ?? "CZ",
       cv: await latestCv(userId),
+      cvText: cvText.trim() || null,
     },
   };
 }

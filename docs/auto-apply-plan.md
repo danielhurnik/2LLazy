@@ -62,7 +62,9 @@ Verified: dry run (`dryRun: true`) against a real startupjobs.cz posting through
 
 Lessons: the scanner scopes to an open modal; on the first page an apply CTA wins over stray inputs (the footer newsletter box was being filled before); an adapter's submit pattern is strict with no generic fallback; the browser singleton lives on `globalThis` because a Turbopack hot reload otherwise launches a second Chromium against the locked profile.
 
-Not yet: a real (non-dry) submission with the user watching; the startupjobs rich-text "why you" editor is contenteditable and is skipped (optional field); jobs.cz/Teamio adapter (the form-researcher agent died at the jobs.cz consent wall, probe scripts are in `scratchpad/form-research/`); Phase 2 boards and ATSes.
+Update 2026-10-20: dry runs now pass on startupjobs.cz (modal, rich-text message drafted and filled, CV via file chooser), jobs.cz/Teamio (branded career sites, "Reply" → reply form, CV in the CV slot only, talent-pool opt-in left unchecked) and skilleto.cz (modal with generated ids, first/last name split, hidden custom checkboxes). jobstack.it and cocuma.cz (BambooHR) put reCAPTCHA in front of the form and end as NEEDS_MANUAL by design. Adapters: `startupjobs`, `jobscz`. Free text: `ollamaMapper.draftFreeText` writes the message from the CV text + job description in the posting's language, with a no-CV mode that never claims experience, a Czech proofreading pass and a shape guard (greeting line, signature). Writer model preference: `OLLAMA_WRITER_MODEL`, gemma3:12b, gemma3:4b, gemma2:9b, qwen2.5:7b, then the default model. Gemma 3 needs a newer Ollama than 0.22 on this machine; gemma2:9b is the practical choice until Ollama is updated.
+
+Not yet: a real (non-dry) submission with the user watching; Phase 2 ATS adapters (Greenhouse, Lever, Workable, SmartRecruiters, Teamtailor, Recruitee) and nofluffjobs/jooble, which need postings in the local DB to test against.
 
 ## Coordination
 

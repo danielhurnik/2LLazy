@@ -48,6 +48,37 @@ export async function ollamaAvailable(): Promise<boolean> {
   }
 }
 
+export async function ollamaModels(): Promise<string[]> {
+  try {
+    const res = await fetch(`${OLLAMA_URL}/api/tags`, { signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { models?: Array<{ name?: string }> };
+    return (data.models ?? []).map((m) => m.name ?? "").filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+const MODEL_CHOICE_TTL_MS = 5 * 60_000;
+const modelChoices = new Map<string, { model: string; at: number }>();
+
+export async function ollamaPickModel(preferred: string[]): Promise<string> {
+  const key = preferred.join("|");
+  const cached = modelChoices.get(key);
+  if (cached && Date.now() - cached.at < MODEL_CHOICE_TTL_MS) return cached.model;
+  const installed = await ollamaModels();
+  let model = DEFAULT_MODEL;
+  for (const wanted of preferred) {
+    const hit = installed.find((name) => name === wanted || name.split(":")[0] === wanted);
+    if (hit) {
+      model = hit;
+      break;
+    }
+  }
+  if (installed.length > 0) modelChoices.set(key, { model, at: Date.now() });
+  return model;
+}
+
 export async function ollamaChat(
   messages: OllamaMessage[],
   options: OllamaChatOptions & { format?: Record<string, unknown> } = {},

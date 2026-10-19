@@ -51,18 +51,20 @@ function enumerateFrame(): FrameScan {
       return false;
     }
   };
+  const generatedId = (id: string) => /\d{2,}/.test(id) || /^(reka|radix|headlessui|mui|v-|:r|input-|field-|el-)/i.test(id) || /[-_:][0-9a-z]{6,}$/i.test(id);
   const selectorFor = (el: Element): string => {
     const tag = el.tagName.toLowerCase();
-    if (el.id && isUnique(`#${CSS.escape(el.id)}`, el)) return `#${CSS.escape(el.id)}`;
-    const testId = el.getAttribute("data-testid");
-    if (testId && isUnique(`[data-testid="${CSS.escape(testId)}"]`, el)) return `[data-testid="${CSS.escape(testId)}"]`;
     const name = el.getAttribute("name");
+    const testId = el.getAttribute("data-testid");
+    if (el.id && !generatedId(el.id) && isUnique(`#${CSS.escape(el.id)}`, el)) return `#${CSS.escape(el.id)}`;
+    if (testId && isUnique(`[data-testid="${CSS.escape(testId)}"]`, el)) return `[data-testid="${CSS.escape(testId)}"]`;
     if (name && isUnique(`${tag}[name="${CSS.escape(name)}"]`, el)) return `${tag}[name="${CSS.escape(name)}"]`;
+    if (el.id && isUnique(`#${CSS.escape(el.id)}`, el)) return `#${CSS.escape(el.id)}`;
     const parts: string[] = [];
     let cur: Element | null = el;
     while (cur && cur.nodeType === 1 && parts.length < 12) {
       let part = cur.tagName.toLowerCase();
-      if (cur.id) {
+      if (cur.id && !generatedId(cur.id)) {
         parts.unshift(`#${CSS.escape(cur.id)}`);
         break;
       }
@@ -95,22 +97,52 @@ function enumerateFrame(): FrameScan {
         if (node) bits.push(clean(node.textContent));
       }
     }
+    const inputType = (el.getAttribute("type") ?? "").toLowerCase();
+    if (!bits.length && (inputType === "checkbox" || inputType === "radio") && el.parentElement) {
+      const text = clean(el.parentElement.textContent);
+      if (text) bits.push(text);
+    }
     if (!bits.length) {
-      let parent = el.parentElement;
-      let depth = 0;
-      while (parent && depth < 4) {
-        const candidate = parent.querySelector("label, legend, [class*=label i]");
-        if (candidate && !candidate.contains(el)) {
-          bits.push(clean(candidate.textContent));
-          break;
+      const labelLike = (node: Element | null): string => {
+        if (!node || node.contains(el)) return "";
+        if (node.matches("label, legend, [class*=label i], h1, h2, h3, h4, h5, h6, p, span, div, dt, strong")) {
+          const text = clean(node.textContent);
+          if (text && text.length <= 120 && !node.querySelector("input, textarea, select")) return text;
+          const inner = node.querySelector("label, legend, [class*=label i]");
+          if (inner && !inner.contains(el)) return clean(inner.textContent);
         }
-        parent = parent.parentElement;
+        return "";
+      };
+      let scope: Element | null = el;
+      let depth = 0;
+      while (scope && depth < 4 && !bits.length) {
+        let sibling = scope.previousElementSibling;
+        let hops = 0;
+        while (sibling && hops < 3) {
+          const text = labelLike(sibling);
+          if (text) {
+            bits.push(text);
+            break;
+          }
+          sibling = sibling.previousElementSibling;
+          hops += 1;
+        }
+        scope = scope.parentElement;
         depth += 1;
       }
     }
     return bits.filter(Boolean).join(" ");
   };
 
+  const fieldVisible = (el: HTMLElement, type: string): boolean => {
+    const input = el as HTMLInputElement;
+    if (input.disabled || input.readOnly) return false;
+    if (type === "file") return true;
+    if (isVisible(el)) return true;
+    if (type !== "checkbox" && type !== "radio") return false;
+    const holder = input.labels?.[0] ?? el.closest("label") ?? el.parentElement;
+    return !!holder && isVisible(holder);
+  };
   const modals = Array.from(document.querySelectorAll<HTMLElement>("[role=dialog], dialog[open], [aria-modal=true]")).filter(isVisible);
   const root: ParentNode = modals[modals.length - 1] ?? document;
 
@@ -137,9 +169,34 @@ function enumerateFrame(): FrameScan {
       autocomplete: el.getAttribute("autocomplete") ?? "",
       accept: el.getAttribute("accept") ?? "",
       required,
-      visible: type === "file" ? !(el as HTMLInputElement).disabled : isVisible(el),
+      visible: fieldVisible(el, type),
       checked: (el as HTMLInputElement).checked === true,
+      value: type === "file" || type === "password" ? "" : clean((el as HTMLInputElement).value).slice(0, 600),
       options: tag === "select" ? Array.from((el as HTMLSelectElement).options).map((o) => ({ value: o.value, text: clean(o.textContent) })) : [],
+    });
+  }
+
+  const editors = root.querySelectorAll<HTMLElement>('[contenteditable="true"], [contenteditable=""], [role="textbox"]');
+  for (const el of Array.from(editors)) {
+    const tagName = el.tagName.toLowerCase();
+    if (tagName === "input" || tagName === "textarea") continue;
+    const label = labelFor(el);
+    fields.push({
+      selector: selectorFor(el),
+      tag: "textarea",
+      type: "richtext",
+      name: el.getAttribute("name") ?? el.getAttribute("data-name") ?? "",
+      id: el.id ?? "",
+      label,
+      placeholder: el.getAttribute("data-placeholder") ?? el.getAttribute("aria-placeholder") ?? el.getAttribute("placeholder") ?? "",
+      ariaLabel: el.getAttribute("aria-label") ?? "",
+      autocomplete: "",
+      accept: "",
+      required: el.getAttribute("aria-required") === "true" || /\*\s*$/.test(label),
+      visible: isVisible(el),
+      checked: false,
+      value: clean(el.textContent).slice(0, 600),
+      options: [],
     });
   }
 
@@ -226,7 +283,12 @@ export function describeScan(scan: PageScan): string {
     .map((b) => `"${b.text.slice(0, 30)}"[${b.kind}]`)
     .join(", ");
   const errors = scan.signals.errors.length ? ` errors=${JSON.stringify(scan.signals.errors)}` : "";
-  return `scan ${scan.signals.url.slice(0, 100)} frames=${scan.frames.length} fields=${scan.fields.length}/${visibleFields} visible buttons=${scan.buttons.length}/${visibleButtons.length} visible captcha=${scan.signals.captcha ?? "no"} login=${scan.signals.loginWall}${errors} buttons: ${sample}`;
+  const fieldSample = scan.fields
+    .filter((f) => f.visible)
+    .slice(0, 30)
+    .map((f) => `${f.tag === "input" ? f.type : f.tag}${f.required ? "*" : ""}:"${(f.label || f.placeholder || f.ariaLabel || f.name).slice(0, 40)}"`)
+    .join(", ");
+  return `scan ${scan.signals.url.slice(0, 100)} frames=${scan.frames.length} fields=${scan.fields.length}/${visibleFields} visible buttons=${scan.buttons.length}/${visibleButtons.length} visible captcha=${scan.signals.captcha ?? "no"} login=${scan.signals.loginWall}${errors} fields: ${fieldSample} | buttons: ${sample}`;
 }
 
 export function locatorFor(scan: PageScan, target: { frameIndex: number; selector: string }): Locator {
