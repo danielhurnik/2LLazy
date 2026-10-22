@@ -19,8 +19,9 @@ import type { AutoApplyRun, ResumeState } from "./useAutoApply";
 import { ui, fonts } from "@/theme/tokens";
 import { calloutSx, panelLinkSx } from "./panelStyles";
 import { PostingSignInHint } from "./BoardSignIn";
+import { ReviewCard, ScreenshotThumbnail } from "./ReviewCard";
+import { useReviewActions, useSavedReview, type ReviewDetails } from "./useReview";
 
-const SCREENSHOT_MAX_HEIGHT = 220;
 const RUN_IN_PROGRESS_NOTE = "A run is in progress. Refresh to see the result.";
 const WAITING_PREFIX = "Waiting for you:";
 const NEEDS_YOU_TITLE = "Needs you";
@@ -111,25 +112,6 @@ function describeSavedState(application: Application): CalloutView | null {
   }
 }
 
-function ScreenshotThumbnail({ url }: { url: string }) {
-  return (
-    <Box component="a" href={url} target="_blank" rel="noreferrer" sx={{ display: "inline-block", mt: 1 }}>
-      <Box
-        component="img"
-        src={url}
-        alt="Latest step of the auto apply run"
-        sx={{
-          display: "block",
-          maxWidth: "100%",
-          maxHeight: SCREENSHOT_MAX_HEIGHT,
-          border: `1px solid ${ui.line}`,
-          borderRadius: 1,
-        }}
-      />
-    </Box>
-  );
-}
-
 interface ContinueControlProps {
   resumeState: ResumeState;
   onContinue: () => void;
@@ -159,6 +141,26 @@ interface AutoApplyPanelProps {
 }
 
 export function AutoApplyPanel({ application, run, resumeState, onContinue, onShowEvidence }: AutoApplyPanelProps) {
+  const liveReview = run.isRunning && run.waiting?.reason === "review" ? run.waiting : null;
+  const savedReview = useSavedReview(application.id, !run.isRunning && application.status === "WAITING_FOR_USER");
+  const { reviewState, openWindow, markSent, discard } = useReviewActions(application.id, run.isRunning);
+  const review: ReviewDetails | null = liveReview
+    ? { draft: liveReview.draft, screenshotUrl: run.screenshotUrl }
+    : savedReview;
+
+  if (review) {
+    return (
+      <ReviewCard
+        detail={liveReview?.message ?? withoutWaitingPrefix(application.errorMessage)}
+        review={review}
+        reviewState={reviewState}
+        onOpenWindow={openWindow}
+        onMarkSent={markSent}
+        onDiscard={discard}
+      />
+    );
+  }
+
   const view = describeLiveRun(run, application) ?? describeSavedState(application);
   if (!view) return null;
   const { evidenceUrl } = view;

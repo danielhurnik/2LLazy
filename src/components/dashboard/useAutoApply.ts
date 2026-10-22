@@ -16,13 +16,19 @@ export type ApplyDoneEvent = Extract<ApplyEvent, { type: "done" }>;
 
 type WaitReason = Extract<ApplyEvent, { type: "waiting" }>["reason"];
 
-const WAIT_REASONS: WaitReason[] = ["captcha", "login"];
+const WAIT_REASONS: WaitReason[] = ["captcha", "login", "review"];
+
+export type ReviewOutcome = "SENT" | "DISCARDED";
+
+type ContinuePayload =
+  | { applicationId: string; focus?: true; outcome?: ReviewOutcome }
+  | { all: true };
 
 export interface AutoApplyRun {
   isRunning: boolean;
   message: string | null;
   screenshotUrl: string | null;
-  waiting: { reason: WaitReason; message: string } | null;
+  waiting: { reason: WaitReason; message: string; draft: string | null } | null;
   outcome: ApplyDoneEvent | null;
   error: string | null;
 }
@@ -51,11 +57,17 @@ const isWaitReason = (value: unknown): value is WaitReason =>
 
 function toApplyEvent(data: unknown): ApplyEvent | null {
   if (!isRecord(data)) return null;
-  const { type, message, url, status, evidenceUrl, reason } = data;
+  const { type, message, url, status, evidenceUrl, reason, draft } = data;
   if (type === "progress" && typeof message === "string") return { type, message };
   if (type === "resumed" && typeof message === "string") return { type, message };
   if (type === "waiting" && isWaitReason(reason) && typeof message === "string") {
-    return { type, reason, message, url: typeof url === "string" ? url : "" };
+    return {
+      type,
+      reason,
+      message,
+      url: typeof url === "string" ? url : "",
+      draft: typeof draft === "string" ? draft : undefined,
+    };
   }
   if (type === "error" && typeof message === "string") return { type, message };
   if (type === "screenshot" && typeof url === "string") return { type, url };
@@ -74,7 +86,7 @@ function withEvent(run: AutoApplyRun, event: ApplyEvent): AutoApplyRun {
     case "waiting":
       return {
         ...run,
-        waiting: { reason: event.reason, message: event.message },
+        waiting: { reason: event.reason, message: event.message, draft: event.draft ?? null },
         screenshotUrl: event.url || run.screenshotUrl,
       };
     case "resumed":
@@ -96,7 +108,7 @@ export async function describeRejection(response: Response, action: string): Pro
   }
 }
 
-async function postContinue(payload: { applicationId: string } | { all: true }, action: string): Promise<unknown> {
+export async function postContinue(payload: ContinuePayload, action: string): Promise<unknown> {
   const response = await fetch(CONTINUE_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

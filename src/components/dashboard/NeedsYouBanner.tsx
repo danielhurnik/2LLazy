@@ -81,7 +81,7 @@ export function NeedsYouBanner({ waitingCount, onShowWaiting }: NeedsYouBannerPr
         <Typography variant="body2" sx={{ color: ui.text }}>
           {describeCount(waitingCount)}
           <Box component="span" sx={{ color: ui.textMuted }}>
-            {" "}· a CAPTCHA or sign-in is open in the apply window
+            {" "}· waiting for you in the apply window
           </Box>
           {onShowWaiting && (
             <>
