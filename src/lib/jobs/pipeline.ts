@@ -162,7 +162,7 @@ export async function runSearch({ userId, request, sources, emit, signal }: RunS
     if (alreadyEmittedAtLeastAsFresh(row.id, isStale)) return;
     const item = toItem(row, normalized, isStale, vector);
     if (!item) return;
-    item.alsoOn = alsoOnEntries(await crossListingsOf(row), boardLabels);
+    item.alsoOn = alsoOnEntries(row, await crossListingsOf(row), boardLabels);
     isStaleByEmittedId.set(row.id, isStale);
     emitted.push({ row, score: item.similarity ?? 0 });
     await emit({ type: "job", data: item });

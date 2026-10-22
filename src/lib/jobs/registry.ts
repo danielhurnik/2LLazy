@@ -60,3 +60,7 @@ export function sourcesFor(country: CountryCode): SourceSelection {
   }
   return { sources, skipped };
 }
+
+export function sourceLabels(): Map<JobSource["source"], string> {
+  return new Map(ALL_SOURCES.map((source) => [source.source, source.label]));
+}
