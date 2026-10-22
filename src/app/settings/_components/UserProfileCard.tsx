@@ -140,7 +140,7 @@ export function UserProfileCard({ profile: initialProfile }: Props) {
               onChange={(e) => setProfile({ ...profile, expectedSalaryCzk: parseSalary(e.target.value) })}
               inputProps={{ inputMode: "numeric" }}
               InputProps={{ endAdornment: <InputAdornment position="end">CZK / month</InputAdornment> }}
-              helperText="Whole CZK, gross, e.g. 65000. Auto apply fills both into forms that ask for them."
+              helperText="Whole CZK, gross, e.g. 65000. Both go into application forms that ask for them."
               fullWidth
             />
           </FieldRow>

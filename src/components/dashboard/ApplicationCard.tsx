@@ -251,7 +251,7 @@ export function ApplicationCard({ application, onStatusClick }: ApplicationCardP
               disabled={run.isRunning}
               onClick={() => setIsConfirmingAutoApply(true)}
             >
-              {run.isRunning ? "Applying…" : "Auto apply"}
+              {run.isRunning ? "Filling in…" : "Fill in form"}
             </Button>
           )}
 

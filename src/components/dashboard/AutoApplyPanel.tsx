@@ -25,6 +25,8 @@ import { useReviewActions, useSavedReview, type ReviewDetails } from "./useRevie
 const RUN_IN_PROGRESS_NOTE = "A run is in progress. Refresh to see the result.";
 const WAITING_PREFIX = "Waiting for you:";
 const NEEDS_YOU_TITLE = "Needs you";
+const FILLING_TITLE = "Filling in";
+const FILL_FAILED_TITLE = "Could not fill it in";
 
 interface CalloutView {
   tone: string;
@@ -60,9 +62,9 @@ function describeLiveRun(run: AutoApplyRun, application: Application): CalloutVi
     };
   }
   if (run.isRunning) {
-    return { ...shared, tone: ui.blue, title: "Applying", detail: run.message, evidenceUrl: null };
+    return { ...shared, tone: ui.blue, title: FILLING_TITLE, detail: run.message, evidenceUrl: null };
   }
-  if (run.error) return { ...shared, tone: ui.red, title: "Auto apply failed", detail: run.error };
+  if (run.error) return { ...shared, tone: ui.red, title: FILL_FAILED_TITLE, detail: run.error };
   if (!run.outcome) return null;
 
   const detail = run.outcome.message ?? application.errorMessage;
@@ -72,7 +74,7 @@ function describeLiveRun(run: AutoApplyRun, application: Application): CalloutVi
     case "NEEDS_MANUAL":
       return { ...shared, tone: ui.orange, title: "Needs finishing by hand", detail, canFinishManually: true };
     case "FAILED":
-      return { ...shared, tone: ui.red, title: "Auto apply failed", detail };
+      return { ...shared, tone: ui.red, title: FILL_FAILED_TITLE, detail };
   }
 }
 
@@ -94,7 +96,7 @@ function describeSavedState(application: Application): CalloutView | null {
         canContinue: true,
       };
     case "APPLYING":
-      return { ...shared, tone: ui.blue, title: "Applying", detail: RUN_IN_PROGRESS_NOTE, evidenceUrl: null };
+      return { ...shared, tone: ui.blue, title: FILLING_TITLE, detail: RUN_IN_PROGRESS_NOTE, evidenceUrl: null };
     case "NEEDS_MANUAL":
       return {
         ...shared,
@@ -105,7 +107,7 @@ function describeSavedState(application: Application): CalloutView | null {
       };
     case "FAILED":
       return application.errorMessage || shared.evidenceUrl
-        ? { ...shared, tone: ui.red, title: "Auto apply failed", detail: application.errorMessage }
+        ? { ...shared, tone: ui.red, title: FILL_FAILED_TITLE, detail: application.errorMessage }
         : null;
     default:
       return null;
@@ -253,16 +255,16 @@ export function AutoApplyConfirmDialog({ job, onCancel, onConfirm }: AutoApplyCo
   const obstacles = useObstacleSummary(job.id);
   return (
     <Dialog open onClose={onCancel} fullWidth maxWidth="xs">
-      <DialogTitle>Apply automatically?</DialogTitle>
+      <DialogTitle>Fill in this application?</DialogTitle>
       <DialogContent>
         <Typography variant="body2" sx={{ color: ui.text }}>
           {job.title}
           <Box component="span" sx={{ color: ui.textMuted }}> · {job.company}</Box>
         </Typography>
         <Typography variant="body2" sx={{ mt: 1.5, color: ui.textMuted }}>
-          Fills in the application form with your profile and CV, then submits it. A browser
-          window opens on this computer while it runs. Forms it can&apos;t fill with confidence stop
-          before submitting, so you can finish them yourself.
+          Opens the application form in a browser window on this computer and fills it in with
+          your profile, CV and message. Nothing is sent: you check the form, change anything you
+          like and send it yourself.
         </Typography>
         {obstacles && <ObstacleNote summary={obstacles} />}
         <PostingSignInHint sourceUrl={job.sourceUrl} />
@@ -270,7 +272,7 @@ export function AutoApplyConfirmDialog({ job, onCancel, onConfirm }: AutoApplyCo
       <DialogActions>
         <Button onClick={onCancel}>Cancel</Button>
         <Button variant="contained" onClick={onConfirm}>
-          Apply
+          Fill it in
         </Button>
       </DialogActions>
     </Dialog>
