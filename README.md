@@ -81,6 +81,7 @@ Optional:
 | `PLAYWRIGHT_ENABLED=true` | StartupJobs and Skilleto, fuller Jobs.cz descriptions, and auto-apply |
 | `JOOBLE_API_KEY` | The Jooble board |
 | `ROBOTS_ALLOW` | Further comma-separated `host/path` exceptions to robots.txt, added to the ones in `config/sources.cz.json` |
+| `SEARCH_REFRESH_MINUTES` | How often the background pass re-reads stored postings and expires the ones that are gone (default 180, `0` disables) |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Google sign-in and Google Calendar sync |
 | `APPLY_HEADLESS=true` | Runs auto-apply without a visible browser window |
 | `APPLY_PROFILE_DIR` | Puts the auto-apply browser profile somewhere other than `.apply-profile` |
