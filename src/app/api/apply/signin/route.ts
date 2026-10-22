@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/auth";
-import { signInHosts, signInTargetFor, signInToBoard } from "@/lib/apply/boardSignIn";
+import { signInHosts, signInTargetFor, startSignIn } from "@/lib/apply/boardSignIn";
 import { errorMessage, isRecord } from "@/lib/guards";
 
 export const runtime = "nodejs";
@@ -24,8 +24,8 @@ export async function POST(req: NextRequest) {
   if (!target) return jsonError("Unknown sign-in host", 400);
 
   try {
-    const signedIn = await signInToBoard(target);
-    return Response.json({ ok: true, host: target.host, signedIn });
+    await startSignIn(target);
+    return Response.json({ ok: true, started: true, host: target.host });
   } catch (err) {
     return jsonError(`Could not open the sign-in window: ${errorMessage(err).split("\n")[0]}`, 500);
   }

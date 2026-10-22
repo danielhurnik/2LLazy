@@ -12,13 +12,14 @@ export const SIGN_IN_HOSTS: readonly SignInTarget[] = [{ host: "jobstack.it", lo
 
 const POLL_MS = 2 * MS_PER_SECOND;
 const WAIT_MINUTES = Math.max(1, Number(process.env.APPLY_HUMAN_WAIT_MINUTES ?? "15") || 15);
+const REFOCUS_POLLS = 2;
 
 const hotReloadSafeGlobals = globalThis as unknown as {
   applySignedInHosts?: Map<string, boolean>;
-  applySignInsInFlight?: Map<string, Promise<boolean>>;
+  applySignInsOpening?: Map<string, Promise<void>>;
 };
 const signedInHosts = (hotReloadSafeGlobals.applySignedInHosts ??= new Map<string, boolean>());
-const signInsInFlight = (hotReloadSafeGlobals.applySignInsInFlight ??= new Map<string, Promise<boolean>>());
+const signInsInFlight = (hotReloadSafeGlobals.applySignInsOpening ??= new Map<string, Promise<void>>());
 
 const bareHost = (host: string) => host.trim().toLowerCase().replace(/^www\./, "");
 
@@ -37,8 +38,13 @@ export function isSignedIn(host: string): boolean {
   return target !== null && signedInHosts.get(target.host) === true;
 }
 
-export function signInHosts(): { host: string; loginUrl: string; signedIn: boolean }[] {
-  return SIGN_IN_HOSTS.map((target) => ({ host: target.host, loginUrl: target.loginUrl, signedIn: isSignedIn(target.host) }));
+export function signInHosts(): { host: string; loginUrl: string; signedIn: boolean; pending: boolean }[] {
+  return SIGN_IN_HOSTS.map((target) => ({
+    host: target.host,
+    loginUrl: target.loginUrl,
+    signedIn: isSignedIn(target.host),
+    pending: signInsInFlight.has(target.host),
+  }));
 }
 
 export function hasLeftLoginPage(scan: PageScan, target: SignInTarget): boolean {
@@ -54,32 +60,47 @@ export function hasLeftLoginPage(scan: PageScan, target: SignInTarget): boolean 
 
 async function waitForSignIn(page: Page, target: SignInTarget): Promise<boolean> {
   const deadline = Date.now() + WAIT_MINUTES * MS_PER_MINUTE;
-  while (Date.now() < deadline) {
+  for (let poll = 0; Date.now() < deadline; poll += 1) {
     await new Promise((resolve) => setTimeout(resolve, POLL_MS));
     if (page.isClosed()) return false;
+    if (poll < REFOCUS_POLLS) await page.bringToFront().catch(() => undefined);
     const scan = await scanPage(page).catch(() => null);
     if (scan && hasLeftLoginPage(scan, target)) return true;
   }
   return false;
 }
 
-async function runSignIn(target: SignInTarget): Promise<boolean> {
+async function openSignInPage(target: SignInTarget): Promise<Page> {
   const page = await openApplyPage();
   try {
     await page.goto(target.loginUrl, { waitUntil: "domcontentloaded" });
-    await page.bringToFront().catch(() => undefined);
+  } catch (err) {
+    releasePage(page);
+    throw err;
+  }
+  await page.bringToFront().catch(() => undefined);
+  return page;
+}
+
+async function finishSignIn(page: Page, target: SignInTarget): Promise<void> {
+  try {
     const signedIn = await waitForSignIn(page, target);
     markSignedIn(target.host, signedIn);
-    return signedIn;
+    if (signedIn) await page.close().catch(() => undefined);
   } finally {
     releasePage(page);
   }
 }
 
-export function signInToBoard(target: SignInTarget): Promise<boolean> {
+export function startSignIn(target: SignInTarget): Promise<void> {
   const running = signInsInFlight.get(target.host);
   if (running) return running;
-  const attempt = runSignIn(target).finally(() => signInsInFlight.delete(target.host));
-  signInsInFlight.set(target.host, attempt);
-  return attempt;
+  const opening = openSignInPage(target);
+  const opened = opening.then(() => undefined);
+  signInsInFlight.set(target.host, opened);
+  opening
+    .then((page) => finishSignIn(page, target))
+    .catch(() => undefined)
+    .finally(() => signInsInFlight.delete(target.host));
+  return opened;
 }

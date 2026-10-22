@@ -1,9 +1,16 @@
-import { beforeEach, describe, it, expect } from "vitest";
-import { SIGN_IN_HOSTS, hasLeftLoginPage, isSignedIn, markSignedIn, signInHosts, signInTargetFor } from "@/lib/apply/boardSignIn";
-import type { PageScan } from "@/lib/apply/fieldScanner";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
+import type { Page } from "playwright";
+import { SIGN_IN_HOSTS, hasLeftLoginPage, isSignedIn, markSignedIn, signInHosts, signInTargetFor, startSignIn } from "@/lib/apply/boardSignIn";
+import { openApplyPage, releasePage } from "@/lib/apply/browser";
+import { scanPage, type PageScan } from "@/lib/apply/fieldScanner";
+
+vi.mock("@/lib/apply/browser", () => ({ openApplyPage: vi.fn(), releasePage: vi.fn() }));
+vi.mock("@/lib/apply/fieldScanner", () => ({ scanPage: vi.fn() }));
 
 const JOBSTACK = "jobstack.it";
 const JOBSTACK_LOGIN = "https://www.jobstack.it/login";
+const JOBSTACK_HOME = "https://www.jobstack.it/";
+const POLL_MS = 2_000;
 
 function scanAt(url: string, loginWall = false): PageScan {
   return {
@@ -25,8 +32,8 @@ describe("sign-in host map", () => {
     for (const target of SIGN_IN_HOSTS) markSignedIn(target.host, false);
   });
 
-  it("lists jobstack.it first with its login page and signed out", () => {
-    expect(signInHosts()[0]).toEqual({ host: JOBSTACK, loginUrl: JOBSTACK_LOGIN, signedIn: false });
+  it("lists jobstack.it first with its login page, signed out and idle", () => {
+    expect(signInHosts()[0]).toEqual({ host: JOBSTACK, loginUrl: JOBSTACK_LOGIN, signedIn: false, pending: false });
   });
 
   it("resolves a host with or without www and in any case", () => {
@@ -78,5 +85,90 @@ describe("hasLeftLoginPage", () => {
   it("keeps waiting on an unreadable URL", () => {
     expect(hasLeftLoginPage(scanAt("about:blank"), jobstackTarget())).toBe(false);
     expect(hasLeftLoginPage(scanAt(""), jobstackTarget())).toBe(false);
+  });
+});
+
+function fakePage() {
+  let closed = false;
+  return {
+    goto: vi.fn().mockResolvedValue(null),
+    bringToFront: vi.fn().mockResolvedValue(undefined),
+    isClosed: vi.fn(() => closed),
+    close: vi.fn(async () => {
+      closed = true;
+    }),
+    closeByUser: () => {
+      closed = true;
+    },
+  };
+}
+
+const jobstackEntry = () => signInHosts().find((entry) => entry.host === JOBSTACK);
+
+describe("startSignIn", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    markSignedIn(JOBSTACK, false);
+    vi.mocked(scanPage).mockResolvedValue(scanAt(JOBSTACK_LOGIN));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("returns once the login page is open and reports progress through the host list", async () => {
+    const page = fakePage();
+    vi.mocked(openApplyPage).mockResolvedValue(page as unknown as Page);
+
+    await startSignIn(jobstackTarget());
+    expect(page.goto).toHaveBeenCalledWith(JOBSTACK_LOGIN, { waitUntil: "domcontentloaded" });
+    expect(jobstackEntry()).toMatchObject({ signedIn: false, pending: true });
+
+    await vi.advanceTimersByTimeAsync(POLL_MS + 100);
+    expect(jobstackEntry()).toMatchObject({ signedIn: false, pending: true });
+
+    vi.mocked(scanPage).mockResolvedValue(scanAt(JOBSTACK_HOME));
+    await vi.advanceTimersByTimeAsync(POLL_MS + 100);
+    expect(jobstackEntry()).toMatchObject({ signedIn: true, pending: false });
+    expect(page.close).toHaveBeenCalledOnce();
+    expect(releasePage).toHaveBeenCalledWith(page);
+  });
+
+  it("reuses the open window for a second request", async () => {
+    const page = fakePage();
+    vi.mocked(openApplyPage).mockResolvedValue(page as unknown as Page);
+    await startSignIn(jobstackTarget());
+    await startSignIn(jobstackTarget());
+    expect(openApplyPage).toHaveBeenCalledOnce();
+    page.closeByUser();
+    await vi.advanceTimersByTimeAsync(POLL_MS + 100);
+  });
+
+  it("brings the window forward again on the first polls", async () => {
+    const page = fakePage();
+    vi.mocked(openApplyPage).mockResolvedValue(page as unknown as Page);
+    await startSignIn(jobstackTarget());
+    await vi.advanceTimersByTimeAsync(3 * POLL_MS + 100);
+    expect(page.bringToFront).toHaveBeenCalledTimes(3);
+    page.closeByUser();
+    await vi.advanceTimersByTimeAsync(POLL_MS + 100);
+  });
+
+  it("stops without signing in when the user closes the window", async () => {
+    const page = fakePage();
+    vi.mocked(openApplyPage).mockResolvedValue(page as unknown as Page);
+    await startSignIn(jobstackTarget());
+    page.closeByUser();
+    await vi.advanceTimersByTimeAsync(POLL_MS + 100);
+    expect(jobstackEntry()).toMatchObject({ signedIn: false, pending: false });
+    expect(page.close).not.toHaveBeenCalled();
+  });
+
+  it("rejects and frees the host when the window cannot open", async () => {
+    vi.mocked(openApplyPage).mockRejectedValue(new Error("Chrome failed to start"));
+    await expect(startSignIn(jobstackTarget())).rejects.toThrow("Chrome failed to start");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(jobstackEntry()?.pending).toBe(false);
   });
 });
