@@ -58,7 +58,7 @@ export function BoardSignInStrip() {
         <BoardSignInLine
           key={board.host}
           board={board}
-          isPending={pendingHosts.has(board.host)}
+          isPending={board.pending || pendingHosts.has(board.host)}
           onSignIn={signIn}
         />
       ))}
@@ -77,7 +77,7 @@ export function PostingSignInHint({ sourceUrl }: { sourceUrl: string }) {
     <Box sx={calloutSx(board.signedIn ? ui.green : ui.blue)}>
       <BoardSignInLine
         board={board}
-        isPending={pendingHosts.has(board.host)}
+        isPending={board.pending || pendingHosts.has(board.host)}
         onSignIn={signIn}
       />
       <SignInError error={error} />

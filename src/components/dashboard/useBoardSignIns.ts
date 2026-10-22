@@ -13,6 +13,7 @@ export interface BoardSignIn {
   host: string;
   loginUrl: string;
   signedIn: boolean;
+  pending: boolean;
 }
 
 interface SignInState {
@@ -35,7 +36,7 @@ function toBoardSignIns(body: unknown): BoardSignIn[] {
   if (!isRecord(body) || !Array.isArray(body.hosts)) return [];
   return body.hosts.flatMap((entry: unknown) =>
     isRecord(entry) && typeof entry.host === "string" && typeof entry.loginUrl === "string"
-      ? [{ host: entry.host, loginUrl: entry.loginUrl, signedIn: entry.signedIn === true }]
+      ? [{ host: entry.host, loginUrl: entry.loginUrl, signedIn: entry.signedIn === true, pending: entry.pending === true }]
       : [],
   );
 }
@@ -57,7 +58,9 @@ async function waitUntilSignedIn(host: string): Promise<boolean> {
   while (Date.now() < deadline && listeners.size > 0) {
     await pause(SIGN_IN_POLL_MS);
     await refreshBoards();
-    if (state.boards.some((board) => board.host === host && board.signedIn)) return true;
+    const board = state.boards.find((candidate) => candidate.host === host);
+    if (board?.signedIn) return true;
+    if (board && !board.pending) return false;
   }
   return false;
 }
@@ -82,7 +85,7 @@ async function signIn(host: string): Promise<void> {
     const body: unknown = await response.json();
     const hasStarted = isRecord(body) && body.started === true;
     const signedIn = hasStarted ? await waitUntilSignedIn(host) : isRecord(body) && body.signedIn === true;
-    update({ boards: state.boards.map((board) => (board.host === host ? { ...board, signedIn } : board)) });
+    update({ boards: state.boards.map((board) => (board.host === host ? { ...board, signedIn, pending: false } : board)) });
     if (!signedIn) update({ error: `Not signed in to ${host}. The window closed or the wait ran out; try again when ready.` });
   } catch (err) {
     update({ error: errorMessage(err) });
