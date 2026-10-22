@@ -1,4 +1,5 @@
 import type { BrowserContext, Page } from "playwright";
+import { markPageBusy } from "./browser";
 import { findButton, scanPage, type ButtonDescriptor, type PageScan } from "./fieldScanner";
 import { locatorFor } from "./fieldScanner";
 
@@ -70,6 +71,7 @@ export async function clickButton(context: BrowserContext, page: Page, scan: Pag
   await locator.scrollIntoViewIfNeeded({ timeout: 5_000 }).catch(() => undefined);
   await locator.click({ timeout: 10_000 });
   const popup = await popupPromise;
+  if (popup) markPageBusy(popup);
   const active = popup ?? page;
   await settle(active);
   return { page: active, navigated: popup !== null || active.url() !== beforeUrl };
