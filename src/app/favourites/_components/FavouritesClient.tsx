@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Box } from "@mui/material";
+import { Alert, Box, Button } from "@mui/material";
 import { ALL_OPTION, JobFilterBar, type JobFilters } from "@/components/jobs/JobFilterBar";
 import { ErrorAlertList } from "@/components/ui/ErrorAlertList";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -22,7 +22,37 @@ interface JobActionOptions {
   describeFailure: (error: unknown) => string;
 }
 
+interface TrackRefusal {
+  job: JobItem;
+  reason: string;
+}
+
 const FAVOURITES_PATH = "/favourites";
+
+interface TrackRefusalNoticeProps {
+  refusal: TrackRefusal | null;
+  isTracking: boolean;
+  onTrackAnyway: (job: JobItem) => void;
+  onDismiss: () => void;
+}
+
+function TrackRefusalNotice({ refusal, isTracking, onTrackAnyway, onDismiss }: TrackRefusalNoticeProps) {
+  if (!refusal) return null;
+  return (
+    <Alert
+      severity="info"
+      onClose={onDismiss}
+      sx={{ mb: 1 }}
+      action={
+        <Button size="small" color="inherit" disabled={isTracking} onClick={() => onTrackAnyway(refusal.job)}>
+          {isTracking ? "Tracking…" : "Track anyway"}
+        </Button>
+      }
+    >
+      {refusal.job.title}: {refusal.reason}
+    </Alert>
+  );
+}
 
 function favouritesHref({ source, position, hasSalary }: JobFilters): string {
   const params = new URLSearchParams();
@@ -39,6 +69,7 @@ export function FavouritesClient({ jobs, filters, sources }: Props) {
   const [trackingId, setTrackingId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
+  const [refusal, setRefusal] = useState<TrackRefusal | null>(null);
 
   const addError = (message: string) => setErrors((previous) => [...previous, message]);
   const dismissError = (index: number) =>
@@ -65,12 +96,14 @@ export function FavouritesClient({ jobs, filters, sources }: Props) {
       describeFailure: (err) => `Failed: ${String(err)}`,
     });
 
-  const handleTrack = (job: JobItem) =>
+  const track = (job: JobItem, force: boolean) =>
     runJobAction(job, {
       setBusyJobId: setTrackingId,
       run: async () => {
-        const outcome = await trackJob(job.id);
-        if (!outcome.tracked) addError(outcome.reason);
+        const outcome = await trackJob(job.id, { force });
+        if (outcome.tracked) setRefusal(null);
+        else if (outcome.canOverride) setRefusal({ job, reason: outcome.reason });
+        else addError(outcome.reason);
       },
       describeFailure: (err) => `Track failed for ${job.title}: ${String(err)}`,
     });
@@ -83,6 +116,12 @@ export function FavouritesClient({ jobs, filters, sources }: Props) {
       />
 
       <ErrorAlertList errors={errors} onDismiss={dismissError} />
+      <TrackRefusalNotice
+        refusal={refusal}
+        isTracking={trackingId !== null && trackingId === refusal?.job.id}
+        onTrackAnyway={(job) => track(job, true)}
+        onDismiss={() => setRefusal(null)}
+      />
 
       <JobFilterBar
         variant="basic"
@@ -95,7 +134,7 @@ export function FavouritesClient({ jobs, filters, sources }: Props) {
         jobs={jobs}
         trackingId={trackingId}
         togglingId={togglingId}
-        onTrack={handleTrack}
+        onTrack={(job) => track(job, false)}
         onToggleFavourite={handleToggle}
       />
     </Box>
