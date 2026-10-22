@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   alpha,
   Box,
@@ -13,6 +14,8 @@ import {
   Typography,
 } from "@mui/material";
 import type { Application } from "@/types";
+import type { ObstacleSummary } from "@/lib/apply/obstacles";
+import { loadObstacleSummary } from "@/lib/actions/applicationActions";
 import type { AutoApplyRun, ResumeState } from "./useAutoApply";
 import { ui, fonts } from "@/theme/tokens";
 
@@ -217,6 +220,45 @@ export function AutoApplyPanel({ application, run, resumeState, onContinue, onSh
   );
 }
 
+function describeObstacles({ host, attempts, captchas, logins, blockerHost }: ObstacleSummary): string {
+  const applies = `your ${attempts} ${attempts === 1 ? "apply" : "applies"} so far`;
+  const outOfAttempts = (count: number) => Math.min(count, attempts);
+  const asks = [
+    captchas > 0 ? `a CAPTCHA on ${outOfAttempts(captchas)}` : null,
+    logins > 0 ? `a sign-in on ${outOfAttempts(logins)}` : null,
+  ].filter((ask): ask is string => ask !== null);
+  if (asks.length === 0) return `No CAPTCHA or sign-in on ${host} in ${applies}.`;
+  const subject = blockerHost ? `${host} postings apply through ${blockerHost}, which` : host;
+  return `${subject} asked for ${asks.join(" and ")} of ${applies}.`;
+}
+
+function useObstacleSummary(jobId: string): ObstacleSummary | null {
+  const [summary, setSummary] = useState<ObstacleSummary | null>(null);
+  useEffect(() => {
+    let isCurrent = true;
+    loadObstacleSummary(jobId)
+      .then((result) => {
+        if (isCurrent) setSummary(result);
+      })
+      .catch(() => undefined);
+    return () => {
+      isCurrent = false;
+    };
+  }, [jobId]);
+  return summary;
+}
+
+function ObstacleNote({ summary }: { summary: ObstacleSummary }) {
+  const hasBlockers = summary.captchas > 0 || summary.logins > 0;
+  return (
+    <Box sx={hasBlockers ? calloutSx(ui.orange) : { mt: 1.5 }}>
+      <Typography variant="body2" sx={{ color: hasBlockers ? ui.text : ui.textMuted }}>
+        {describeObstacles(summary)}
+      </Typography>
+    </Box>
+  );
+}
+
 interface AutoApplyConfirmDialogProps {
   job: Application["job"];
   onCancel: () => void;
@@ -224,6 +266,7 @@ interface AutoApplyConfirmDialogProps {
 }
 
 export function AutoApplyConfirmDialog({ job, onCancel, onConfirm }: AutoApplyConfirmDialogProps) {
+  const obstacles = useObstacleSummary(job.id);
   return (
     <Dialog open onClose={onCancel} fullWidth maxWidth="xs">
       <DialogTitle>Apply automatically?</DialogTitle>
@@ -237,6 +280,7 @@ export function AutoApplyConfirmDialog({ job, onCancel, onConfirm }: AutoApplyCo
           window opens on this computer while it runs. Forms it can&apos;t fill with confidence stop
           before submitting, so you can finish them yourself.
         </Typography>
+        {obstacles && <ObstacleNote summary={obstacles} />}
       </DialogContent>
       <DialogActions>
         <Button onClick={onCancel}>Cancel</Button>
