@@ -19,13 +19,8 @@ import { updateApplicationNotes } from "@/lib/actions/applicationActions";
 import { ui, fonts } from "@/theme/tokens";
 import { useAutoApply, type AutoApplyRun } from "./useAutoApply";
 import { EvidenceDialog } from "./EvidenceDialog";
-import {
-  AutoApplyConfirmDialog,
-  AutoApplyPanel,
-  calloutSx,
-  evidenceUrlFor,
-  panelLinkSx,
-} from "./AutoApplyPanel";
+import { AutoApplyConfirmDialog, AutoApplyPanel, evidenceUrlFor } from "./AutoApplyPanel";
+import { calloutSx, panelLinkSx } from "./panelStyles";
 
 interface ApplicationCardProps {
   application: Application;

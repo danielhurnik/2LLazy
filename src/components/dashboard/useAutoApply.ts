@@ -86,7 +86,7 @@ function withEvent(run: AutoApplyRun, event: ApplyEvent): AutoApplyRun {
   }
 }
 
-async function describeRejection(response: Response, action: string): Promise<string> {
+export async function describeRejection(response: Response, action: string): Promise<string> {
   const fallback = `${action} (HTTP ${response.status}).`;
   try {
     const body: unknown = await response.json();

@@ -12,6 +12,7 @@ import { ALL_OPTION } from "@/components/jobs/JobFilterBar";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusChangeDialog } from "@/components/dialogs/StatusChangeDialog";
 import { NeedsYouBanner } from "@/components/dashboard/NeedsYouBanner";
+import { BoardSignInStrip } from "@/components/dashboard/BoardSignIn";
 import { updateApplicationStatus } from "@/lib/actions/applicationActions";
 import { ApplicationList } from "./ApplicationList";
 import type { Application, AppStatus } from "@/types";
@@ -105,6 +106,8 @@ export function DashboardClient({ applications, filters, sources, statusCounts, 
         waitingCount={waitingCount}
         onShowWaiting={isShowingOnlyWaiting ? undefined : () => applyFilters(WAITING_ONLY_FILTERS)}
       />
+
+      <BoardSignInStrip />
 
       <DashboardFilterBar
         sources={sources}

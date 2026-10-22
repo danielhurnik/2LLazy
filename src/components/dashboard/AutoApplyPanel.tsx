@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import {
-  alpha,
   Box,
   Button,
   ButtonBase,
@@ -18,6 +17,8 @@ import type { ObstacleSummary } from "@/lib/apply/obstacles";
 import { loadObstacleSummary } from "@/lib/actions/applicationActions";
 import type { AutoApplyRun, ResumeState } from "./useAutoApply";
 import { ui, fonts } from "@/theme/tokens";
+import { calloutSx, panelLinkSx } from "./panelStyles";
+import { PostingSignInHint } from "./BoardSignIn";
 
 const SCREENSHOT_MAX_HEIGHT = 220;
 const RUN_IN_PROGRESS_NOTE = "A run is in progress. Refresh to see the result.";
@@ -33,25 +34,6 @@ interface CalloutView {
   canFinishManually: boolean;
   canContinue: boolean;
 }
-
-export const calloutSx = (tone: string) => ({
-  mt: 1.5,
-  py: 0.75,
-  px: 1.5,
-  borderLeft: `2px solid ${tone}`,
-  backgroundColor: alpha(tone, 0.06),
-  borderRadius: "0 4px 4px 0",
-});
-
-export const panelLinkSx = {
-  font: "inherit",
-  fontSize: "0.8125rem",
-  color: ui.text,
-  textDecoration: "underline",
-  textDecorationColor: ui.lineStrong,
-  textUnderlineOffset: 3,
-  "&:hover": { textDecorationColor: ui.accent },
-} as const;
 
 export const evidenceUrlFor = (application: Application) =>
   application.evidencePath ? `/api/apply/evidence/${application.id}/` : null;
@@ -281,6 +263,7 @@ export function AutoApplyConfirmDialog({ job, onCancel, onConfirm }: AutoApplyCo
           before submitting, so you can finish them yourself.
         </Typography>
         {obstacles && <ObstacleNote summary={obstacles} />}
+        <PostingSignInHint sourceUrl={job.sourceUrl} />
       </DialogContent>
       <DialogActions>
         <Button onClick={onCancel}>Cancel</Button>

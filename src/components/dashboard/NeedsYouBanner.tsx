@@ -6,7 +6,7 @@ import { Box, Button, ButtonBase, Stack, Typography } from "@mui/material";
 import { errorMessage } from "@/lib/guards";
 import { MS_PER_SECOND } from "@/lib/time";
 import { ui } from "@/theme/tokens";
-import { calloutSx, panelLinkSx } from "./AutoApplyPanel";
+import { calloutSx, panelLinkSx } from "./panelStyles";
 import { continueAllWaiting, type ContinueAllResult } from "./useAutoApply";
 
 const RESUME_REFRESH_DELAYS_MS = [3 * MS_PER_SECOND, 6 * MS_PER_SECOND];
