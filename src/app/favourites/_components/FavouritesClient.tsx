@@ -68,7 +68,10 @@ export function FavouritesClient({ jobs, filters, sources }: Props) {
   const handleTrack = (job: JobItem) =>
     runJobAction(job, {
       setBusyJobId: setTrackingId,
-      run: () => trackJob(job.id),
+      run: async () => {
+        const outcome = await trackJob(job.id);
+        if (!outcome.tracked) addError(outcome.reason);
+      },
       describeFailure: (err) => `Track failed for ${job.title}: ${String(err)}`,
     });
 
