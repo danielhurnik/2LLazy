@@ -41,9 +41,10 @@ The search pipeline lives in `src/lib/jobs`. `registry.ts` lists the boards, `so
 
 The Auto-apply button on the dashboard opens the posting in Playwright, fills the application form and, when it is confident, submits it. It uses a separate, persistent Chromium profile in `.apply-profile`, so it never touches your own browser. StartupJobs and jobs.cz/Teamio have dedicated adapters; every other site goes through a generic form filler.
 
-- Fields are matched by their labels, names and placeholders. A local Ollama, if you run one, maps fields the matcher can't place and drafts the free-text message from your CV text and the job description, in the posting's language. The writer prefers `gemma3:12b`, then `gemma3:4b`, then the default model (`ollama pull gemma3:4b` is enough); set `OLLAMA_WRITER_MODEL` to override. Without Ollama, those fields stay empty.
+- Fields are matched by their labels, names and placeholders. A local Ollama, if you run one, maps fields the matcher can't place and drafts the free-text message from your CV text and the job description, in the posting's language. The writer prefers `gemma3:4b`, then `gemma3:12b` and `gemma2:9b`, then the default model (`ollama pull gemma3:4b` is enough); set `OLLAMA_WRITER_MODEL` to override. Drafts are short and plain, and are redrafted when they contain stock AI phrasing, sentences copied from the ad, or experience the CV does not state. Without Ollama, those fields stay empty.
 - The form is submitted only when every required field is filled and the mapping confidence is at least 0.8.
-- Otherwise the run stops as NEEDS_MANUAL, with the reason shown and the browser left open on the filled form for you to finish. A CAPTCHA or a login wall always ends the run as NEEDS_MANUAL; nothing is bypassed.
+- Otherwise the run stops as NEEDS_MANUAL, with the reason shown and the browser left open on the filled form for you to finish.
+- A CAPTCHA or a login wall pauses the run instead: the form is filled first, the application shows as "Needs you" with a screenshot, and the run continues on its own once you solve the CAPTCHA or sign in (or press Continue). Nothing is bypassed; after `APPLY_HUMAN_WAIT_MINUTES` (default 15) the run ends as NEEDS_MANUAL. Paused runs do not block other applications, and every pause is recorded per site.
 - Every run saves screenshots, the submitted values (`payload.json`) and a log (`log.txt`) to `uploads/applications/<applicationId>`. The dashboard shows them in the Evidence dialog.
 - `POST /api/apply` with `"dryRun": true` fills the form but stops before submitting.
 
@@ -83,7 +84,8 @@ Optional:
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Google sign-in and Google Calendar sync |
 | `APPLY_HEADLESS=true` | Runs auto-apply without a visible browser window |
 | `APPLY_PROFILE_DIR` | Puts the auto-apply browser profile somewhere other than `.apply-profile` |
-| `OLLAMA_URL`, `OLLAMA_MODEL` | The local Ollama used by auto-apply (defaults `http://127.0.0.1:11434` and `llama3`). On AMD GPUs, start Ollama itself with `OLLAMA_VULKAN=1` |
+| `APPLY_HUMAN_WAIT_MINUTES` | How long a paused auto-apply run waits for you at a CAPTCHA or login wall (default 15) |
+| `OLLAMA_URL`, `OLLAMA_MODEL`, `OLLAMA_WRITER_MODEL` | The local Ollama used by search profiles and auto-apply (defaults `http://127.0.0.1:11434` and `gemma3:4b`; the writer falls back through `gemma3:12b` and `gemma2:9b` to the default). On AMD GPUs, start Ollama itself with `OLLAMA_VULKAN=1` |
 
 ## Setup
 
