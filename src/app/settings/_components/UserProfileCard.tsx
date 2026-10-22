@@ -13,6 +13,7 @@ import {
   Alert,
   CircularProgress,
   MenuItem,
+  InputAdornment,
 } from "@mui/material";
 import { saveUserProfile } from "@/lib/actions/settingsActions";
 import { COUNTRY_NAMES, isSupportedCountry } from "@/lib/jobs/sources/types";
@@ -22,7 +23,17 @@ import { useTimedMessage } from "./useTimedMessage";
 const MESSAGE_VISIBLE_MS = 5000;
 const SUPPORTED_COUNTRIES = Object.keys(COUNTRY_NAMES).filter(isSupportedCountry);
 
-type EditableProfileField = Exclude<keyof UserProfile, "googleCalendarSync" | "country">
+type EditableProfileField = Exclude<
+  keyof UserProfile,
+  "googleCalendarSync" | "country" | "availableFrom" | "expectedSalaryCzk"
+>;
+
+const NON_DIGITS = /\D/g;
+
+function parseSalary(input: string): number | null {
+  const digits = input.replace(NON_DIGITS, "");
+  return digits ? Number(digits) : null;
+}
 
 interface Props {
   profile: UserProfile;
@@ -112,6 +123,27 @@ export function UserProfileCard({ profile: initialProfile }: Props) {
             />
           </FieldRow>
           <TextField label="GitHub URL" {...fieldProps("githubUrl")} sx={{ maxWidth: 400 }} />
+          <FieldRow>
+            <TextField
+              label="Available from"
+              type="date"
+              size="small"
+              value={profile.availableFrom}
+              onChange={(e) => setProfile({ ...profile, availableFrom: e.target.value })}
+              InputLabelProps={{ shrink: true }}
+              sx={{ minWidth: { sm: 200 } }}
+            />
+            <TextField
+              label="Expected salary"
+              size="small"
+              value={profile.expectedSalaryCzk ?? ""}
+              onChange={(e) => setProfile({ ...profile, expectedSalaryCzk: parseSalary(e.target.value) })}
+              inputProps={{ inputMode: "numeric" }}
+              InputProps={{ endAdornment: <InputAdornment position="end">CZK / month</InputAdornment> }}
+              helperText="Gross. Auto apply fills both into application forms that ask for them."
+              fullWidth
+            />
+          </FieldRow>
           <Button
             variant="contained"
             onClick={handleSave}

@@ -29,6 +29,8 @@ const GOOGLE_PROVIDER = "google";
 const CALENDAR_SCOPE_FRAGMENT = "calendar";
 const REQUIRED_PROFILE_PLACEHOLDERS = { name: "", email: "" };
 const MAX_CITY_LENGTH = 80;
+const MAX_EXPECTED_SALARY_CZK = 10_000_000;
+const DATE_INPUT_VALUE = /^\d{4}-\d{2}-\d{2}$/;
 
 type UploadCvResult = { error?: string; filename?: string };
 
@@ -40,11 +42,14 @@ interface UserProfileInput {
   githubUrl?: string;
   country?: string;
   city?: string;
+  availableFrom?: string;
+  expectedSalaryCzk?: number | null;
 }
 
-interface EditableProfileFields extends Omit<UserProfileInput, "country" | "city"> {
+interface EditableProfileFields extends Omit<UserProfileInput, "country" | "city" | "availableFrom"> {
   country?: CountryCode;
   city?: string | null;
+  availableFrom?: Date | null;
 }
 
 function startsWithSignature(content: Buffer, signature: number[]): boolean {
@@ -134,6 +139,22 @@ function normalisedCity(city: string | undefined): string | null | undefined {
   return city.trim().slice(0, MAX_CITY_LENGTH) || null;
 }
 
+function validStartDate(value: string | undefined): Date | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === "") return null;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (!DATE_INPUT_VALUE.test(value) || Number.isNaN(date.getTime())) throw new Error(`Invalid start date: ${value}`);
+  return date;
+}
+
+function validExpectedSalary(value: number | null | undefined): number | null | undefined {
+  if (value === undefined || value === null) return value;
+  if (!Number.isInteger(value) || value <= 0 || value > MAX_EXPECTED_SALARY_CZK) {
+    throw new Error("Expected salary must be a whole number of CZK per month");
+  }
+  return value;
+}
+
 function pickEditableProfileFields({
   name,
   email,
@@ -142,6 +163,8 @@ function pickEditableProfileFields({
   githubUrl,
   country,
   city,
+  availableFrom,
+  expectedSalaryCzk,
 }: UserProfileInput): EditableProfileFields {
   return {
     name,
@@ -151,6 +174,8 @@ function pickEditableProfileFields({
     githubUrl,
     country: validCountry(country),
     city: normalisedCity(city),
+    availableFrom: validStartDate(availableFrom),
+    expectedSalaryCzk: validExpectedSalary(expectedSalaryCzk),
   };
 }
 

@@ -23,6 +23,8 @@ interface SettingsData {
   uploadedFiles: UploadedFile[];
 }
 
+const toDateInputValue = (date: Date) => date.toISOString().slice(0, 10);
+
 function toUserProfile(record: UserProfileRecord | null): UserProfile {
   return {
     name: record?.name ?? "",
@@ -32,6 +34,8 @@ function toUserProfile(record: UserProfileRecord | null): UserProfile {
     githubUrl: record?.githubUrl ?? "",
     country: record && isSupportedCountry(record.country) ? record.country : DEFAULT_COUNTRY,
     city: record?.city ?? "",
+    availableFrom: record?.availableFrom ? toDateInputValue(record.availableFrom) : "",
+    expectedSalaryCzk: record?.expectedSalaryCzk ?? null,
     googleCalendarSync: record?.googleCalendarSync ?? false,
   };
 }

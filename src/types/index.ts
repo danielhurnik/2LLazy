@@ -164,5 +164,7 @@ export interface UserProfile {
   githubUrl: string;
   country: CountryCode;
   city: string;
+  availableFrom: string;
+  expectedSalaryCzk: number | null;
   googleCalendarSync: boolean;
 }
