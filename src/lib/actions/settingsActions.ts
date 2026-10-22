@@ -142,16 +142,17 @@ function normalisedCity(city: string | undefined): string | null | undefined {
 function validStartDate(value: string | undefined): Date | null | undefined {
   if (value === undefined) return undefined;
   if (value === "") return null;
+  if (!DATE_INPUT_VALUE.test(value)) throw new Error(`Invalid start date: ${value}`);
   const date = new Date(`${value}T00:00:00.000Z`);
-  if (!DATE_INPUT_VALUE.test(value) || Number.isNaN(date.getTime())) throw new Error(`Invalid start date: ${value}`);
+  if (Number.isNaN(date.getTime())) throw new Error(`Invalid start date: ${value}`);
   return date;
 }
 
 function validExpectedSalary(value: number | null | undefined): number | null | undefined {
   if (value === undefined || value === null) return value;
-  if (!Number.isInteger(value) || value <= 0 || value > MAX_EXPECTED_SALARY_CZK) {
-    throw new Error("Expected salary must be a whole number of CZK per month");
-  }
+  if (!Number.isInteger(value)) throw new Error("Expected salary must be a whole number of CZK per month");
+  if (value <= 0) throw new Error("Expected salary must be above 0");
+  if (value > MAX_EXPECTED_SALARY_CZK) throw new Error("Expected salary must be at most 10 000 000 CZK per month");
   return value;
 }
 

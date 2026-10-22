@@ -31,8 +31,8 @@ type EditableProfileField = Exclude<
 const NON_DIGITS = /\D/g;
 
 function parseSalary(input: string): number | null {
-  const digits = input.replace(NON_DIGITS, "");
-  return digits ? Number(digits) : null;
+  const amount = Number(input.replace(NON_DIGITS, ""));
+  return amount > 0 ? amount : null;
 }
 
 interface Props {
@@ -140,7 +140,7 @@ export function UserProfileCard({ profile: initialProfile }: Props) {
               onChange={(e) => setProfile({ ...profile, expectedSalaryCzk: parseSalary(e.target.value) })}
               inputProps={{ inputMode: "numeric" }}
               InputProps={{ endAdornment: <InputAdornment position="end">CZK / month</InputAdornment> }}
-              helperText="Gross. Auto apply fills both into application forms that ask for them."
+              helperText="Whole CZK, gross, e.g. 65000. Auto apply fills both into forms that ask for them."
               fullWidth
             />
           </FieldRow>
