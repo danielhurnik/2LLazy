@@ -44,16 +44,23 @@ export function releasePage(page: Page): void {
   busyPages.delete(page);
 }
 
+const INSTALLED_CHROME_CHANNEL = "chrome";
+
 async function launchOnce(): Promise<BrowserContext> {
   const { chromium } = await import("playwright");
-  return chromium.launchPersistentContext(ISOLATED_PERSISTENT_PROFILE_DIR, {
+  const options = {
     headless: HEADLESS,
     viewport: { width: 1280, height: 900 },
     locale: "cs-CZ",
     timezoneId: "Europe/Prague",
     args: ["--disable-blink-features=AutomationControlled"],
     ignoreDefaultArgs: ["--enable-automation"],
-  });
+  };
+  try {
+    return await chromium.launchPersistentContext(ISOLATED_PERSISTENT_PROFILE_DIR, { ...options, channel: INSTALLED_CHROME_CHANNEL });
+  } catch {
+    return chromium.launchPersistentContext(ISOLATED_PERSISTENT_PROFILE_DIR, options);
+  }
 }
 
 async function launchContext(): Promise<BrowserContext> {

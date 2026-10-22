@@ -6,6 +6,7 @@ const OLLAMA_URL = (process.env.OLLAMA_URL ?? "http://127.0.0.1:11434").replace(
 const DEFAULT_MODEL = process.env.OLLAMA_MODEL ?? "gemma3:4b";
 const DEFAULT_EMBED_MODEL = process.env.OLLAMA_EMBED_MODEL ?? "nomic-embed-text";
 const OLLAMA_BUILTIN_NUM_CTX_THAT_SILENTLY_TRUNCATES = 4096;
+const AVAILABILITY_TIMEOUT_MS = 10_000;
 const DEFAULT_NUM_CTX = OLLAMA_BUILTIN_NUM_CTX_THAT_SILENTLY_TRUNCATES * 2;
 
 export interface OllamaMessage {
@@ -43,7 +44,7 @@ async function postJson<T>(path: string, body: unknown, signal?: AbortSignal): P
 
 export async function ollamaAvailable(): Promise<boolean> {
   try {
-    const res = await fetch(`${OLLAMA_URL}/api/tags`, { signal: AbortSignal.timeout(2000) });
+    const res = await fetch(`${OLLAMA_URL}/api/tags`, { signal: AbortSignal.timeout(AVAILABILITY_TIMEOUT_MS) });
     return res.ok;
   } catch {
     return false;

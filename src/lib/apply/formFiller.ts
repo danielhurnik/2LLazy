@@ -351,10 +351,17 @@ async function fillAndSubmit(
       }
       throw new ApplyAbort("NEEDS_MANUAL", "The submit button was gone after the wait and no confirmation was found; check the apply window");
     }
-    await submitAndConfirm(ctx, scan, submitNow, filledSelectors, options, plan.confidence);
-    return;
+    const outcome = await submitAndConfirm(ctx, scan, submitNow, filledSelectors, options, plan.confidence);
+    if (outcome.result === "confirmed") return;
+    ctx.emit({ type: "progress", message: "The form moved to a further step" });
+    scan = outcome.scan;
   }
   throw new ApplyAbort("NEEDS_MANUAL", "Could not reach the submit step; check the apply window");
+}
+
+function isNewStep(scan: PageScan, filledSelectors: Set<string>): boolean {
+  const fillable = scan.fields.filter(isFillableField);
+  return fillable.length > 0 && fillable.every((f) => !filledSelectors.has(selectorKey(f)));
 }
 
 function confirmationSnippet(scan: PageScan): string | undefined {
@@ -372,7 +379,7 @@ async function submitAndConfirm(
   filledSelectors: Set<string>,
   options: GenericFlowOptions,
   confidence: number,
-): Promise<void> {
+): Promise<{ result: "confirmed" } | { result: "new-step"; scan: PageScan }> {
   ctx.emit({ type: "progress", message: `Submitting ("${submit.text}")` });
   ctx.evidence.log(`submitting via "${submit.text}" with confidence ${confidence}`);
   const outcome = await clickButton(ctx.page.context(), ctx.page, before, submit);
@@ -396,10 +403,11 @@ async function submitAndConfirm(
 
   if (isConfirmed(before, scan, filledSelectors)) {
     lastConfirmation = confirmationSnippet(scan);
-    return;
+    return { result: "confirmed" };
   }
   if (VALIDATION_TEXT.test(scan.signals.bodyText) && scan.fields.some((f) => filledSelectors.has(selectorKey(f)))) {
     throw new ApplyAbort("NEEDS_MANUAL", "The form reported validation errors after submitting; check the apply window");
   }
+  if (isNewStep(scan, filledSelectors)) return { result: "new-step", scan };
   throw new ApplyAbort("NEEDS_MANUAL", "Submitted once but could not confirm it went through; check the apply window before submitting again");
 }

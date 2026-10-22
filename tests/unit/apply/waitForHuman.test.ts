@@ -26,9 +26,14 @@ function captchaScan(): PageScan {
 function fakeContext() {
   const events: ApplyEvent[] = [];
   const lock = { release: vi.fn(), acquire: vi.fn().mockResolvedValue(undefined) };
+  let closed = false;
   const page = {
-    isClosed: () => false,
+    isClosed: () => closed,
+    close: () => {
+      closed = true;
+    },
     frames: () => [],
+    context: () => ({ pages: () => [page] }),
     bringToFront: vi.fn().mockResolvedValue(undefined),
     evaluate: vi.fn().mockResolvedValue(false),
     url: () => "https://www.jobstack.it/jobpostreply/1",
@@ -73,6 +78,34 @@ describe("waitForHuman", () => {
     expect(events.map((e) => e.type)).toEqual(["waiting", "resumed"]);
     expect(waitingReason(APPLICATION_ID)).toBeNull();
     expect(ctx.setWaiting).toHaveBeenLastCalledWith(null);
+  });
+
+  it("resumes on its own when the page no longer shows the blocker", async () => {
+    const { ctx, events } = fakeContext();
+    const pending = waitForHuman(ctx, "captcha");
+    await vi.advanceTimersByTimeAsync(POLL_MS + 100);
+    vi.mocked(scanPage).mockResolvedValue({ ...captchaScan(), signals: { ...captchaScan().signals, captcha: null } });
+    await vi.advanceTimersByTimeAsync(POLL_MS + 100);
+    const scan = await pending;
+    expect(scan.signals.captcha).toBeNull();
+    expect(events.map((e) => e.type)).toEqual(["waiting", "resumed"]);
+  });
+
+  it("fails the run when the apply window is closed while waiting", async () => {
+    const { ctx, lock } = fakeContext();
+    const pending = waitForHuman(ctx, "captcha");
+    const outcome = pending.then(
+      () => null,
+      (err: unknown) => err,
+    );
+    await vi.advanceTimersByTimeAsync(POLL_MS + 100);
+    (ctx.page as unknown as { close: () => void }).close();
+    await vi.advanceTimersByTimeAsync(POLL_MS + 100);
+    const err = await outcome;
+    expect(err).toBeInstanceOf(ApplyAbort);
+    expect((err as ApplyAbort).status).toBe("FAILED");
+    expect(lock.acquire).toHaveBeenCalledTimes(1);
+    expect(waitingReason(APPLICATION_ID)).toBeNull();
   });
 
   it("gives up as NEEDS_MANUAL after the wait limit with the lock held again", async () => {

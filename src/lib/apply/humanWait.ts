@@ -40,6 +40,14 @@ export function waitingReason(applicationId: string): BlockerReason | null {
   return waitingRuns.get(applicationId) ?? null;
 }
 
+function countPages(page: Page): number {
+  try {
+    return page.context().pages().length;
+  } catch {
+    return 0;
+  }
+}
+
 function oldestWaiting(): string | null {
   return waitingRuns.keys().next().value ?? null;
 }
@@ -56,7 +64,10 @@ function takeResume(applicationId: string): boolean {
 }
 
 export function blockingCaptcha(scan: PageScan): boolean {
-  return !!scan.signals.captcha && !INVISIBLE_CAPTCHA.test(scan.signals.captcha);
+  if (!scan.signals.captcha) return false;
+  if (scan.signals.captchaChallenge) return true;
+  if (scan.signals.captchaInvisible) return false;
+  return !INVISIBLE_CAPTCHA.test(scan.signals.captcha);
 }
 
 export async function captchaSolved(page: Page): Promise<boolean> {
@@ -114,10 +125,13 @@ export async function waitForHuman(ctx: ApplyContext, reason: BlockerReason): Pr
     await ctx.setWaiting(message);
     ctx.emit({ type: "waiting", reason, message, url: file ? ctx.evidence.urlFor(file) : "" });
     await ctx.page.bringToFront().catch(() => undefined);
+    let knownPages = countPages(ctx.page);
     while (Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, POLL_MS));
       if (ctx.page.isClosed()) throw new ApplyAbort("FAILED", "The apply window was closed while waiting for you");
-      if (oldestWaiting() === ctx.applicationId) await reclaimFocus(ctx.page);
+      const pagesNow = countPages(ctx.page);
+      if (pagesNow > knownPages && oldestWaiting() === ctx.applicationId) await reclaimFocus(ctx.page);
+      knownPages = pagesNow;
       const manual = takeResume(ctx.applicationId);
       const { cleared, scan } = await blockerCleared(ctx.page, reason);
       if (manual || cleared) {

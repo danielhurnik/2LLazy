@@ -15,6 +15,8 @@ interface PageSignals {
   url: string;
   title: string;
   captcha: string | null;
+  captchaInvisible?: boolean;
+  captchaChallenge?: boolean;
   loginWall: boolean;
   stepHints: string[];
   bodyText: string;
@@ -32,6 +34,8 @@ interface FrameScan {
   fields: Omit<FieldDescriptor, "frameIndex">[];
   buttons: Omit<ButtonDescriptor, "frameIndex">[];
   captcha: string | null;
+  captchaInvisible: boolean;
+  captchaChallenge: boolean;
   passwordInputs: number;
   stepHints: string[];
   bodyText: string;
@@ -218,14 +222,23 @@ function enumerateFrame(): FrameScan {
   }
 
   const captchaSelectors = '.g-recaptcha, .cf-turnstile, .h-captcha, iframe[src*="recaptcha"], iframe[src*="hcaptcha"], iframe[src*="turnstile"], iframe[src*="challenges.cloudflare"]';
-  const captchaEl = Array.from(document.querySelectorAll<HTMLElement>(captchaSelectors)).find(isVisible);
-  const captcha = captchaEl ? (captchaEl.getAttribute("src") ?? captchaEl.className ?? "captcha").slice(0, 80) : null;
+  const captchaElements = Array.from(document.querySelectorAll<HTMLElement>(captchaSelectors));
+  const isChallengeFrame = (el: HTMLElement) => el.tagName.toLowerCase() === "iframe" && /api2\/bframe|frame=challenge|hcaptcha\.com\/.*challenge/i.test(el.getAttribute("src") ?? "");
+  const isInvisibleWidget = (el: HTMLElement) =>
+    /size=invisible/i.test(el.getAttribute("src") ?? "") || el.getAttribute("data-size") === "invisible" || !!el.closest(".grecaptcha-badge");
+  const challengeFrame = captchaElements.find((el) => isChallengeFrame(el) && isVisible(el));
+  const captchaEl = challengeFrame ?? captchaElements.find(isVisible);
+  const captcha = captchaEl ? (captchaEl.getAttribute("src") ?? captchaEl.className ?? "captcha").slice(0, 120) : null;
+  const captchaChallenge = !!challengeFrame;
+  const captchaInvisible = !!captchaEl && !captchaChallenge && isInvisibleWidget(captchaEl);
   const bodyText = clean(document.body?.innerText ?? "").slice(0, 4000);
   const stepHints = Array.from(new Set((bodyText.match(/(krok\s*\d+\s*(z|\/)\s*\d+|step\s*\d+\s*(of|\/)\s*\d+)/gi) ?? []).map((s) => s.toLowerCase())));
   return {
     fields,
     buttons,
     captcha,
+    captchaInvisible,
+    captchaChallenge,
     passwordInputs: Array.from(document.querySelectorAll("input[type=password]")).filter(isVisible).length,
     stepHints,
     bodyText,
@@ -239,6 +252,8 @@ export async function scanPage(page: Page): Promise<PageScan> {
   const fields: FieldDescriptor[] = [];
   const buttons: ButtonDescriptor[] = [];
   let captcha: string | null = null;
+  let captchaInvisible = false;
+  let captchaChallenge = false;
   let passwordInputs = 0;
   const stepHints = new Set<string>();
   let bodyText = "";
@@ -254,7 +269,11 @@ export async function scanPage(page: Page): Promise<PageScan> {
     }
     for (const field of result.fields) fields.push({ ...field, frameIndex });
     for (const button of result.buttons) buttons.push({ ...button, frameIndex });
-    captcha ??= result.captcha;
+    if (result.captchaChallenge || (captcha === null && result.captcha !== null)) {
+      captcha = result.captcha;
+      captchaInvisible = result.captchaInvisible;
+      captchaChallenge = captchaChallenge || result.captchaChallenge;
+    }
     passwordInputs += result.passwordInputs;
     for (const hint of result.stepHints) stepHints.add(hint);
     if (frame === page.mainFrame()) bodyText = result.bodyText;
@@ -268,6 +287,8 @@ export async function scanPage(page: Page): Promise<PageScan> {
       url: page.url(),
       title: await page.title().catch(() => ""),
       captcha,
+      captchaInvisible,
+      captchaChallenge,
       loginWall: passwordInputs > 0 && LOGIN_TEXT.test(bodyText),
       stepHints: [...stepHints],
       bodyText,

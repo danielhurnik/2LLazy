@@ -22,20 +22,36 @@ describe("ApplyMutex", () => {
   });
 });
 
-function scanWithCaptcha(captcha: string | null): PageScan {
+function scanWithCaptcha(captcha: string | null, flags: { invisible?: boolean; challenge?: boolean } = {}): PageScan {
   return {
     frames: [],
     fields: [],
     buttons: [],
-    signals: { url: "https://example.test/apply", title: "", captcha, loginWall: false, stepHints: [], bodyText: "", errors: [] },
+    signals: {
+      url: "https://example.test/apply",
+      title: "",
+      captcha,
+      captchaInvisible: flags.invisible,
+      captchaChallenge: flags.challenge,
+      loginWall: false,
+      stepHints: [],
+      bodyText: "",
+      errors: [],
+    },
   };
 }
 
 describe("humanWait", () => {
-  it("treats a visible challenge as blocking but not the invisible reCAPTCHA badge", () => {
+  it("treats a visible widget as blocking but not the invisible reCAPTCHA badge or v3", () => {
     expect(blockingCaptcha(scanWithCaptcha("https://www.google.com/recaptcha/api2/anchor?ar=1&k=abc"))).toBe(true);
     expect(blockingCaptcha(scanWithCaptcha("https://www.google.com/recaptcha/api2/anchor?size=invisible&k=abc"))).toBe(false);
+    expect(blockingCaptcha(scanWithCaptcha("https://www.google.com/recaptcha/api2/anchor?ar=1&k=abc&co=aHR0cHM6Ly9leGFtcGxlLnRlc3Q6NDQz&hl=cs&v=long&size=invisible", { invisible: true }))).toBe(false);
     expect(blockingCaptcha(scanWithCaptcha(null))).toBe(false);
+  });
+
+  it("treats a visible challenge frame as blocking even for an invisible widget", () => {
+    expect(blockingCaptcha(scanWithCaptcha("https://www.google.com/recaptcha/api2/bframe?hl=cs&v=long&k=abc", { invisible: false, challenge: true }))).toBe(true);
+    expect(blockingCaptcha(scanWithCaptcha("grecaptcha-badge", { invisible: true, challenge: true }))).toBe(true);
   });
 
   it("ignores Continue for a run that is not waiting", () => {
