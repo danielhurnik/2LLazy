@@ -27,11 +27,14 @@ export default async function DashboardPage({
     position: query.position,
     hasSalary,
   };
-  const [applications, sources, statusCounts] = await Promise.all([
+  const hasJobFilters = Boolean(query.source || query.position || hasSalary);
+  const [applications, sources, statusCounts, unfilteredCounts] = await Promise.all([
     getApplications(userId, { status, ...filtersExceptStatus }),
     getApplicationSources(userId),
     getApplicationStatusCounts(userId, filtersExceptStatus),
+    hasJobFilters ? getApplicationStatusCounts(userId) : null,
   ]);
+  const waitingCount = (unfilteredCounts ?? statusCounts).WAITING_FOR_USER ?? 0;
   const currentFilters: DashboardFilters = {
     status,
     source: query.source ?? ALL_OPTION,
@@ -44,6 +47,7 @@ export default async function DashboardPage({
       filters={currentFilters}
       sources={sources}
       statusCounts={statusCounts}
+      waitingCount={waitingCount}
     />
   );
 }

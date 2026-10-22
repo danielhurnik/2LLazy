@@ -96,6 +96,21 @@ async function describeRejection(response: Response, action: string): Promise<st
   }
 }
 
+async function postContinue(payload: { applicationId: string } | { all: true }, action: string): Promise<unknown> {
+  const response = await fetch(CONTINUE_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw new Error(await describeRejection(response, action));
+  return response.json();
+}
+
+export async function continueAllWaiting(): Promise<number> {
+  const body = await postContinue({ all: true }, "Could not continue the runs");
+  return isRecord(body) && typeof body.resumed === "number" ? body.resumed : 0;
+}
+
 export function useAutoApply(applicationId: string) {
   const router = useRouter();
   const [run, setRun] = useState<AutoApplyRun>(IDLE_RUN);
@@ -130,12 +145,7 @@ export function useAutoApply(applicationId: string) {
   const resume = async () => {
     setResumeState({ isResuming: true, error: null });
     try {
-      const response = await fetch(CONTINUE_ENDPOINT, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ applicationId }),
-      });
-      if (!response.ok) throw new Error(await describeRejection(response, "Could not continue the run"));
+      await postContinue({ applicationId }, "Could not continue the run");
       setResumeState(IDLE_RESUME);
     } catch (err) {
       setResumeState({ isResuming: false, error: errorMessage(err) });

@@ -11,6 +11,7 @@ import {
 import { ALL_OPTION } from "@/components/jobs/JobFilterBar";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusChangeDialog } from "@/components/dialogs/StatusChangeDialog";
+import { NeedsYouBanner } from "@/components/dashboard/NeedsYouBanner";
 import { updateApplicationStatus } from "@/lib/actions/applicationActions";
 import { ApplicationList } from "./ApplicationList";
 import type { Application, AppStatus } from "@/types";
@@ -20,6 +21,7 @@ interface Props {
   filters: DashboardFilters;
   sources: string[];
   statusCounts: Record<string, number>;
+  waitingCount: number;
 }
 
 interface StatusChangeDraft {
@@ -29,6 +31,12 @@ interface StatusChangeDraft {
 
 const DASHBOARD_PATH = "/dashboard";
 const AWAITING_REPLY_STATUSES: AppStatus[] = ["APPLIED", "INTERVIEW"];
+const WAITING_ONLY_FILTERS: DashboardFilters = {
+  status: "WAITING_FOR_USER",
+  source: ALL_OPTION,
+  position: "",
+  hasSalary: false,
+};
 
 function toSearchParams({ status, source, position, hasSalary }: DashboardFilters): URLSearchParams {
   const params = new URLSearchParams();
@@ -49,7 +57,7 @@ function describeTracking(trackedCount: number, awaitingReplyCount: number): str
   return `${trackedCount} tracked · ${awaitingReplyCount} waiting on a reply or interview`;
 }
 
-export function DashboardClient({ applications, filters, sources, statusCounts }: Props) {
+export function DashboardClient({ applications, filters, sources, statusCounts, waitingCount }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -65,6 +73,7 @@ export function DashboardClient({ applications, filters, sources, statusCounts }
 
   const applyFilters = (nextFilters: DashboardFilters) => router.replace(dashboardHref(nextFilters));
   const clearFilters = () => router.replace(DASHBOARD_PATH);
+  const isShowingOnlyWaiting = toSearchParams(filters).toString() === toSearchParams(WAITING_ONLY_FILTERS).toString();
 
   const saveStatusChange = ({ applicationId, status }: StatusChangeDraft) => {
     startTransition(async () => {
@@ -87,6 +96,11 @@ export function DashboardClient({ applications, filters, sources, statusCounts }
           {errorMessage}
         </Alert>
       )}
+
+      <NeedsYouBanner
+        waitingCount={waitingCount}
+        onShowWaiting={isShowingOnlyWaiting ? undefined : () => applyFilters(WAITING_ONLY_FILTERS)}
+      />
 
       <DashboardFilterBar
         sources={sources}
