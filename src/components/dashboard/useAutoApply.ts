@@ -106,9 +106,17 @@ async function postContinue(payload: { applicationId: string } | { all: true }, 
   return response.json();
 }
 
-export async function continueAllWaiting(): Promise<number> {
+export interface ContinueAllResult {
+  resumed: number;
+  swept: number;
+}
+
+const countField = (body: unknown, field: keyof ContinueAllResult) =>
+  isRecord(body) && typeof body[field] === "number" ? body[field] : 0;
+
+export async function continueAllWaiting(): Promise<ContinueAllResult> {
   const body = await postContinue({ all: true }, "Could not continue the runs");
-  return isRecord(body) && typeof body.resumed === "number" ? body.resumed : 0;
+  return { resumed: countField(body, "resumed"), swept: countField(body, "swept") };
 }
 
 export function useAutoApply(applicationId: string) {

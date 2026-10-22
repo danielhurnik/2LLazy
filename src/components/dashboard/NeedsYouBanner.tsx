@@ -7,7 +7,7 @@ import { errorMessage } from "@/lib/guards";
 import { MS_PER_SECOND } from "@/lib/time";
 import { ui } from "@/theme/tokens";
 import { calloutSx, panelLinkSx } from "./AutoApplyPanel";
-import { continueAllWaiting } from "./useAutoApply";
+import { continueAllWaiting, type ContinueAllResult } from "./useAutoApply";
 
 const RESUME_PICKUP_MS = 3 * MS_PER_SECOND;
 const NOTHING_RESUMED = "None of these runs is still waiting, so nothing was resumed.";
@@ -25,8 +25,13 @@ interface NeedsYouBannerProps {
 const describeCount = (count: number) =>
   count === 1 ? "1 application needs you" : `${count} applications need you`;
 
-const describeResumed = (count: number) =>
-  count === 1 ? "Continuing 1 run…" : `Continuing ${count} runs…`;
+const runs = (count: number) => (count === 1 ? "1 run" : `${count} runs`);
+
+function describeOutcome({ resumed, swept }: ContinueAllResult): string {
+  const stopped = swept > 0 ? `${runs(swept)} had stopped when the server restarted and moved to Needs manual.` : "";
+  if (resumed === 0) return stopped || NOTHING_RESUMED;
+  return [`Continuing ${runs(resumed)}…`, stopped].filter(Boolean).join(" ");
+}
 
 export function NeedsYouBanner({ waitingCount, onShowWaiting }: NeedsYouBannerProps) {
   const router = useRouter();
@@ -39,13 +44,12 @@ export function NeedsYouBanner({ waitingCount, onShowWaiting }: NeedsYouBannerPr
     setIsContinuing(true);
     setNote(null);
     try {
-      const resumed = await continueAllWaiting();
-      if (resumed === 0) {
-        setNote({ text: NOTHING_RESUMED, isError: false });
+      const result = await continueAllWaiting();
+      setNote({ text: describeOutcome(result), isError: false });
+      if (result.resumed === 0) {
         router.refresh();
         return;
       }
-      setNote({ text: describeResumed(resumed), isError: false });
       setTimeout(() => {
         setNote(null);
         router.refresh();
