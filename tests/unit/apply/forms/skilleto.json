@@ -1,0 +1,100 @@
+{
+  "board": "Skilleto",
+  "page": "https://www.skilleto.cz/jobs/integra-czech-republic-sro-vyvojar-react-plus-gis-se-zamerenim-na-ai-a-automatizaci",
+  "capturedFrom": "uploads/applications/cf055dad7e2b4cca0e414abf5/log.txt scan lines (scan lines plus full labels from payload.json; labels of unfilled fields truncated at 40 characters; no name or id in the log)",
+  "fields": [
+    {
+      "tag": "input",
+      "type": "image",
+      "label": "",
+      "expected": "skip"
+    },
+    {
+      "tag": "textarea",
+      "label": "Mám zájem o tuto pozicizavřít",
+      "expected": "message"
+    },
+    {
+      "tag": "input",
+      "type": "text",
+      "label": "Jméno",
+      "expected": "firstName"
+    },
+    {
+      "tag": "input",
+      "type": "text",
+      "label": "Příjmení",
+      "expected": "lastName"
+    },
+    {
+      "tag": "input",
+      "type": "text",
+      "label": "E-mail",
+      "expected": "email"
+    },
+    {
+      "tag": "input",
+      "type": "text",
+      "label": "URL LinkedIn profilu",
+      "expected": "linkedInUrl"
+    },
+    {
+      "tag": "input",
+      "type": "text",
+      "label": "Telefon",
+      "expected": "phone"
+    },
+    {
+      "tag": "input",
+      "type": "file",
+      "label": "Přidat nový dokument",
+      "expected": "cv"
+    },
+    {
+      "tag": "input",
+      "type": "number",
+      "label": "Jaká je Vaše představa nástupní mzdy? (n",
+      "expected": "salary",
+      "knownMismatch": "salary phrases have 'mzda' but not the genitive 'mzdy'; the currency and period selects beside it score salary from their options and stay unfillable, which is harmless"
+    },
+    {
+      "tag": "select",
+      "label": "Jaká je Vaše představa nástupní mzdy? (n",
+      "options": [
+        {
+          "value": "CZK",
+          "text": "Kč"
+        },
+        {
+          "value": "EUR",
+          "text": "€"
+        }
+      ],
+      "expected": "skip",
+      "knownMismatch": "salary phrases have 'mzda' but not the genitive 'mzdy'; the currency and period selects beside it score salary from their options and stay unfillable, which is harmless"
+    },
+    {
+      "tag": "select",
+      "label": "Jaká je Vaše představa nástupní mzdy? (n",
+      "options": [
+        {
+          "value": "month",
+          "text": "za měsíc"
+        },
+        {
+          "value": "hour",
+          "text": "za hodinu"
+        }
+      ],
+      "expected": "skip",
+      "knownMismatch": "salary phrases have 'mzda' but not the genitive 'mzdy'; the currency and period selects beside it score salary from their options and stay unfillable, which is harmless"
+    },
+    {
+      "tag": "input",
+      "type": "text",
+      "label": "Kdy byste případně mohl/a nastoupit? (ne",
+      "expected": "startDate",
+      "knownMismatch": "startDate phrases do not include the verb 'nastoupit'"
+    }
+  ]
+}

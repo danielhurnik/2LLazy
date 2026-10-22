@@ -1,0 +1,63 @@
+{
+  "board": "Jobs.cz branded",
+  "page": "https://studentagency.jobs.cz/detail-pozice/odpovedni-formular?r=reply&id=2001478099",
+  "capturedFrom": "uploads/applications/cmvfuyem70002c8g9qbem8qgi/log.txt scan lines (scan lines plus full labels from payload.json; labels of unfilled fields truncated at 40 characters; no name or id in the log)",
+  "fields": [
+    {
+      "tag": "input",
+      "type": "text",
+      "label": "Jméno*",
+      "required": true,
+      "expected": "firstName"
+    },
+    {
+      "tag": "input",
+      "type": "text",
+      "label": "Příjmení*",
+      "required": true,
+      "expected": "lastName"
+    },
+    {
+      "tag": "input",
+      "type": "text",
+      "label": "E-mail*",
+      "required": true,
+      "expected": "email"
+    },
+    {
+      "tag": "input",
+      "type": "text",
+      "label": "Telefonní číslo*",
+      "required": true,
+      "expected": "phone"
+    },
+    {
+      "tag": "select",
+      "label": "Datum možného nástupu*",
+      "required": true,
+      "expected": "startDate",
+      "knownMismatch": "startDate phrases know 'nastup' and 'datum nastupu' but not the genitive 'nastupu'"
+    },
+    {
+      "tag": "input",
+      "type": "text",
+      "label": "Očekávané finanční ohodnocení*",
+      "required": true,
+      "expected": "salary",
+      "knownMismatch": "salary phrases have 'financni ocekavani' but not 'financni ohodnoceni'"
+    },
+    {
+      "tag": "input",
+      "type": "file",
+      "label": "Prosím, přiložte Váš životopis:*",
+      "required": true,
+      "expected": "cv"
+    },
+    {
+      "tag": "input",
+      "type": "checkbox",
+      "label": "Souhlasím, aby mi dali vědět ze STUDENT AGENCY TRAVEL k.s., RegioJet a.s., RegioJet a. s. (SK), STUDENT AGENCY, s. r. o. (SK), STUDENT AGENCY holding a.s., ORBIX s.r.o., RegioJet ÚK a.s. a STUDENT AGENCY k.s., když pro mě budou mít i jinou vhodnou pozici. Zobrazit více",
+      "expected": "marketing"
+    }
+  ]
+}

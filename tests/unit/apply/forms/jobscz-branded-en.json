@@ -1,0 +1,46 @@
+{
+  "board": "Jobs.cz branded (EN)",
+  "page": "https://thermofisher.jobs.cz/detail-pozice/odpovedni-formular?r=reply&id=2001446517",
+  "capturedFrom": "uploads/applications/c981a0079cc62519f7fdc06d7/payload.json (filled fields only; the log has no field sample for this run)",
+  "fields": [
+    {
+      "tag": "input",
+      "type": "text",
+      "label": "First name*",
+      "required": true,
+      "expected": "firstName"
+    },
+    {
+      "tag": "input",
+      "type": "text",
+      "label": "Surname*",
+      "required": true,
+      "expected": "lastName"
+    },
+    {
+      "tag": "input",
+      "type": "text",
+      "label": "E-mail*",
+      "required": true,
+      "expected": "email"
+    },
+    {
+      "tag": "input",
+      "type": "text",
+      "label": "Phone",
+      "expected": "phone"
+    },
+    {
+      "tag": "input",
+      "type": "file",
+      "label": "CV",
+      "expected": "cv"
+    },
+    {
+      "tag": "input",
+      "type": "checkbox",
+      "label": "I give consent to Thermo Fisher Scientific Brno s.r.o., Business ID: 46971629, Vlastimila Pecha 1282/12, Brno, Černovice company to let me know when there is another suitable position for me. Zobrazit více",
+      "expected": "marketing"
+    }
+  ]
+}

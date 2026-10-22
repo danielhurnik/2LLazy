@@ -1,0 +1,108 @@
+{
+  "board": "Jobs.cz",
+  "page": "https://www.jobs.cz/jof/2001462731/",
+  "capturedFrom": "uploads/applications/cmvfresls00273gg9wj7oawdw/log.txt scan lines (scan lines plus full labels from payload.json; labels of unfilled fields truncated at 40 characters; no name or id in the log)",
+  "fields": [
+    {
+      "tag": "input",
+      "type": "text",
+      "label": "Jméno",
+      "required": true,
+      "expected": "firstName"
+    },
+    {
+      "tag": "input",
+      "type": "text",
+      "label": "Příjmení",
+      "required": true,
+      "expected": "lastName"
+    },
+    {
+      "tag": "input",
+      "type": "email",
+      "label": "E-mail",
+      "required": true,
+      "expected": "email"
+    },
+    {
+      "tag": "input",
+      "type": "tel",
+      "label": "Telefonní číslo",
+      "expected": "phone"
+    },
+    {
+      "tag": "textarea",
+      "label": "Průvodní dopis",
+      "expected": "coverLetter"
+    },
+    {
+      "tag": "input",
+      "type": "file",
+      "label": "Životopis Nahrajte nebo přetáhněte soubory",
+      "expected": "cv"
+    },
+    {
+      "tag": "input",
+      "type": "file",
+      "label": "Nahrajte nebo přetáhněte soubory",
+      "expected": "skip",
+      "knownMismatch": "second attachment input scores cv through the weak upload words; planFill drops it as a duplicate cv, but it should not be understood as a CV at all"
+    },
+    {
+      "tag": "input",
+      "type": "checkbox",
+      "label": "Souhlasím, aby mi dali vědět z firmy Mevea s.r.o., IČO: 27413594, Anhaltova 917/15, Praha, Břevnov, když pro mě budou mít i jinou vhodnou pozici. Více informací",
+      "expected": "marketing"
+    },
+    {
+      "tag": "input",
+      "type": "checkbox",
+      "label": "Souhlasím, aby mi společnosti ze skupiny",
+      "expected": "marketing",
+      "knownMismatch": "label truncated at 40 characters in the evidence log; the full text most likely matches marketing"
+    },
+    {
+      "tag": "input",
+      "type": "text",
+      "label": "Do not leave empty",
+      "expected": "skip"
+    },
+    {
+      "tag": "input",
+      "type": "checkbox",
+      "label": "I agree",
+      "expected": "consent",
+      "knownMismatch": "non-required checkbox without a strong consent phrase is dropped by design; check whether jobs.cz treats it as required"
+    },
+    {
+      "tag": "input",
+      "type": "radio",
+      "label": "1",
+      "expected": "skip"
+    },
+    {
+      "tag": "input",
+      "type": "radio",
+      "label": "2",
+      "expected": "skip"
+    },
+    {
+      "tag": "input",
+      "type": "radio",
+      "label": "3",
+      "expected": "skip"
+    },
+    {
+      "tag": "input",
+      "type": "radio",
+      "label": "4",
+      "expected": "skip"
+    },
+    {
+      "tag": "input",
+      "type": "radio",
+      "label": "5",
+      "expected": "skip"
+    }
+  ]
+}

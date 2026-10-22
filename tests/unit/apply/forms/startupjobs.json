@@ -1,0 +1,43 @@
+{
+  "board": "StartupJobs",
+  "page": "https://www.startupjobs.cz/nabidka/108335/growth-marketer-b2b-saas-ai-first#application",
+  "capturedFrom": "uploads/applications/c1d94d7e0e0b2a7903ebb3e65/log.txt scan lines (scan lines plus full labels from payload.json; labels of unfilled fields truncated at 40 characters; no name or id in the log)",
+  "fields": [
+    {
+      "tag": "input",
+      "type": "email",
+      "label": "Přihlaste se k newsletteru",
+      "expected": "skip",
+      "knownMismatch": "newsletter box on the posting page is typed as e-mail and gets the address"
+    },
+    {
+      "tag": "input",
+      "type": "text",
+      "label": "Jméno",
+      "expected": "fullName"
+    },
+    {
+      "tag": "input",
+      "type": "url",
+      "label": "LinkedIn",
+      "expected": "linkedInUrl"
+    },
+    {
+      "tag": "input",
+      "type": "email",
+      "label": "Kontaktní e-mail",
+      "expected": "email"
+    },
+    {
+      "tag": "input",
+      "type": "tel",
+      "label": "Telefon",
+      "expected": "phone"
+    },
+    {
+      "tag": "textarea",
+      "label": "Jak mohu vaši firmu posunout vpřed?",
+      "expected": "message"
+    }
+  ]
+}

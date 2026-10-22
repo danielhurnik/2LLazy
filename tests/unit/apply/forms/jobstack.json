@@ -1,0 +1,76 @@
+{
+  "board": "Jobstack",
+  "page": "https://www.jobstack.it/jobpostreply/691eeee3a1d4a",
+  "capturedFrom": "uploads/applications/cmv76jpjg0013m4g9m275hs9h/log.txt scan lines (scan lines plus full labels from payload.json; labels of unfilled fields truncated at 40 characters; no name or id in the log)",
+  "fields": [
+    {
+      "tag": "input",
+      "type": "text",
+      "label": "Jméno *",
+      "required": true,
+      "expected": "firstName"
+    },
+    {
+      "tag": "input",
+      "type": "email",
+      "label": "E-mail *",
+      "required": true,
+      "expected": "email"
+    },
+    {
+      "tag": "input",
+      "type": "text",
+      "label": "Příjmení *",
+      "required": true,
+      "expected": "lastName"
+    },
+    {
+      "tag": "input",
+      "type": "text",
+      "label": "Telefon",
+      "expected": "phone"
+    },
+    {
+      "tag": "textarea",
+      "label": "Doplň co potřebuješ",
+      "expected": "message"
+    },
+    {
+      "tag": "input",
+      "type": "file",
+      "label": "Vložit průvodní dopis",
+      "expected": "coverLetter"
+    },
+    {
+      "tag": "input",
+      "type": "file",
+      "label": "Vložit CV",
+      "expected": "cv"
+    },
+    {
+      "tag": "input",
+      "type": "text",
+      "label": "Odkaz na LinkedIn",
+      "expected": "linkedInUrl"
+    },
+    {
+      "tag": "input",
+      "type": "url",
+      "label": "Osobní web",
+      "expected": "website"
+    },
+    {
+      "tag": "input",
+      "type": "password",
+      "label": "Zadej prosím své heslo",
+      "expected": "skip"
+    },
+    {
+      "tag": "input",
+      "type": "checkbox",
+      "label": "Souhlasím s obchodními podmínkami Jobstack.it",
+      "required": true,
+      "expected": "consent"
+    }
+  ]
+}
