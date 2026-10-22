@@ -11,7 +11,6 @@ const NOT_SIGNED_IN = "not signed in, so it may ask for a CAPTCHA";
 interface BoardSignInLineProps {
   board: BoardSignIn;
   isPending: boolean;
-  isBusy: boolean;
   onSignIn: (host: string) => void;
 }
 
@@ -20,7 +19,7 @@ function describeSignIn(board: BoardSignIn, isPending: boolean): string {
   return isPending ? WAITING_FOR_SIGN_IN : NOT_SIGNED_IN;
 }
 
-function BoardSignInLine({ board, isPending, isBusy, onSignIn }: BoardSignInLineProps) {
+function BoardSignInLine({ board, isPending, onSignIn }: BoardSignInLineProps) {
   return (
     <Typography variant="body2" sx={{ color: ui.text }}>
       <Box component="span" sx={{ fontFamily: fonts.mono, fontSize: "0.72rem", color: ui.textFaint, mr: 1 }}>
@@ -31,11 +30,7 @@ function BoardSignInLine({ board, isPending, isBusy, onSignIn }: BoardSignInLine
       {!board.signedIn && !isPending && (
         <>
           {" "}
-          <ButtonBase
-            onClick={() => onSignIn(board.host)}
-            disabled={isBusy}
-            sx={{ ...panelLinkSx, verticalAlign: "baseline" }}
-          >
+          <ButtonBase onClick={() => onSignIn(board.host)} sx={{ ...panelLinkSx, verticalAlign: "baseline" }}>
             sign in
           </ButtonBase>
         </>
@@ -54,7 +49,7 @@ function SignInError({ error }: { error: string | null }) {
 }
 
 export function BoardSignInStrip() {
-  const { boards, pendingHost, error, signIn } = useBoardSignIns();
+  const { boards, pendingHosts, error, signIn } = useBoardSignIns();
   if (boards.length === 0) return null;
 
   return (
@@ -63,8 +58,7 @@ export function BoardSignInStrip() {
         <BoardSignInLine
           key={board.host}
           board={board}
-          isPending={pendingHost === board.host}
-          isBusy={pendingHost !== null}
+          isPending={pendingHosts.has(board.host)}
           onSignIn={signIn}
         />
       ))}
@@ -74,7 +68,7 @@ export function BoardSignInStrip() {
 }
 
 export function PostingSignInHint({ sourceUrl }: { sourceUrl: string }) {
-  const { boards, pendingHost, error, signIn } = useBoardSignIns();
+  const { boards, pendingHosts, error, signIn } = useBoardSignIns();
   const postingHost = hostOfUrl(sourceUrl);
   const board = boards.find((candidate) => candidate.host === postingHost);
   if (!board) return null;
@@ -83,8 +77,7 @@ export function PostingSignInHint({ sourceUrl }: { sourceUrl: string }) {
     <Box sx={calloutSx(board.signedIn ? ui.green : ui.blue)}>
       <BoardSignInLine
         board={board}
-        isPending={pendingHost === board.host}
-        isBusy={pendingHost !== null}
+        isPending={pendingHosts.has(board.host)}
         onSignIn={signIn}
       />
       <SignInError error={error} />

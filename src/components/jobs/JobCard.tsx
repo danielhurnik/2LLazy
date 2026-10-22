@@ -17,7 +17,7 @@ import {
 } from "@mui/material";
 import BookmarkIcon from "@mui/icons-material/Bookmark";
 import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";
-import type { JobItem } from "@/types";
+import type { CrossListing, JobItem } from "@/types";
 import { sourceLabel } from "@/types";
 import { ui, fonts } from "@/theme/tokens";
 
@@ -101,6 +101,28 @@ export function SourceLinkChip({ source, sourceUrl }: SourceLinkChipProps) {
       clickable
       aria-label={`Open posting on ${boardName}`}
     />
+  );
+}
+
+function AlsoOnChips({ listings }: { listings?: CrossListing[] }) {
+  if (!listings?.length) return null;
+  return (
+    <>
+      {listings.map((listing) => (
+        <Chip
+          key={listing.url}
+          label={`also on ${listing.label} ↗`}
+          size="small"
+          variant="outlined"
+          component="a"
+          href={listing.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          clickable
+          aria-label={`Same posting on ${listing.label}`}
+        />
+      ))}
+    </>
   );
 }
 
@@ -355,6 +377,7 @@ export function JobCard({
 
           <FreshnessChip isNew={job.isNew} isStale={job.isStale} />
           <SourceLinkChip source={job.source} sourceUrl={job.sourceUrl} />
+          <AlsoOnChips listings={job.alsoOn} />
         </Stack>
       </CardContent>
     </Card>

@@ -71,6 +71,12 @@ export function sourceLabel(source: string): string {
   return SOURCE_HOST[source] ?? source.toLowerCase();
 }
 
+export interface CrossListing {
+  source: string;
+  label: string;
+  url: string;
+}
+
 export interface JobItem {
   id: string;
   title: string;
@@ -87,6 +93,7 @@ export interface JobItem {
   dismissed?: boolean;
   isNew?: boolean;
   isStale?: boolean;
+  alsoOn?: CrossListing[];
 }
 
 interface ApplicationInterview {
