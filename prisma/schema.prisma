@@ -192,12 +192,14 @@ model JobPosting {
   contentHash    String?
   expiredAt      DateTime?
   applyPath      Json?
+  groupKey       String?
   applications   Application[]
   favouritedBy   UserFavourite[]
   feedback       JobFeedback[]
   embedding      JobEmbedding?
 
   @@index([country, scrapedAt])
+  @@index([groupKey])
 }
 
 model Application {

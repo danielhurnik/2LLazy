@@ -9,7 +9,8 @@ import type { Emit } from "./events";
 import { normalizeJob, type NormalizedJob } from "./normalize";
 import type { SearchProfile } from "./profile";
 import { rankWithFeedback, rankingContextFor, type RankingContext } from "./ranking";
-import { favouriteIdsFor, findByUrls, searchRecent, upsertJob, type StoredJob } from "./repo";
+import { alsoOnEntries } from "./crossListing";
+import { crossListingsOf, favouriteIdsFor, findByUrls, searchRecent, upsertJob, type StoredJob } from "./repo";
 import { SCORE_THRESHOLD, scoreJob, type ScoreRequest } from "./score";
 import type { FetchContext, JobSource, Listing, RawJob, SearchRequest } from "./sources/types";
 
@@ -124,6 +125,7 @@ export async function runSearch({ userId, request, sources, emit, signal }: RunS
   const scoreRequest = toScoreRequest(request, context.profile);
   const isStaleByEmittedId = new Map<string, boolean>();
   const emitted: EmittedJob[] = [];
+  const boardLabels = new Map(sources.map((source) => [source.source, source.label]));
 
   const alreadyEmittedAtLeastAsFresh = (id: string, isStale: boolean): boolean => {
     const emittedAsStale = isStaleByEmittedId.get(id);
@@ -160,6 +162,7 @@ export async function runSearch({ userId, request, sources, emit, signal }: RunS
     if (alreadyEmittedAtLeastAsFresh(row.id, isStale)) return;
     const item = toItem(row, normalized, isStale, vector);
     if (!item) return;
+    item.alsoOn = alsoOnEntries(await crossListingsOf(row), boardLabels);
     isStaleByEmittedId.set(row.id, isStale);
     emitted.push({ row, score: item.similarity ?? 0 });
     await emit({ type: "job", data: item });
