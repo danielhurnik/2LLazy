@@ -221,7 +221,7 @@ export function AutoApplyPanel({ application, run, resumeState, onContinue, onSh
 }
 
 function describeObstacles({ host, attempts, captchas, logins, blockerHost }: ObstacleSummary): string {
-  const applies = `your ${attempts} ${attempts === 1 ? "apply" : "applies"} so far`;
+  const applies = `your ${attempts} auto-apply ${attempts === 1 ? "run" : "runs"} so far`;
   const outOfAttempts = (count: number) => Math.min(count, attempts);
   const asks = [
     captchas > 0 ? `a CAPTCHA on ${outOfAttempts(captchas)}` : null,

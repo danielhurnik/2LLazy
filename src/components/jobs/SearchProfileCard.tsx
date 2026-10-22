@@ -26,7 +26,7 @@ const SENIORITY_LABEL: Record<NonNullable<SearchProfile["seniority"]>, string> =
 };
 const SOURCE_LABEL: Record<SearchProfile["source"], string> = {
   cv: "from your CV",
-  "cv+ollama": "from your CV, refined by the local model",
+  "cv+ollama": "from your CV",
 };
 const DATE_LOCALE = "en-GB";
 const LABEL_WIDTH = 96;
