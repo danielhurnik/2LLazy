@@ -62,12 +62,19 @@ export interface PlannedFill {
   value: FieldValue;
 }
 
+export interface DraftedMessage {
+  field: FieldDescriptor;
+  text: string;
+  lang: "cs" | "en";
+}
+
 export interface FillPlan {
   fills: PlannedFill[];
   unmatched: FieldDescriptor[];
   unfillable: Array<{ field: FieldDescriptor; key: ProfileKey; score: number }>;
   requiredMissing: FieldDescriptor[];
   confidence: number;
+  draft?: DraftedMessage;
 }
 
 const MIN_FIELD_SCORE = 0.45;

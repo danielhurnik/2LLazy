@@ -191,11 +191,11 @@ function grams(words: string[], size: number): Set<string> {
   return out;
 }
 
-export function copiedPhrases(draft: string, source: string, allowedText = ""): string[] {
-  const sourceGrams = grams(wordList(source), COPIED_PHRASE_WORDS);
-  const allowedGrams = grams(wordList(allowedText), COPIED_PHRASE_WORDS);
+export function copiedPhrases(draft: string, source: string, allowedText = "", windowWords = COPIED_PHRASE_WORDS): string[] {
+  const sourceGrams = grams(wordList(source), windowWords);
+  const allowedGrams = grams(wordList(allowedText), windowWords);
   const hits = new Set<string>();
-  for (const gram of grams(wordList(draft), COPIED_PHRASE_WORDS)) {
+  for (const gram of grams(wordList(draft), windowWords)) {
     if (sourceGrams.has(gram) && !allowedGrams.has(gram)) hits.add(gram);
   }
   return [...hits];
@@ -327,6 +327,19 @@ function wordCount(text: string): number {
   return text.split(/\s+/).filter(Boolean).length;
 }
 
+const NEVER_SAY_IN_PROMPT = 8;
+const SAMPLE_COPY_WINDOW_WORDS = 7;
+
+export function signatureFor(profile: ApplyProfile): string {
+  return profile.firstName.trim() || profile.name.trim().split(/\s+/)[0] || "";
+}
+
+function neutralExample(czech: boolean, first: string): string {
+  return czech
+    ? `Příklad tónu (jiná pozice, jen pro styl, neopisuj obsah):\nDobrý den,\n\nhlásím se na pozici backend vývojáře. Poslední dva roky dělám hlavně Node a Postgres, naposledy fakturační službu pro menší e-shop, od návrhu po provoz. Zaujalo mě, že u vás je i trochu infrastruktury, to mě baví.\n\nDíky,\n${first}`
+    : `Example of the tone (different role, style only, do not copy the content):\nHi,\n\nI'm applying for the backend role. For the last two years it's been mostly Node and Postgres, most recently a billing service for a small shop, from design to running it. The bit of infrastructure work in the posting is what caught my eye.\n\nThanks,\n${first}`;
+}
+
 function buildPrompt(input: {
   czech: boolean;
   voice: VoiceConfig;
@@ -338,25 +351,33 @@ function buildPrompt(input: {
   company: string;
 }): { system: string; user: string } {
   const { czech, voice, field, profile, job, cv, title, company } = input;
-  const first = voice.signature;
+  const first = signatureFor(profile);
   const samples = samplesForPrompt(voice, czech ? "cs" : "en");
   const system = czech
-    ? `Píšeš krátkou zprávu do formuláře k pracovní nabídce jménem ${first}a, vývojáře, a musí znít jako on: v klidu, bez pozérství, o tu práci má zájem, ale nepřehání, příjemný na pokec. Krátké věty, první osoba. Jedna konkrétní, nenucená věc k téhle pozici nebo stacku. Žádný výčet dovedností (to má v životopise), žádné chválení firmy, žádné personalistické fráze, žádné opakování inzerátu, žádné emoji, žádné vykřičníky, žádné lomítkové tvary jako rád/a. Jen fakta ze životopisu. Výstup je čistý text bez markdownu.`
-    : `You write a short message into a job application form as ${first}, a developer, and it has to sound like him: relaxed, lowkey, into the work without overdoing it, easy to be around. Short sentences, first person. One concrete, casual hook about this particular role or stack. No skill lists (the CV does that), no praising the company, no HR phrasing, no echoing the ad, no emoji, no exclamation marks. Only facts from the CV. Plain text, no markdown.`;
+    ? `Píšeš krátkou zprávu do formuláře k pracovní nabídce za vývojáře, který se podepisuje "${first}", a musí znít jako on: v klidu, bez pozérství, o tu práci má zájem, ale nepřehání, příjemný na pokec. Piš v první osobě, jako on sám. Krátké věty. Jedna konkrétní, nenucená věc k téhle pozici nebo stacku. Žádný výčet dovedností (to má v životopise), žádné chválení firmy, žádné personalistické fráze, žádné opakování inzerátu, žádné emoji, žádné vykřičníky, žádné lomítkové tvary jako rád/a. Jen fakta ze životopisu. Výstup je čistý text bez markdownu.`
+    : `You write a short message into a job application form for a developer who signs as "${first}", and it has to sound like him: relaxed, lowkey, into the work without overdoing it, easy to be around. Write in the first person, as him. Short sentences. One concrete, casual hook about this particular role or stack. No skill lists (the CV does that), no praising the company, no HR phrasing, no echoing the ad, no emoji, no exclamation marks. Only facts from the CV. Plain text, no markdown.`;
   const tone = voice.tone.length ? `${czech ? "Pravidla tónu" : "Tone rules"}:\n- ${voice.tone.join("\n- ")}` : "";
-  const never = voice.neverSay.length ? `${czech ? "Nikdy nepoužij" : "Never use"}: ${voice.neverSay.join("; ")}` : "";
+  const neverShort = voice.neverSay.slice(0, NEVER_SAY_IN_PROMPT);
+  const never = neverShort.length ? `${czech ? "Nikdy nepoužij" : "Never use"}: ${neverShort.join("; ")}` : "";
   const sampleBlock = samples.length
-    ? `${czech ? "Takhle píše (ukázky jeho vlastních zpráv; drž jejich tón, neopisuj obsah)" : "This is how he writes (his own messages; keep the tone, do not copy the content)"}:\n${samples.map((s, i) => `--- ${i + 1}\n${s.text}`).join("\n")}\n---`
-    : "";
+    ? `${czech ? "Takhle píše (ukázky jeho vlastních zpráv; drž jejich tón a stavbu, neopisuj obsah)" : "This is how he writes (his own messages; keep the tone and structure, do not copy the content)"}:\n${samples.map((s, i) => `--- ${i + 1}\n${s.text}`).join("\n")}\n---`
+    : neutralExample(czech, first);
   const { minWords, maxWords } = voice.limits;
   const closing = czech ? `Poslední řádek je jen "${first}". Před ním může být "Díky," nebo nic.` : `The last line is just "${first}". Before it, "Thanks," or nothing.`;
+  const structure = samples.length
+    ? czech
+      ? "Stavbu zprávy převezmi z ukázek, ne ze šablony."
+      : "Take the structure from the samples, not from a template."
+    : czech
+      ? "Na jakou pozici se hlásím (vlastními slovy, bez citace názvu inzerátu), jedna až dvě konkrétní věci z životopisu, které k tomu sedí, a jen pokud tam opravdu něco zajímavého je, jedna věta, co mě na té nabídce baví."
+      : "Which role I am applying for (in my own words, no quoting the ad's title), one or two concrete things from the CV that fit, and only if something genuinely stands out, one sentence on what I like about this posting.";
   const instructions = cv
     ? czech
-      ? `Napiš ${minWords}–${maxWords} slov: "Dobrý den," na prvním řádku, pak nový odstavec začínající malým písmenem. Na jakou pozici se hlásí (vlastními slovy, bez citace názvu inzerátu), jedna až dvě konkrétní věci z jeho životopisu, které k tomu sedí, a jen pokud tam opravdu něco zajímavého je, jedna věta, co ho na té nabídce baví. Firmu pojmenuj ${company}. ${closing}`
-      : `Write ${minWords}–${maxWords} words: "Hi," on the first line, then a new paragraph. Which role he is applying for (in his own words, no quoting the ad's title), one or two concrete things from his CV that fit, and only if something genuinely stands out, one sentence on what he likes about this posting. Call the company ${company}. ${closing}`
+      ? `Napiš ${minWords}–${maxWords} slov v první osobě: "Dobrý den," na prvním řádku, pak nový odstavec začínající malým písmenem. ${structure} Firmu pojmenuj ${company}. ${closing}`
+      : `Write ${minWords}–${maxWords} words in the first person: "Hi," on the first line, then a new paragraph. ${structure} Call the company ${company}. ${closing}`
     : czech
-      ? `Napiš ${Math.max(25, minWords - 15)}–${maxWords - 20} slov: "Dobrý den," na prvním řádku, pak nový odstavec začínající malým písmenem: na jakou pozici se hlásí (vlastními slovy) a jedna obyčejná věta, co ho na nabídce zaujalo. Podrobnosti k praxi jsou v životopise. Neuváděj žádné roky, technologie, projekty ani dovednosti jako jeho, protože jeho životopis nemáš. Firmu pojmenuj ${company}. ${closing}`
-      : `Write ${Math.max(25, minWords - 15)}–${maxWords - 20} words: "Hi," on the first line, then a new paragraph: which role he is applying for (in his own words) and one plain sentence on what caught his eye. The CV has the details. Do not claim any years, technologies, projects or skills as his, because you do not have his CV. Call the company ${company}. ${closing}`;
+      ? `Napiš ${Math.max(25, minWords - 15)}–${maxWords - 20} slov v první osobě: "Dobrý den," na prvním řádku, pak nový odstavec začínající malým písmenem: na jakou pozici se hlásím (vlastními slovy) a jedna obyčejná věta, co mě na nabídce zaujalo. Podrobnosti k praxi jsou v životopise. Neuváděj žádné roky, technologie, projekty ani dovednosti jako moje, protože můj životopis nemáš. Firmu pojmenuj ${company}. ${closing}`
+      : `Write ${Math.max(25, minWords - 15)}–${maxWords - 20} words in the first person: "Hi," on the first line, then a new paragraph: which role I am applying for (in my own words) and one plain sentence on what caught my eye. The CV has the details. Do not claim any years, technologies, projects or skills as mine, because you do not have my CV. Call the company ${company}. ${closing}`;
   const user = [
     `${czech ? "Pozice" : "Job"}: ${title} — ${company}`,
     `${czech ? "Popis pozice (jen pro pochopení, neopisovat)" : "Job description (for understanding only, do not copy)"}: ${excerpt(job.description, 2500) || "-"}`,
@@ -393,8 +414,14 @@ export async function draftFreeText(
   const company = shortCompanyName(job.company);
   const { system, user } = buildPrompt({ czech, voice, field, profile, job, cv, title, company });
 
-  const allow = [profile.name, voice.signature, job.company, title, profile.city ?? ""];
+  const signature = signatureFor(profile);
+  const allow = [profile.name, signature, job.company, title, profile.city ?? ""];
+  const sampleText = voice.samples
+    .filter((s) => s.lang === lang)
+    .map((s) => s.text)
+    .join("\n");
   let forbidden: string[] = [];
+  let bestByVoice: { text: string; similarity: number } | null = null;
   for (const temperature of [0.6, 0.4, 0.2]) {
     const banLine = forbidden.length
       ? czech
@@ -414,7 +441,12 @@ export async function draftFreeText(
         onReject(`${model} t=${temperature}: unusable length/placeholder (${text.length} chars)`);
         continue;
       }
-      const problems = [...bannedPhrases(text, voice.neverSay), ...styleProblems(text), ...copiedPhrases(text, job.description, `${title} ${company}`)];
+      const problems = [
+        ...bannedPhrases(text, voice.neverSay),
+        ...styleProblems(text),
+        ...copiedPhrases(text, job.description, `${title} ${company}`),
+        ...copiedPhrases(text, sampleText, `${title} ${company} ${signature}`, SAMPLE_COPY_WINDOW_WORDS).map((p) => `copied from a sample: ${p}`),
+      ];
       if (cv) problems.push(...findUnsupportedClaims(text, profile.cvText ?? "", job.description, allow, job.skills));
       if (wordCount(text) > voice.limits.maxWords + 15) problems.push(`too long (${wordCount(text)} words)`);
       if (problems.length > 0) {
@@ -423,10 +455,11 @@ export async function draftFreeText(
         continue;
       }
       const polished = czech ? await proofreadCzech(text, model) : text;
-      const shaped = enforceShape(polished, czech, voice.signature, profile.name);
+      const shaped = enforceShape(polished, czech, signature, profile.name);
       const verdict = await voiceGuard(shaped, lang, voice);
       if (!verdict.ok) {
         onReject(`${model} t=${temperature}: voice (similarity ${verdict.similarity} < ${verdict.threshold})`);
+        if (verdict.similarity !== null && (!bestByVoice || verdict.similarity > bestByVoice.similarity)) bestByVoice = { text: shaped, similarity: verdict.similarity };
         continue;
       }
       return { text: shaped, model, lang };
@@ -434,6 +467,10 @@ export async function draftFreeText(
       onReject(`${model} t=${temperature}: ${errorMessage(err).split("\n")[0]}`);
       return null;
     }
+  }
+  if (bestByVoice) {
+    onReject(`voice guard never passed; keeping the closest draft (similarity ${bestByVoice.similarity})`);
+    return { text: bestByVoice.text, model, lang };
   }
   if (cv) return draftFreeText(field, { ...profile, cvText: null }, job, onReject);
   return null;

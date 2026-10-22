@@ -50,6 +50,7 @@ function fakeContext() {
     lock,
     pages: new Set<Page>(),
     autoSubmit: true,
+    dryRun: false,
   } as unknown as ApplyContext;
   return { ctx, lock, events };
 }

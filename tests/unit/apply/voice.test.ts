@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { bannedPhrases, enforceShape, styleProblems } from "@/lib/apply/ollamaMapper";
-import { calibrationActive, centroid, cosine, samplesForPrompt, thresholdFromSamples, type VoiceConfig } from "@/lib/apply/voice";
+import { calibrationActive, centroid, cosine, meaningfullyEdited, samplesForPrompt, textSimilarity, thresholdFromSamples, type VoiceConfig } from "@/lib/apply/voice";
 
 const VOICE: VoiceConfig = {
-  owner: "Daniel",
-  signature: "Daniel",
   tone: [],
   limits: { minWords: 40, maxWords: 80, paragraphs: 2 },
   neverSay: ["rád bych se ucházel", "I would like to apply"],
@@ -52,14 +50,23 @@ describe("voice samples and guard maths", () => {
     expect(calibrationActive({ ...VOICE, samples: new Array(10).fill(VOICE.samples[0]) })).toBe(false);
   });
 
-  it("derives the threshold from the samples' own similarity minus a margin", () => {
+  it("derives a capped leave-one-out threshold with a wider margin for small pools", () => {
     const a = [1, 0, 0];
     const b = [0.9, 0.1, 0];
     expect(cosine(a, a)).toBeCloseTo(1);
     expect(centroid([a, b])).toEqual([0.95, 0.05, 0]);
     const threshold = thresholdFromSamples([a, b]);
-    expect(threshold).toBeGreaterThan(0.85);
-    expect(threshold).toBeLessThan(cosine(a, b));
+    expect(threshold).toBeLessThanOrEqual(0.85);
+    expect(threshold).toBeLessThan(cosine(a, b) - 0.1);
     expect(thresholdFromSamples([a])).toBe(0.5);
+  });
+
+  it("treats a lightly touched draft as not edited and a rewritten one as edited", () => {
+    const draft = "Dobrý den,\n\nhlásím se na pozici frontend vývojáře, poslední roky dělám React.\n\nDaniel";
+    expect(textSimilarity(draft, draft)).toBe(1);
+    expect(meaningfullyEdited(draft, draft.replace("poslední roky", "poslední tři roky"))).toBe(false);
+    expect(meaningfullyEdited(draft, "Dobrý den,\n\nmám zájem o tu React pozici, teď dělám hlavně interní nástroje pro logistiku.\n\nDaniel")).toBe(true);
+    expect(meaningfullyEdited(null, "napsal jsem si to sám")).toBe(true);
+    expect(meaningfullyEdited(draft, "   ")).toBe(false);
   });
 });

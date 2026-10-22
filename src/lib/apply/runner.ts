@@ -1,5 +1,8 @@
 import { revalidatePath } from "next/cache";
 import { readCvText } from "@/lib/cv";
+import { alreadyAppliedMessage, boardLabel } from "@/lib/jobs/crossListing";
+import { sourceLabels } from "@/lib/jobs/registry";
+import { earlierApplicationInGroup } from "@/lib/jobs/repo";
 import { prisma } from "@/lib/prisma";
 import { findAdapter } from "./adapters";
 import { applyMutex, openApplyPage, releasePage, withApplyLock } from "./browser";
@@ -37,6 +40,7 @@ const STALE_RUN_MESSAGE = "The run stopped when the server restarted; finish it 
 
 interface RunApplyOptions {
   autoSubmit?: boolean;
+  dryRun?: boolean;
 }
 
 function isApplyRunning(applicationId: string): boolean {
@@ -93,6 +97,10 @@ export async function loadApplyInput(applicationId: string, userId: string): Pro
     include: { job: true, user: { include: { userProfile: true } } },
   });
   if (!application) return { code: 404, message: "Application not found" };
+  const earlier = await earlierApplicationInGroup(userId, application.jobId).catch(() => null);
+  if (earlier && earlier.applicationId !== applicationId) {
+    return { code: 409, message: alreadyAppliedMessage(boardLabel(earlier.source, earlier.sourceUrl, sourceLabels())) };
+  }
   const inProgress = (IN_PROGRESS_STATUSES as readonly string[]).includes(application.status);
   if (inProgress && !hasLiveRun(applicationId)) {
     await prisma.application
@@ -139,9 +147,15 @@ async function executeInBrowser(
   input: ApplyInput,
   evidence: Evidence,
   emit: (event: ApplyEvent) => void,
-  autoSubmit: boolean,
+  mode: { autoSubmit: boolean; dryRun: boolean },
 ): Promise<{ result: ApplyResult; via: string }> {
-  emit({ type: "progress", message: autoSubmit ? "Opening the apply browser" : "Opening the apply browser (dry run, nothing will be submitted)" });
+  const { autoSubmit, dryRun } = mode;
+  const opening = dryRun
+    ? "Opening the apply browser (dry run, nothing will be sent)"
+    : autoSubmit
+      ? "Opening the apply browser (it will submit on its own)"
+      : "Opening the apply browser (it fills the form, you send it)";
+  emit({ type: "progress", message: opening });
   const page = await openApplyPage();
   const setWaiting = async (message: string | null) => {
     await prisma.application
@@ -165,6 +179,7 @@ async function executeInBrowser(
     lock: applyMutex,
     pages: new Set([page]),
     autoSubmit,
+    dryRun,
   };
   const adapter = findAdapter(new URL(input.job.sourceUrl));
   const via = adapter?.id ?? "generic";
@@ -196,7 +211,7 @@ async function executeInBrowser(
 
 export async function runApply(input: ApplyInput, emit: (event: ApplyEvent) => void, options: RunApplyOptions = {}): Promise<void> {
   const { applicationId } = input;
-  const autoSubmit = options.autoSubmit ?? true;
+  const mode = { autoSubmit: options.autoSubmit === true, dryRun: options.dryRun === true };
   running.add(applicationId);
   const evidence = new Evidence(applicationId);
   try {
@@ -209,7 +224,7 @@ export async function runApply(input: ApplyInput, emit: (event: ApplyEvent) => v
 
     let outcome: { result: ApplyResult; via: string };
     try {
-      outcome = await withApplyLock(() => executeInBrowser(input, evidence, emit, autoSubmit));
+      outcome = await withApplyLock(() => executeInBrowser(input, evidence, emit, mode));
     } catch (err) {
       const message = err instanceof Error ? err.message.split("\n")[0] : String(err);
       evidence.log(`browser failure: ${message}`);

@@ -18,7 +18,7 @@ const SSE_HEADERS = {
 const jsonError = (error: string, status: number) =>
   new Response(JSON.stringify({ error }), { status, headers: { "Content-Type": "application/json" } });
 
-function streamApply(input: ApplyInput, dryRun: boolean): Response {
+function streamApply(input: ApplyInput, mode: { dryRun: boolean; autoSubmit: boolean }): Response {
   const encoder = new TextEncoder();
   const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
   const writer = writable.getWriter();
@@ -29,7 +29,7 @@ function streamApply(input: ApplyInput, dryRun: boolean): Response {
       closed = true;
     });
   };
-  void runApply(input, emit, { autoSubmit: !dryRun }).finally(() => {
+  void runApply(input, emit, mode).finally(() => {
     closed = true;
     writer.close().catch(() => undefined);
   });
@@ -48,5 +48,5 @@ export async function POST(req: NextRequest) {
 
   const loaded = await loadApplyInput(applicationId, userId);
   if ("code" in loaded) return jsonError(loaded.message, loaded.code);
-  return streamApply(loaded, fields.dryRun === true);
+  return streamApply(loaded, { dryRun: fields.dryRun === true, autoSubmit: fields.autoSubmit === true });
 }

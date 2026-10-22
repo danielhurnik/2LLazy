@@ -22,7 +22,8 @@ import {
   VALIDATION_TEXT,
 } from "./pageActions";
 import { ApplyAbort, type ApplyContext, type ApplyProfile, type ApplyResult } from "./types";
-import { blockingCaptcha, captchaSolved, waitForHuman } from "./humanWait";
+import { blockingCaptcha, captchaSolved, waitForHuman, waitForReview } from "./humanWait";
+import { addVoiceSample, meaningfullyEdited } from "./voice";
 import { errorMessage } from "@/lib/guards";
 
 const MAX_STEPS = 6;
@@ -81,6 +82,7 @@ async function buildPlan(ctx: ApplyContext, scan: PageScan): Promise<FillPlan> {
     const draft = await draftFreeText(entry.field, profile, ctx.job, (reason) => ctx.evidence.log(`draft rejected: ${reason}`));
     if (draft) {
       plan.fills.push({ field: entry.field, key: entry.key, score: 0.6, value: { kind: "text", value: draft.text } });
+      plan.draft ??= { field: entry.field, text: draft.text, lang: draft.lang };
       ctx.evidence.log(`drafted ${describeField(entry.field)} with ${draft.model} (${draft.text.length} chars)`);
     } else {
       ctx.evidence.log(`no usable draft for ${describeField(entry.field)}`);
@@ -196,6 +198,7 @@ async function fillFields(ctx: ApplyContext, scan: PageScan, plan: FillPlan): Pr
         ctx.evidence.log(`relocated ${label} -> ${found.field.selector}`);
       }
       await applyFill(targetScan, target);
+      if (target.value.kind === "text" && target.field.tag === "textarea") await verifyTextLanded(ctx, targetScan, target, target.value.value);
       payload[label] = payloadValue(fill);
       ctx.evidence.log(`filled ${label} <- ${fill.key} (${fill.score.toFixed(2)})`);
     } catch (err) {
@@ -209,6 +212,25 @@ async function fillFields(ctx: ApplyContext, scan: PageScan, plan: FillPlan): Pr
     finalizePlan(plan, scan.fields);
   }
   return payload;
+}
+
+const READBACK_PREFIX_CHARS = 40;
+
+async function readBack(scan: PageScan, fill: PlannedFill): Promise<string> {
+  const locator = locatorFor(scan, fill.field);
+  const text = fill.field.type === "richtext" ? await locator.innerText({ timeout: 3_000 }) : await locator.inputValue({ timeout: 3_000 });
+  return text.replace(/\s+/g, " ").trim();
+}
+
+async function verifyTextLanded(ctx: ApplyContext, scan: PageScan, fill: PlannedFill, expected: string): Promise<void> {
+  const wanted = expected.replace(/\s+/g, " ").trim().slice(0, READBACK_PREFIX_CHARS);
+  const landed = (text: string) => text.startsWith(wanted);
+  let actual = await readBack(scan, fill).catch(() => "");
+  if (landed(actual)) return;
+  ctx.evidence.log(`readback mismatch on ${describeField(fill.field)}: "${actual.slice(0, 60)}"; retrying through the DOM`);
+  if (fill.field.type !== "richtext") await setValueThroughDom(locatorFor(scan, fill.field), expected).catch(() => undefined);
+  actual = await readBack(scan, fill).catch(() => "");
+  if (!landed(actual)) throw new Error(`the field kept "${actual.slice(0, 60)}" instead of the message`);
 }
 
 async function uploadViaChooser(ctx: ApplyContext, scan: PageScan, pattern: RegExp): Promise<string | null> {
@@ -253,7 +275,6 @@ function assertReadyToSubmit(ctx: ApplyContext, plan: FillPlan): void {
   if (plan.confidence < AUTO_SUBMIT_CONFIDENCE) {
     throw new ApplyAbort("NEEDS_MANUAL", `Field mapping confidence ${plan.confidence} is below ${AUTO_SUBMIT_CONFIDENCE}; review the form in the apply window`);
   }
-  if (!ctx.autoSubmit) throw new ApplyAbort("NEEDS_MANUAL", "Form filled; automatic submission is disabled");
 }
 
 function adoptPage(ctx: ApplyContext, page: ApplyContext["page"]): void {
@@ -278,7 +299,17 @@ export async function runGenericFlow(ctx: ApplyContext, options: GenericFlowOpti
   const payload: Record<string, string> = {};
   const filledSelectors = new Set<string>();
   try {
-    await fillAndSubmit(ctx, scan, options, payload, filledSelectors);
+    const review = await fillAndSubmit(ctx, scan, options, payload, filledSelectors);
+    if (review) {
+      if (review.finalMessage && review.lang) {
+        payload[SENT_MESSAGE_KEY] = review.finalMessage;
+        if (meaningfullyEdited(review.draft, review.finalMessage)) {
+          await addVoiceSample({ lang: review.lang, text: review.finalMessage, source: review.draft ? "edited" : "user" }).catch(() => undefined);
+          ctx.evidence.log("sent message saved as a voice sample");
+        }
+      }
+      return { status: "APPLIED", message: review.outcome === "sent" ? "Sent by you" : "Sent by you (confirmation seen)", submitted: payload };
+    }
     return { status: "APPLIED", message: lastConfirmation, submitted: payload };
   } catch (err) {
     if (err instanceof ApplyAbort) err.submitted = payload;
@@ -286,7 +317,28 @@ export async function runGenericFlow(ctx: ApplyContext, options: GenericFlowOpti
   }
 }
 
+const SENT_MESSAGE_KEY = "message as sent";
+
 let lastConfirmation: string | undefined;
+
+interface ReviewHandoff {
+  outcome: "confirmed" | "sent";
+  finalMessage: string | null;
+  draft: string | null;
+  lang: "cs" | "en" | null;
+}
+
+async function handOverForReview(ctx: ApplyContext, scan: PageScan, plan: FillPlan, filledSelectors: Set<string>): Promise<ReviewHandoff> {
+  ctx.emit({ type: "progress", message: "Ready for you to check and send" });
+  const review = await waitForReview(ctx, {
+    draft: plan.draft?.text ?? null,
+    lang: plan.draft?.lang ?? null,
+    messageField: plan.draft?.field ?? null,
+    filledSelectors,
+    before: scan,
+  });
+  return { outcome: review.outcome, finalMessage: review.finalMessage, draft: plan.draft?.text ?? null, lang: plan.draft?.lang ?? null };
+}
 
 async function fillAndSubmit(
   ctx: ApplyContext,
@@ -294,7 +346,7 @@ async function fillAndSubmit(
   options: GenericFlowOptions,
   payload: Record<string, string>,
   filledSelectors: Set<string>,
-): Promise<void> {
+): Promise<ReviewHandoff | null> {
   let scan = initial;
   let formOpened = false;
   lastConfirmation = undefined;
@@ -336,10 +388,12 @@ async function fillAndSubmit(
       scan = await pastLoginWall(ctx, await rescan(ctx.page));
       continue;
     }
+    if (ctx.dryRun) throw new ApplyAbort("NEEDS_MANUAL", "Form filled; dry run stops before sending");
+    if (!ctx.autoSubmit) return handOverForReview(ctx, scan, plan, filledSelectors);
     if (!submit) throw new ApplyAbort("NEEDS_MANUAL", "Form filled but no submit button was recognised; submit it in the apply window");
 
     const beforeWait = scan;
-    if (ctx.autoSubmit && plan.requiredMissing.length === 0 && plan.confidence >= AUTO_SUBMIT_CONFIDENCE) {
+    if (plan.requiredMissing.length === 0 && plan.confidence >= AUTO_SUBMIT_CONFIDENCE) {
       scan = await pastCaptcha(ctx, scan);
     }
     assertReadyToSubmit(ctx, plan);
@@ -347,12 +401,12 @@ async function fillAndSubmit(
     if (!submitNow) {
       if (isConfirmed(beforeWait, scan, filledSelectors)) {
         lastConfirmation = confirmationSnippet(scan);
-        return;
+        return null;
       }
       throw new ApplyAbort("NEEDS_MANUAL", "The submit button was gone after the wait and no confirmation was found; check the apply window");
     }
     const outcome = await submitAndConfirm(ctx, scan, submitNow, filledSelectors, options, plan.confidence);
-    if (outcome.result === "confirmed") return;
+    if (outcome.result === "confirmed") return null;
     ctx.emit({ type: "progress", message: "The form moved to a further step" });
     scan = outcome.scan;
   }

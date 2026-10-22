@@ -5,14 +5,15 @@ import { isRecord } from "@/lib/guards";
 
 export type VoiceLang = "cs" | "en";
 
+export type VoiceSampleSource = "user" | "edited";
+
 export interface VoiceSample {
   lang: VoiceLang;
   text: string;
+  source?: VoiceSampleSource;
 }
 
 export interface VoiceConfig {
-  owner: string;
-  signature: string;
   tone: string[];
   limits: { minWords: number; maxWords: number; paragraphs: number };
   neverSay: string[];
@@ -31,13 +32,15 @@ const VOICE_FILE = path.resolve(process.cwd(), "config", "voice.json");
 const VOICE_LOCAL_FILE = path.resolve(process.cwd(), "config", "voice.local.json");
 const VOICE_CACHE_MS = 10_000;
 const SIMILARITY_MARGIN = 0.08;
+const SMALL_POOL_EXTRA_MARGIN = 0.05;
+const SMALL_POOL_SIZE = 10;
 const SIMILARITY_FLOOR = 0.5;
-const MIN_SAMPLES_FOR_GUARD = 2;
+const SIMILARITY_CAP = 0.85;
+const MIN_SAMPLES_FOR_GUARD = 5;
 const MAX_SAMPLES_IN_PROMPT = 3;
+const EDITED_ENOUGH_BELOW_SIMILARITY = 0.85;
 
 const DEFAULT_VOICE: VoiceConfig = {
-  owner: "Daniel",
-  signature: "Daniel",
   tone: [],
   limits: { minWords: 40, maxWords: 80, paragraphs: 2 },
   neverSay: [],
@@ -51,7 +54,7 @@ const embeddingCache = new Map<string, number[]>();
 
 function sampleOf(value: unknown): VoiceSample | null {
   if (!isRecord(value) || typeof value.text !== "string" || !value.text.trim()) return null;
-  return { lang: value.lang === "en" ? "en" : "cs", text: value.text.trim() };
+  return { lang: value.lang === "en" ? "en" : "cs", text: value.text.trim(), source: value.source === "edited" ? "edited" : "user" };
 }
 
 function parseVoice(raw: unknown): VoiceConfig {
@@ -60,8 +63,6 @@ function parseVoice(raw: unknown): VoiceConfig {
   const calibration = isRecord(raw.calibration) ? raw.calibration : {};
   const strings = (value: unknown) => (Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : []);
   return {
-    owner: typeof raw.owner === "string" ? raw.owner : DEFAULT_VOICE.owner,
-    signature: typeof raw.signature === "string" ? raw.signature : DEFAULT_VOICE.signature,
     tone: strings(raw.tone),
     limits: {
       minWords: typeof limits.minWords === "number" ? limits.minWords : DEFAULT_VOICE.limits.minWords,
@@ -107,7 +108,7 @@ export async function addVoiceSample(sample: VoiceSample): Promise<void> {
   const raw = await readJsonRecord(VOICE_LOCAL_FILE);
   const samples = Array.isArray(raw.samples) ? raw.samples.map(sampleOf).filter((s): s is VoiceSample => s !== null) : [];
   if (samples.some((s) => s.text === text)) return;
-  samples.push({ lang: sample.lang, text });
+  samples.push({ lang: sample.lang, text, source: sample.source ?? "user" });
   await fs.writeFile(VOICE_LOCAL_FILE, `${JSON.stringify({ ...raw, samples }, null, 2)}\n`);
   cached = null;
 }
@@ -116,13 +117,46 @@ export function calibrationActive(config: VoiceConfig): boolean {
   return config.samples.length < config.calibration.approvedSamplesNeeded;
 }
 
-export function samplesForPrompt(config: VoiceConfig, lang: VoiceLang): VoiceSample[] {
-  const pool = config.samples.filter((s) => s.lang === lang);
+function shuffled<T>(items: T[]): T[] {
+  const pool = [...items];
   for (let i = pool.length - 1; i > 0; i -= 1) {
     const j = Math.floor(Math.random() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
-  return pool.slice(0, MAX_SAMPLES_IN_PROMPT);
+  return pool;
+}
+
+export function samplesForPrompt(config: VoiceConfig, lang: VoiceLang): VoiceSample[] {
+  const ofLang = config.samples.filter((s) => s.lang === lang);
+  const handWritten = shuffled(ofLang.filter((s) => s.source !== "edited"));
+  const edited = shuffled(ofLang.filter((s) => s.source === "edited"));
+  return [...handWritten, ...edited].slice(0, MAX_SAMPLES_IN_PROMPT);
+}
+
+function wordBigrams(text: string): Set<string> {
+  const words = text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  const out = new Set<string>();
+  for (let i = 0; i + 1 < words.length; i += 1) out.add(`${words[i]} ${words[i + 1]}`);
+  return out;
+}
+
+export function textSimilarity(a: string, b: string): number {
+  const left = wordBigrams(a);
+  const right = wordBigrams(b);
+  if (left.size === 0 && right.size === 0) return 1;
+  let shared = 0;
+  for (const gram of left) if (right.has(gram)) shared += 1;
+  return (2 * shared) / (left.size + right.size || 1);
+}
+
+export function meaningfullyEdited(draft: string | null, final: string): boolean {
+  if (!final.trim()) return false;
+  if (!draft) return true;
+  return textSimilarity(draft, final) < EDITED_ENOUGH_BELOW_SIMILARITY;
 }
 
 export function cosine(a: number[], b: number[]): number {
@@ -145,13 +179,11 @@ export function centroid(vectors: number[][]): number[] {
 }
 
 export function thresholdFromSamples(vectors: number[][]): number {
-  const sims: number[] = [];
-  for (let i = 0; i < vectors.length; i += 1) {
-    for (let j = i + 1; j < vectors.length; j += 1) sims.push(cosine(vectors[i], vectors[j]));
-  }
-  if (sims.length === 0) return SIMILARITY_FLOOR;
-  const mean = sims.reduce((s, v) => s + v, 0) / sims.length;
-  return Math.max(SIMILARITY_FLOOR, mean - SIMILARITY_MARGIN);
+  if (vectors.length < 2) return SIMILARITY_FLOOR;
+  const leaveOneOut = vectors.map((vector, i) => cosine(vector, centroid(vectors.filter((_, j) => j !== i))));
+  const mean = leaveOneOut.reduce((s, v) => s + v, 0) / leaveOneOut.length;
+  const margin = SIMILARITY_MARGIN + (vectors.length < SMALL_POOL_SIZE ? SMALL_POOL_EXTRA_MARGIN : 0);
+  return Math.min(SIMILARITY_CAP, Math.max(SIMILARITY_FLOOR, mean - margin));
 }
 
 async function embeddingsFor(texts: string[]): Promise<number[][]> {

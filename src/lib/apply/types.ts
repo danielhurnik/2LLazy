@@ -52,6 +52,7 @@ export interface ApplyContext {
   lock: { release(): void; acquire(): Promise<void> };
   pages: Set<Page>;
   autoSubmit: boolean;
+  dryRun: boolean;
 }
 
 export interface ApplyResult {

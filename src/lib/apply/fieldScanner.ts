@@ -176,7 +176,7 @@ function enumerateFrame(): FrameScan {
       required,
       visible: fieldVisible(el, type),
       checked: (el as HTMLInputElement).checked === true,
-      value: type === "file" || type === "password" ? "" : clean((el as HTMLInputElement).value).slice(0, 600),
+      value: type === "file" || type === "password" ? "" : clean((el as HTMLInputElement).value).slice(0, 2000),
       options: tag === "select" ? Array.from((el as HTMLSelectElement).options).map((o) => ({ value: o.value, text: clean(o.textContent) })) : [],
     });
   }
@@ -200,7 +200,7 @@ function enumerateFrame(): FrameScan {
       required: el.getAttribute("aria-required") === "true" || /\*\s*$/.test(label),
       visible: isVisible(el),
       checked: false,
-      value: clean(el.textContent).slice(0, 600),
+      value: clean(el.textContent).slice(0, 2000),
       options: [],
     });
   }

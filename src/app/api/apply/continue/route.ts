@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/auth";
-import { requestResume, requestResumeAll, waitingApplicationIds } from "@/lib/apply/humanWait";
+import { requestFocus, requestOutcome, requestResume, requestResumeAll, waitingApplicationIds } from "@/lib/apply/humanWait";
 import { sweepStaleApplyRuns } from "@/lib/apply/runner";
 import { isRecord } from "@/lib/guards";
 import { prisma } from "@/lib/prisma";
@@ -36,5 +36,9 @@ export async function POST(req: NextRequest) {
   const owned = await prisma.application.findFirst({ where: { id: applicationId, userId }, select: { id: true } });
   if (!owned) return jsonError("Not found", 404);
 
+  if (fields.focus === true) return Response.json({ ok: true, focused: requestFocus(applicationId) });
+  if (fields.outcome === "SENT" || fields.outcome === "DISCARDED") {
+    return Response.json({ ok: true, waiting: requestOutcome(applicationId, fields.outcome) });
+  }
   return Response.json({ ok: true, waiting: requestResume(applicationId) });
 }
