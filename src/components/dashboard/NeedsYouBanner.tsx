@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Box, Button, ButtonBase, Stack, Typography } from "@mui/material";
 import { errorMessage } from "@/lib/guards";
@@ -9,7 +9,7 @@ import { ui } from "@/theme/tokens";
 import { calloutSx, panelLinkSx } from "./AutoApplyPanel";
 import { continueAllWaiting, type ContinueAllResult } from "./useAutoApply";
 
-const RESUME_PICKUP_MS = 3 * MS_PER_SECOND;
+const RESUME_REFRESH_DELAYS_MS = [3 * MS_PER_SECOND, 6 * MS_PER_SECOND];
 const NOTHING_RESUMED = "None of these runs is still waiting, so nothing was resumed.";
 
 interface BannerNote {
@@ -37,8 +37,25 @@ export function NeedsYouBanner({ waitingCount, onShowWaiting }: NeedsYouBannerPr
   const router = useRouter();
   const [isContinuing, setIsContinuing] = useState(false);
   const [note, setNote] = useState<BannerNote | null>(null);
+  const pendingRefreshes = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  useEffect(() => {
+    const pending = pendingRefreshes.current;
+    return () => pending.forEach(clearTimeout);
+  }, []);
 
   if (waitingCount === 0) return null;
+
+  const refreshWhileRunsPickUp = () => {
+    const lastIndex = RESUME_REFRESH_DELAYS_MS.length - 1;
+    RESUME_REFRESH_DELAYS_MS.forEach((delay, index) => {
+      const timer = setTimeout(() => {
+        if (index === lastIndex) setNote(null);
+        router.refresh();
+      }, delay);
+      pendingRefreshes.current.push(timer);
+    });
+  };
 
   const continueAll = async () => {
     setIsContinuing(true);
@@ -50,10 +67,7 @@ export function NeedsYouBanner({ waitingCount, onShowWaiting }: NeedsYouBannerPr
         router.refresh();
         return;
       }
-      setTimeout(() => {
-        setNote(null);
-        router.refresh();
-      }, RESUME_PICKUP_MS);
+      refreshWhileRunsPickUp();
     } catch (err) {
       setNote({ text: errorMessage(err), isError: true });
     } finally {

@@ -73,7 +73,11 @@ export function DashboardClient({ applications, filters, sources, statusCounts, 
 
   const applyFilters = (nextFilters: DashboardFilters) => router.replace(dashboardHref(nextFilters));
   const clearFilters = () => router.replace(DASHBOARD_PATH);
-  const isShowingOnlyWaiting = toSearchParams(filters).toString() === toSearchParams(WAITING_ONLY_FILTERS).toString();
+  const isShowingOnlyWaiting =
+    filters.status === WAITING_ONLY_FILTERS.status &&
+    filters.source === ALL_OPTION &&
+    !filters.position &&
+    !filters.hasSalary;
 
   const saveStatusChange = ({ applicationId, status }: StatusChangeDraft) => {
     startTransition(async () => {
