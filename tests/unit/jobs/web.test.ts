@@ -15,7 +15,7 @@ const SEARCH_PAGE = `
 const JOB_PAGE = `<html><head>
 <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization","name":"Example"},
 {"@type":"JobPosting","title":"React Developer","description":"<p>Build the <b>dashboard</b>.</p>","datePosted":"2026-10-01",
-"hiringOrganization":{"@type":"Organization","name":"Example s.r.o."},
+"hiringOrganization":{"@type":"Organization","name":"Example s.r.o.","contactPoint":{"@type":"ContactPoint","email":"mailto:HR@example.cz"}},
 "jobLocation":[{"@type":"Place","address":{"addressLocality":"Brno","addressCountry":"CZ"}}],
 "baseSalary":{"@type":"MonetaryAmount","currency":"CZK","value":{"minValue":70000,"maxValue":90000,"unitText":"MONTH"}}}]}</script>
 <script type="application/ld+json">not json</script>
@@ -88,6 +88,7 @@ describe("jobPostingsIn", () => {
       description: "Build the dashboard.",
       salary: "70000 - 90000 CZK / month",
       remote: false,
+      email: "HR@example.cz",
     });
     expect(posting.postedAt).toEqual(new Date("2026-10-01"));
   });

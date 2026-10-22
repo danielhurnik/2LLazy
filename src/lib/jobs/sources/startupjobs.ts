@@ -2,6 +2,7 @@ import { isPlaywrightEnabled, pwFetchHtml } from "@/lib/scrapers/playwright-brow
 import * as cheerio from "cheerio";
 import { uniqueByUrl } from "../dedupe";
 import { absoluteUrl, blockText, collapseWhitespace, mainText, robotsAllows } from "../http";
+import { emailApplyPath, emailsInHtml } from "./contact";
 import { COUNTRY_NAMES, senioritySlug, type JobSource, type Listing, type RawJob } from "./types";
 
 const BASE = "https://www.startupjobs.cz";
@@ -90,6 +91,7 @@ export const startupjobsSource: JobSource = {
       source: "STARTUPJOBS",
       salary: listing.salary,
       workType: listing.workType,
+      applyPath: emailApplyPath(listing.url, emailsInHtml($)),
     };
   },
 };

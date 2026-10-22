@@ -1,6 +1,7 @@
 import { normalizeText } from "@/lib/text";
 import * as cheerio from "cheerio";
 import { absoluteUrl, collapseWhitespace, fetchHtml } from "../http";
+import { emailApplyPath, emailsInHtml } from "./contact";
 import { jobPostingsIn } from "./jsonld";
 import type { FetchContext, JobSource, Listing, RawJob } from "./types";
 
@@ -95,6 +96,7 @@ export const praceczSource: JobSource = {
       salary: listing.salary ?? posting?.salary,
       workType: posting?.remote ? "Remote" : listing.workType,
       postedAt: posting?.postedAt,
+      applyPath: emailApplyPath(listing.url, [posting?.email ?? "", ...emailsInHtml($)]),
     };
   },
 };

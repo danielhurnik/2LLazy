@@ -2,6 +2,7 @@ import type { Cheerio, CheerioAPI } from "cheerio";
 import type { AnyNode } from "domhandler";
 import { uniqueByUrl } from "../dedupe";
 import { absoluteUrl, blockText, collapseWhitespace, fetchHtml, mainText } from "../http";
+import { emailApplyPath, emailsInHtml } from "./contact";
 import { COUNTRY_NAMES, senioritySlug, type JobSource, type Listing, type RawJob } from "./types";
 
 const BASE = "https://www.jobstack.it";
@@ -85,6 +86,7 @@ export const jobstackSource: JobSource = {
       source: "JOBSTACK",
       salary: listing.salary,
       workType: listing.workType,
+      applyPath: emailApplyPath(listing.url, emailsInHtml($)),
     };
   },
 };

@@ -90,3 +90,27 @@ describe("normalizeJob", () => {
     expect(job.remote).toBeNull();
   });
 });
+
+describe("normalizeJob apply path", () => {
+  const raw = {
+    title: "React developer",
+    company: "Firma s.r.o.",
+    description: "Hledáme React vývojáře.",
+    url: "https://firma.cz/kariera/react",
+    source: "WEB" as const,
+  };
+
+  it("keeps the apply path a source provided", () => {
+    const applyPath = { kind: "ats-api" as const, url: raw.url, ats: "recruitee", slug: "firma", postingId: "1" };
+    expect(normalizeJob({ ...raw, applyPath }, "CZ").applyPath).toEqual(applyPath);
+  });
+
+  it("captures a hiring address from the description", () => {
+    const job = normalizeJob({ ...raw, description: "Životopis pošlete na Kariera@firma.cz, dotazy na gdpr@firma.cz." }, "CZ");
+    expect(job.applyPath).toEqual({ kind: "email", url: raw.url, email: "kariera@firma.cz" });
+  });
+
+  it("falls back to the board form", () => {
+    expect(normalizeJob(raw, "CZ").applyPath).toEqual({ kind: "board-form", url: raw.url });
+  });
+});

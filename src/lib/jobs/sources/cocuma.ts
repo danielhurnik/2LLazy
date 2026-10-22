@@ -1,5 +1,6 @@
 import type { CheerioAPI } from "cheerio";
 import { absoluteUrl, blockText, fetchHtml, mainText } from "../http";
+import { emailApplyPath, emailsInHtml } from "./contact";
 import { titleMatches } from "./match";
 import {
   COUNTRY_NAMES,
@@ -96,6 +97,7 @@ export const cocumaSource: JobSource = {
       url: listing.url,
       source: "COCUMA",
       workType: listing.workType,
+      applyPath: emailApplyPath(listing.url, emailsInHtml($)),
     };
   },
 };

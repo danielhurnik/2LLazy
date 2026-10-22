@@ -5,6 +5,7 @@ import { absoluteUrl, fetchHtml, fetchText, HttpError } from "../http";
 import { detectCity } from "../normalize";
 import { knownWebHosts, recordWebHost } from "../repo";
 import { tokens } from "../score";
+import { emailApplyPath, emailsInHtml } from "./contact";
 import { jobPostingsIn, type JsonLdJobPosting } from "./jsonld";
 import { COUNTRY_NAMES, type CountryCode, type FetchContext, type JobSource, type Listing, type RawJob, type SearchRequest } from "./types";
 
@@ -148,7 +149,7 @@ export function locatedInCountryOrUnknown(posting: Pick<JsonLdJobPosting, "locat
   return COUNTRY_WORDS[country].test(posting.location) || detectCity(posting.location, country) !== null;
 }
 
-function toRawJob(posting: JsonLdJobPosting, url: string): RawJob {
+function toRawJob(posting: JsonLdJobPosting, url: string, pageEmails: string[] = []): RawJob {
   return {
     title: posting.title,
     company: posting.company,
@@ -159,18 +160,19 @@ function toRawJob(posting: JsonLdJobPosting, url: string): RawJob {
     salary: posting.salary,
     workType: posting.remote ? "Remote" : undefined,
     postedAt: posting.postedAt,
+    applyPath: emailApplyPath(url, [posting.email ?? "", ...pageEmails]),
   };
 }
 
-function toListing(posting: JsonLdJobPosting, url: string): Listing {
-  return { url, title: posting.title, company: posting.company, location: posting.location, salary: posting.salary, postedAt: posting.postedAt, job: toRawJob(posting, url) };
+function toListing(posting: JsonLdJobPosting, url: string, pageEmails: string[]): Listing {
+  return { url, title: posting.title, company: posting.company, location: posting.location, salary: posting.salary, postedAt: posting.postedAt, job: toRawJob(posting, url, pageEmails) };
 }
 
 async function postingOn(url: string, ctx: FetchContext): Promise<{ listing: Listing | null; $: cheerio.CheerioAPI; url: string } | null> {
   try {
     const page = await fetchHtml(url, { signal: ctx.signal });
     const posting = jobPostingsIn(page.$).find((candidate) => locatedInCountryOrUnknown(candidate, ctx.request.country));
-    return { listing: posting ? toListing(posting, page.url) : null, $: page.$, url: page.url };
+    return { listing: posting ? toListing(posting, page.url, emailsInHtml(page.$)) : null, $: page.$, url: page.url };
   } catch (err) {
     ctx.log(`skipped ${url}: ${String(err).slice(0, 100)}`);
     return null;
@@ -237,6 +239,6 @@ export const webSource: JobSource = {
       throw err;
     }
     const posting = jobPostingsIn(page.$).find((candidate) => locatedInCountryOrUnknown(candidate, ctx.request.country));
-    return posting ? toRawJob(posting, listing.url) : null;
+    return posting ? toRawJob(posting, listing.url, emailsInHtml(page.$)) : null;
   },
 };

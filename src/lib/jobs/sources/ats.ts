@@ -1,6 +1,7 @@
 import { normalizeText } from "@/lib/text";
 import { batchProcess } from "@/lib/scrapers/utils";
 import { sourcesConfigFor, type Employer } from "../config";
+import { canonicalUrl } from "../dedupe";
 import { detectCity } from "../normalize";
 import { tokens } from "../score";
 import { fetchEmployerPostings, withDescription, type AtsPosting } from "./atsAdapters";
@@ -69,6 +70,16 @@ function toListing(posting: AtsPosting, employer: Employer): Listing {
   };
 }
 
+export function employerFor(listing: Pick<Listing, "url" | "company">, country: CountryCode): Employer | undefined {
+  const { employers } = sourcesConfigFor(country);
+  const company = normalizeText(listing.company ?? "");
+  const url = listing.url.toLowerCase();
+  return (
+    employers.find((employer) => company && normalizeText(employer.name) === company) ??
+    employers.find((employer) => url.includes(employer.slug.toLowerCase()))
+  );
+}
+
 async function employerListings(employer: Employer, ctx: FetchContext): Promise<Listing[]> {
   try {
     const postings = (await fetchEmployerPostings(employer, ctx.signal)).filter(
@@ -98,5 +109,14 @@ export const atsSource: JobSource = {
     const pages = await batchProcess(employers, EMPLOYER_CONCURRENCY, (employer) => employerListings(employer, ctx));
     const listings = pages.flat();
     if (listings.length > 0) yield listings;
+  },
+
+  async detail(listing, ctx): Promise<RawJob | null> {
+    const employer = employerFor(listing, ctx.request.country);
+    if (!employer) throw new Error(`no configured employer for ${listing.url}`);
+    const wanted = canonicalUrl(listing.url);
+    const posting = (await fetchEmployerPostings(employer, ctx.signal)).find((candidate) => canonicalUrl(candidate.url) === wanted);
+    if (!posting) return null;
+    return toRawJob(await withDescription(employer, posting, ctx.signal), employer);
   },
 };

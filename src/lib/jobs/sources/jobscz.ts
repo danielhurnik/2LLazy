@@ -3,6 +3,7 @@ import * as cheerio from "cheerio";
 import { normalizeText } from "@/lib/text";
 import { MS_PER_DAY } from "@/lib/time";
 import { absoluteUrl, blockText, collapseWhitespace, fetchHtml, HttpError, mainText } from "../http";
+import { emailApplyPath, emailsInHtml } from "./contact";
 import type { FetchContext, JobSource, Listing, RawJob } from "./types";
 
 const BASE = "https://www.jobs.cz";
@@ -98,24 +99,24 @@ function descriptionBody($: cheerio.CheerioAPI): string {
   return candidates.find(isComplete) ?? "";
 }
 
-async function serverRenderedDescription(listing: Listing, ctx: FetchContext): Promise<{ body: string; meta: string }> {
+async function serverRenderedDescription(listing: Listing, ctx: FetchContext): Promise<{ body: string; meta: string; emails: string[] }> {
   try {
     const { $ } = await fetchHtml(listing.url, { signal: ctx.signal });
-    return { body: descriptionBody($), meta: metaDescription($) };
+    return { body: descriptionBody($), meta: metaDescription($), emails: emailsInHtml($) };
   } catch (err) {
     if (err instanceof HttpError && GONE_STATUSES.has(err.status)) throw err;
     ctx.log(`detail fetch failed for ${listing.url}: ${String(err)}`);
-    return { body: "", meta: "" };
+    return { body: "", meta: "", emails: [] };
   }
 }
 
-async function clientRenderedDescription(listing: Listing, ctx: FetchContext): Promise<string> {
+async function clientRenderedDescription(listing: Listing, ctx: FetchContext): Promise<{ body: string; emails: string[] }> {
   try {
     const $ = cheerio.load(await pwFetchHtml(listing.url, RENDERED_DETAIL_SELECTOR));
-    return descriptionBody($) || mainText($);
+    return { body: descriptionBody($) || mainText($), emails: emailsInHtml($) };
   } catch (err) {
     ctx.log(`playwright detail failed for ${listing.url}: ${String(err)}`);
-    return "";
+    return { body: "", emails: [] };
   }
 }
 
@@ -142,9 +143,13 @@ export const jobsczSource: JobSource = {
   },
 
   async detail(listing, ctx): Promise<RawJob | null> {
-    const { body, meta } = await serverRenderedDescription(listing, ctx);
+    const { body, meta, emails } = await serverRenderedDescription(listing, ctx);
     let description = isComplete(body) ? body : "";
-    if (!description && isPlaywrightEnabled()) description = await clientRenderedDescription(listing, ctx);
+    if (!description && isPlaywrightEnabled()) {
+      const rendered = await clientRenderedDescription(listing, ctx);
+      description = rendered.body;
+      emails.push(...rendered.emails);
+    }
 
     return {
       title: listing.title,
@@ -155,6 +160,7 @@ export const jobsczSource: JobSource = {
       source: "JOBSCZ",
       salary: listing.salary,
       postedAt: listing.postedAt,
+      applyPath: emailApplyPath(listing.url, emails),
     };
   },
 };

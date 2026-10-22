@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Employer } from "@/lib/jobs/config";
-import { locatedInCountry, mentionsQuery } from "@/lib/jobs/sources/ats";
+import { employerFor, locatedInCountry, mentionsQuery } from "@/lib/jobs/sources/ats";
 import type { SearchRequest } from "@/lib/jobs/sources/types";
 import { lookupIntent } from "@/lib/queryIntent";
 import { parsePostings } from "@/lib/jobs/sources/atsAdapters";
@@ -172,5 +172,13 @@ describe("mentionsQuery", () => {
   it("requires every query token in the description", () => {
     expect(mentionsQuery({ description: "We build the dashboard in React and TypeScript." }, request("React"))).toBe(true);
     expect(mentionsQuery({ description: "We build the dashboard in React." }, request("React Native"))).toBe(false);
+  });
+});
+
+describe("employerFor", () => {
+  it("finds the configured employer by company name, then by slug in the URL", () => {
+    expect(employerFor({ url: "https://jobs.example/1", company: "jetbrains" }, "CZ")).toMatchObject({ ats: "greenhouse", slug: "jetbrains" });
+    expect(employerFor({ url: "https://boards.greenhouse.io/jetbrains/jobs/1", company: "" }, "CZ")).toMatchObject({ slug: "jetbrains" });
+    expect(employerFor({ url: "https://jobs.example/1", company: "Nobody" }, "CZ")).toBeUndefined();
   });
 });

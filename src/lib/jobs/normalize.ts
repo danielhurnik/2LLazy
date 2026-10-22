@@ -2,6 +2,7 @@ import type { JobSource as JobSourceEnum } from "@prisma/client";
 import type { ApplyPath, CountryCode, RawJob } from "./sources/types";
 import { normalizeText } from "@/lib/text";
 import { canonicalUrl, dedupeRepeatedHalf } from "./dedupe";
+import { boardFormApplyPath, emailApplyPath, emailsInText } from "./sources/contact";
 
 type WorkType = "Remote" | "Hybrid" | "Onsite";
 
@@ -257,6 +258,6 @@ export function normalizeJob(raw: RawJob, country: CountryCode): NormalizedJob {
     salaryMax: parsedSalary.max,
     salaryCurrency: parsedSalary.currency,
     skills: extractSkills(`${title} ${description}`),
-    applyPath: raw.applyPath,
+    applyPath: raw.applyPath ?? emailApplyPath(raw.url, emailsInText(raw.description)) ?? boardFormApplyPath(raw.url),
   };
 }

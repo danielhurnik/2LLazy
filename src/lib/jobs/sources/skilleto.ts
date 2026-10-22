@@ -2,6 +2,7 @@ import { isPlaywrightEnabled, pwFetchHtml } from "@/lib/scrapers/playwright-brow
 import * as cheerio from "cheerio";
 import { uniqueByUrl } from "../dedupe";
 import { absoluteUrl, collapseWhitespace, mainText, robotsAllows } from "../http";
+import { emailApplyPath, emailsInHtml } from "./contact";
 import { titleMatches } from "./match";
 import { COUNTRY_NAMES, type FetchContext, type JobSource, type Listing, type RawJob } from "./types";
 
@@ -81,6 +82,7 @@ export const skilletoSource: JobSource = {
       url: listing.url,
       source: "SKILLETO",
       salary: listing.salary,
+      applyPath: emailApplyPath(listing.url, emailsInHtml($)),
     };
   },
 };

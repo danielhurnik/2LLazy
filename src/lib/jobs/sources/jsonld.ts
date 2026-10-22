@@ -11,11 +11,13 @@ export interface JsonLdJobPosting {
   postedAt?: Date;
   salary?: string;
   validThrough?: Date;
+  email?: string;
 }
 
 const JSON_LD_SELECTOR = "script[type='application/ld+json']";
 const JOB_POSTING_TYPE = "JobPosting";
 const TELECOMMUTE = "TELECOMMUTE";
+const MAILTO_PREFIX = /^mailto:/i;
 
 const text = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
 const finiteNumber = (value: unknown): number | undefined =>
@@ -71,6 +73,16 @@ function salaryText(baseSalary: unknown): string | undefined {
   return [figures, currency, unit ? `/ ${unit}` : ""].filter(Boolean).join(" ");
 }
 
+function emailOf(value: unknown): string {
+  return isRecord(value) ? text(value.email).replace(MAILTO_PREFIX, "") : "";
+}
+
+function contactEmailOf(node: Record<string, unknown>): string | undefined {
+  const organization: Record<string, unknown> = isRecord(node.hiringOrganization) ? node.hiringOrganization : {};
+  const contactPoints = Array.isArray(organization.contactPoint) ? organization.contactPoint : [organization.contactPoint];
+  return [emailOf(node.applicationContact), emailOf(organization), ...contactPoints.map(emailOf)].find(Boolean) || undefined;
+}
+
 function toJobPosting(node: Record<string, unknown>): JsonLdJobPosting | null {
   const title = text(node.title) || text(node.name);
   if (!title) return null;
@@ -85,6 +97,7 @@ function toJobPosting(node: Record<string, unknown>): JsonLdJobPosting | null {
     postedAt: date(node.datePosted),
     salary: salaryText(node.baseSalary),
     validThrough: date(node.validThrough),
+    email: contactEmailOf(node),
   };
 }
 
