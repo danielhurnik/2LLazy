@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { JobSource } from "@prisma/client";
-import { alreadyAppliedMessage, alsoOnEntries, boardLabel } from "@/lib/jobs/crossListing";
+import { alreadyAppliedMessage, alsoOnEntries, boardLabel, duplicateApplicationMessage } from "@/lib/jobs/crossListing";
 
 const labels = new Map<JobSource, string>([
   ["JOBSCZ", "Jobs.cz"],
@@ -45,5 +45,7 @@ describe("alsoOnEntries", () => {
 describe("alreadyAppliedMessage", () => {
   it("names the board", () => {
     expect(alreadyAppliedMessage("Jobs.cz")).toBe("You already applied to this job via Jobs.cz.");
+    expect(duplicateApplicationMessage("APPLIED", "Jobs.cz")).toBe("You already applied to this job via Jobs.cz.");
+    expect(duplicateApplicationMessage("PENDING", "prace.cz")).toBe("This job is already on your dashboard via prace.cz.");
   });
 });

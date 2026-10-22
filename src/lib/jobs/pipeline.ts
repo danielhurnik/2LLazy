@@ -10,7 +10,8 @@ import { normalizeJob, type NormalizedJob } from "./normalize";
 import type { SearchProfile } from "./profile";
 import { rankWithFeedback, rankingContextFor, type RankingContext } from "./ranking";
 import { alsoOnEntries } from "./crossListing";
-import { crossListingsOf, favouriteIdsFor, findByUrls, searchRecent, upsertJob, type StoredJob } from "./repo";
+import type { GroupPosting } from "./crossListing";
+import { crossListingsByGroup, crossListingsOf, favouriteIdsFor, findByUrls, searchRecent, upsertJob, type StoredJob } from "./repo";
 import { SCORE_THRESHOLD, scoreJob, type ScoreRequest } from "./score";
 import type { FetchContext, JobSource, Listing, RawJob, SearchRequest } from "./sources/types";
 
@@ -158,11 +159,12 @@ export async function runSearch({ userId, request, sources, emit, signal }: RunS
     };
   };
 
-  const emitJob = async (row: StoredJob, normalized: NormalizedJob, isStale: boolean, vector?: number[]): Promise<void> => {
+  const emitJob = async (row: StoredJob, normalized: NormalizedJob, isStale: boolean, vector?: number[], groupPostings?: GroupPosting[]): Promise<void> => {
     if (alreadyEmittedAtLeastAsFresh(row.id, isStale)) return;
     const item = toItem(row, normalized, isStale, vector);
     if (!item) return;
-    item.alsoOn = alsoOnEntries(row, await crossListingsOf(row), boardLabels);
+    const others = (groupPostings ?? (await crossListingsOf(row))).filter((other) => other.id !== row.id);
+    item.alsoOn = alsoOnEntries(row, others, boardLabels);
     isStaleByEmittedId.set(row.id, isStale);
     emitted.push({ row, score: item.similarity ?? 0 });
     await emit({ type: "job", data: item });
@@ -185,7 +187,8 @@ export async function runSearch({ userId, request, sources, emit, signal }: RunS
       .map((entry) => ({ ...entry, ranked: rankWithFeedback(context, entry.scored, vectors.get(entry.row.id)) }))
       .sort((a, b) => b.ranked.score - a.ranked.score)
       .slice(0, CACHED_EMIT_LIMIT);
-    for (const { row, normalized } of ranked) await emitJob(row, normalized, true, vectors.get(row.id));
+    const groups = await crossListingsByGroup(ranked.map((entry) => entry.row));
+    for (const { row, normalized } of ranked) await emitJob(row, normalized, true, vectors.get(row.id), groups.get(row.groupKey ?? "") ?? []);
   };
 
   const storeAndEmit = async (listing: Listing, source: JobSource, ctx: FetchContext): Promise<true | null> => {

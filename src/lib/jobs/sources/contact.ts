@@ -5,6 +5,7 @@ const EMAIL_PATTERN = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
 const MAILTO_SELECTOR = "a[href^='mailto:' i]";
 const MAILTO_PREFIX = /^mailto:/i;
 const PAGE_CHROME_SELECTOR = "header, footer, nav";
+const NON_TEXT_SELECTOR = "script, style, noscript, template";
 const FILE_LIKE_SUFFIX = /\.(png|jpe?g|gif|svg|webp|js|css)$/i;
 const BOARD_OPERATOR_DOMAINS = [
   "jobs.cz",
@@ -64,7 +65,7 @@ export function emailsInHtml($: CheerioAPI): string[] {
     .get()
     .flatMap(emailsInText);
   const content = $("body").clone();
-  content.find(PAGE_CHROME_SELECTOR).remove();
+  content.find(`${PAGE_CHROME_SELECTOR}, ${NON_TEXT_SELECTOR}`).remove();
   return Array.from(new Set([...linked, ...emailsInText(content.text())]));
 }
 

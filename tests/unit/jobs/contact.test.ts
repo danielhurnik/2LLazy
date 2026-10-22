@@ -3,6 +3,7 @@ import * as cheerio from "cheerio";
 import { boardFormApplyPath, contactEmail, emailApplyPath, emailsInHtml, emailsInText } from "@/lib/jobs/sources/contact";
 
 const POSTING_PAGE = `<html><body>
+<head><script>window.sentryDsn = "https://a37119ef5ed24627e2e5d44766e52a33@o1180155.ingest.us.sentry.io/1";</script></head>
 <header><a href="mailto:info@jobs.cz">info@jobs.cz</a></header>
 <nav>Menu</nav>
 <main>
@@ -22,7 +23,7 @@ describe("emailsInText", () => {
 });
 
 describe("emailsInHtml", () => {
-  it("reads mailto links before text addresses and skips header, nav and footer", () => {
+  it("reads mailto links before text addresses and skips header, nav, footer and scripts", () => {
     expect(emailsInHtml(cheerio.load(POSTING_PAGE))).toEqual(["kariera@firma.cz", "hr@firma.cz", "noreply@firma.cz", "gdpr@firma.cz"]);
   });
 });

@@ -1,4 +1,4 @@
-import type { JobSource as JobSourceEnum } from "@prisma/client";
+import type { ApplicationStatus, JobSource as JobSourceEnum } from "@prisma/client";
 import type { CrossListing } from "@/types";
 
 export interface GroupPosting {
@@ -9,6 +9,7 @@ export interface GroupPosting {
 
 const WWW_PREFIX = /^www\./;
 const SOURCES_SPANNING_MANY_SITES = new Set<JobSourceEnum>(["WEB", "ATS"]);
+const STATUSES_MEANING_APPLIED = new Set<ApplicationStatus>(["APPLIED", "INTERVIEW", "OFFER"]);
 
 function hostOf(url: string): string | undefined {
   try {
@@ -36,4 +37,9 @@ export function alsoOnEntries(posting: GroupPosting, others: GroupPosting[], lab
 
 export function alreadyAppliedMessage(boardName: string): string {
   return `You already applied to this job via ${boardName}.`;
+}
+
+export function duplicateApplicationMessage(status: ApplicationStatus, boardName: string): string {
+  if (STATUSES_MEANING_APPLIED.has(status)) return alreadyAppliedMessage(boardName);
+  return `This job is already on your dashboard via ${boardName}.`;
 }
