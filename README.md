@@ -99,7 +99,7 @@ npx tsx --env-file=.env.local prisma/seed-test-user.ts
 npm run dev
 ```
 
-Apply migrations with `prisma migrate deploy`, not `npm run db:migrate`. `migrate dev` replays the whole history into a shadow database, and that fails on the `vector` extension unless the app role can create it. To write a new migration, use the diff, review, deploy route in [docs/auto-apply-plan.md](docs/auto-apply-plan.md).
+Apply migrations with `prisma migrate deploy`, not `npm run db:migrate`. `migrate dev` replays the whole history into a shadow database, and `npm run db:reset` replays it into a fresh schema. Both fail on the `vector` extension unless the app role can create it. To make both work, run `CREATE EXTENSION vector;` in `template1` once as the `postgres` superuser. To write a new migration, use the diff, review, deploy route in [docs/auto-apply-plan.md](docs/auto-apply-plan.md).
 
 There is no sign-up page. `prisma/seed-test-user.ts` creates a local test account; its email and password are at the top of the file. Use it on your own machine only. With the Google variables set, you can sign in with Google instead.
 
@@ -135,5 +135,5 @@ npm run test:e2e       # end-to-end tests (playwright)
 npm run db:migrate     # prisma migrate dev (needs a role that can create vector)
 npm run db:generate    # generate the Prisma client
 npm run db:studio      # browse the database
-npm run db:reset       # wipe the database and re-run every migration
+npm run db:reset       # wipe the database and re-run every migration (needs a role that can create vector)
 ```
