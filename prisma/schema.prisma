@@ -161,6 +161,8 @@ model UserProfile {
   searchProfileUpdatedAt DateTime?
   rankerModel            Json?
   rankerTrainedAt        DateTime?
+  availableFrom          DateTime?
+  expectedSalaryCzk      Int?
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 
