@@ -1,7 +1,8 @@
 import type { Page } from "playwright";
-import { MS_PER_MINUTE, MS_PER_SECOND } from "@/lib/time";
+import { MS_PER_MINUTE } from "@/lib/time";
 import { openApplyPage, releasePage } from "./browser";
 import { scanPage, type PageScan } from "./fieldScanner";
+import { POLL_MS, WAIT_MINUTES } from "./humanWait";
 
 interface SignInTarget {
   host: string;
@@ -10,8 +11,6 @@ interface SignInTarget {
 
 export const SIGN_IN_HOSTS: readonly SignInTarget[] = [{ host: "jobstack.it", loginUrl: "https://www.jobstack.it/login" }];
 
-const POLL_MS = 2 * MS_PER_SECOND;
-const WAIT_MINUTES = Math.max(1, Number(process.env.APPLY_HUMAN_WAIT_MINUTES ?? "15") || 15);
 const REFOCUS_POLLS = 2;
 
 const hotReloadSafeGlobals = globalThis as unknown as {
