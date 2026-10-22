@@ -17,6 +17,7 @@ import {
   isConfirmed,
   NEXT_BUTTON,
   rescan,
+  settle,
   SUBMIT_BUTTON,
   VALIDATION_TEXT,
 } from "./pageActions";
@@ -255,10 +256,15 @@ function assertReadyToSubmit(ctx: ApplyContext, plan: FillPlan): void {
   if (!ctx.autoSubmit) throw new ApplyAbort("NEEDS_MANUAL", "Form filled; automatic submission is disabled");
 }
 
+function adoptPage(ctx: ApplyContext, page: ApplyContext["page"]): void {
+  ctx.pages.add(page);
+  ctx.page = page;
+}
+
 async function openForm(ctx: ApplyContext, scan: PageScan, entry: ButtonDescriptor): Promise<PageScan> {
   ctx.emit({ type: "progress", message: `Opening the application form ("${entry.text}")` });
   const outcome = await clickButton(ctx.page.context(), ctx.page, scan, entry);
-  ctx.page = outcome.page;
+  adoptPage(ctx, outcome.page);
   await ctx.page.waitForTimeout(800);
   const next = await pastLoginWall(ctx, await rescan(ctx.page));
   ctx.evidence.log(`form opened at ${next.signals.url}`);
@@ -326,22 +332,33 @@ async function fillAndSubmit(
     if (next) {
       ctx.emit({ type: "progress", message: `Continuing to the next step ("${next.text}")` });
       const outcome = await clickButton(ctx.page.context(), ctx.page, scan, next);
-      ctx.page = outcome.page;
+      adoptPage(ctx, outcome.page);
       scan = await pastLoginWall(ctx, await rescan(ctx.page));
       continue;
     }
     if (!submit) throw new ApplyAbort("NEEDS_MANUAL", "Form filled but no submit button was recognised; submit it in the apply window");
 
-    if (plan.requiredMissing.length === 0 && plan.confidence >= AUTO_SUBMIT_CONFIDENCE) {
-      const afterCaptcha = await pastCaptcha(ctx, scan);
-      if (afterCaptcha !== scan) scan = afterCaptcha;
+    const beforeWait = scan;
+    if (ctx.autoSubmit && plan.requiredMissing.length === 0 && plan.confidence >= AUTO_SUBMIT_CONFIDENCE) {
+      scan = await pastCaptcha(ctx, scan);
     }
     assertReadyToSubmit(ctx, plan);
-    const submitNow = findSubmit(scan, options) ?? submit;
-    if (await submitAndConfirm(ctx, scan, submitNow, filledSelectors, options, plan.confidence)) return;
-    scan = await scanPage(ctx.page);
+    const submitNow = scan === beforeWait ? submit : findSubmit(scan, options);
+    if (!submitNow) {
+      if (isConfirmed(beforeWait, scan, filledSelectors)) {
+        lastConfirmation = confirmationSnippet(scan);
+        return;
+      }
+      throw new ApplyAbort("NEEDS_MANUAL", "The submit button was gone after the wait and no confirmation was found; check the apply window");
+    }
+    await submitAndConfirm(ctx, scan, submitNow, filledSelectors, options, plan.confidence);
+    return;
   }
-  throw new ApplyAbort("NEEDS_MANUAL", "Could not confirm that the application was submitted; check the apply window");
+  throw new ApplyAbort("NEEDS_MANUAL", "Could not reach the submit step; check the apply window");
+}
+
+function confirmationSnippet(scan: PageScan): string | undefined {
+  return scan.signals.bodyText.match(/.{0,80}(d[eě]kujeme|thank you|odesl[aá]n).{0,120}/i)?.[0]?.trim();
 }
 
 function findSubmit(scan: PageScan, options: GenericFlowOptions): ButtonDescriptor | null {
@@ -355,12 +372,12 @@ async function submitAndConfirm(
   filledSelectors: Set<string>,
   options: GenericFlowOptions,
   confidence: number,
-): Promise<boolean> {
+): Promise<void> {
   ctx.emit({ type: "progress", message: `Submitting ("${submit.text}")` });
   ctx.evidence.log(`submitting via "${submit.text}" with confidence ${confidence}`);
   const outcome = await clickButton(ctx.page.context(), ctx.page, before, submit);
-  ctx.page = outcome.page;
-  await ctx.page.waitForTimeout(1_500);
+  adoptPage(ctx, outcome.page);
+  await settle(ctx.page);
   let scan = await scanPage(ctx.page);
   await snap(ctx, "after-submit");
 
@@ -370,19 +387,19 @@ async function submitAndConfirm(
     if (again && !isConfirmed(before, scan, filledSelectors)) {
       ctx.emit({ type: "progress", message: `Submitting again ("${again.text}")` });
       const retry = await clickButton(ctx.page.context(), ctx.page, scan, again);
-      ctx.page = retry.page;
-      await ctx.page.waitForTimeout(1_500);
+      adoptPage(ctx, retry.page);
+      await settle(ctx.page);
       scan = await scanPage(ctx.page);
       await snap(ctx, "after-resubmit");
     }
   }
 
   if (isConfirmed(before, scan, filledSelectors)) {
-    lastConfirmation = scan.signals.bodyText.match(/.{0,80}(d[eě]kujeme|thank you|odesl[aá]n).{0,120}/i)?.[0]?.trim();
-    return true;
+    lastConfirmation = confirmationSnippet(scan);
+    return;
   }
   if (VALIDATION_TEXT.test(scan.signals.bodyText) && scan.fields.some((f) => filledSelectors.has(selectorKey(f)))) {
     throw new ApplyAbort("NEEDS_MANUAL", "The form reported validation errors after submitting; check the apply window");
   }
-  return false;
+  throw new ApplyAbort("NEEDS_MANUAL", "Submitted once but could not confirm it went through; check the apply window before submitting again");
 }

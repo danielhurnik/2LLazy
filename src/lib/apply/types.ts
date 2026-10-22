@@ -50,6 +50,7 @@ export interface ApplyContext {
   emit: (event: ApplyEvent) => void;
   setWaiting: (message: string | null) => Promise<void>;
   lock: { release(): void; acquire(): Promise<void> };
+  pages: Set<Page>;
   autoSubmit: boolean;
 }
 

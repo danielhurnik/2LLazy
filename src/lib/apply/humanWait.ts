@@ -40,6 +40,15 @@ export function waitingReason(applicationId: string): BlockerReason | null {
   return waitingRuns.get(applicationId) ?? null;
 }
 
+function oldestWaiting(): string | null {
+  return waitingRuns.keys().next().value ?? null;
+}
+
+async function reclaimFocus(page: Page): Promise<void> {
+  const hidden = await page.evaluate(() => document.visibilityState === "hidden").catch(() => false);
+  if (hidden) await page.bringToFront().catch(() => undefined);
+}
+
 function takeResume(applicationId: string): boolean {
   const requested = resumeRequests.has(applicationId);
   resumeRequests.delete(applicationId);
@@ -95,19 +104,20 @@ export async function waitForHuman(ctx: ApplyContext, reason: BlockerReason): Pr
   const file = await ctx.evidence.screenshot(ctx.page, `waiting-${reason}`);
   ctx.evidence.log(`waiting for user: ${reason}`);
   await recordObstacle(ctx, reason);
-  resumeRequests.delete(ctx.applicationId);
-  waitingRuns.set(ctx.applicationId, reason);
-  await ctx.setWaiting(message);
-  ctx.emit({ type: "waiting", reason, message, url: file ? ctx.evidence.urlFor(file) : "" });
-  await ctx.page.bringToFront().catch(() => undefined);
 
   const deadline = Date.now() + WAIT_MINUTES * MS_PER_MINUTE;
   ctx.lock.release();
   let resumedScan: PageScan | null = null;
   try {
+    resumeRequests.delete(ctx.applicationId);
+    waitingRuns.set(ctx.applicationId, reason);
+    await ctx.setWaiting(message);
+    ctx.emit({ type: "waiting", reason, message, url: file ? ctx.evidence.urlFor(file) : "" });
+    await ctx.page.bringToFront().catch(() => undefined);
     while (Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, POLL_MS));
       if (ctx.page.isClosed()) throw new ApplyAbort("FAILED", "The apply window was closed while waiting for you");
+      if (oldestWaiting() === ctx.applicationId) await reclaimFocus(ctx.page);
       const manual = takeResume(ctx.applicationId);
       const { cleared, scan } = await blockerCleared(ctx.page, reason);
       if (manual || cleared) {

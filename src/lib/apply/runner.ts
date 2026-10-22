@@ -163,6 +163,7 @@ async function executeInBrowser(
     emit,
     setWaiting,
     lock: applyMutex,
+    pages: new Set([page]),
     autoSubmit,
   };
   const adapter = findAdapter(new URL(input.job.sourceUrl));
@@ -185,11 +186,10 @@ async function executeInBrowser(
   }
   evidence.log(`result ${result.status}${result.message ? `: ${result.message}` : ""}`);
   if (result.submitted) await evidence.savePayload(result.submitted).catch(() => undefined);
-  releasePage(page);
-  releasePage(ctx.page);
-  if (result.status !== "NEEDS_MANUAL") {
-    await ctx.page.close().catch(() => undefined);
-    if (ctx.page !== page) await page.close().catch(() => undefined);
+  for (const opened of ctx.pages) {
+    releasePage(opened);
+    const keepOpenForTheUser = result.status === "NEEDS_MANUAL" && opened === ctx.page;
+    if (!keepOpenForTheUser) await opened.close().catch(() => undefined);
   }
   return { result, via };
 }

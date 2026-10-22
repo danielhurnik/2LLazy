@@ -87,10 +87,13 @@ function getApplyContext(): Promise<BrowserContext> {
   return hotReloadSafeGlobals.applyBrowserContext;
 }
 
-const MAX_LINGERING_PAGES = 2;
+const MAX_LINGERING_PAGES = 5;
 
 export async function openApplyPage(): Promise<Page> {
   const context = await getApplyContext();
+  for (const tracked of busyPages) {
+    if (tracked.isClosed()) busyPages.delete(tracked);
+  }
   const lingering = context.pages().filter((p) => p.url() !== "about:blank" && !busyPages.has(p));
   for (const stale of lingering.slice(0, Math.max(0, lingering.length - MAX_LINGERING_PAGES))) {
     await stale.close().catch(() => undefined);
