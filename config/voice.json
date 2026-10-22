@@ -1,0 +1,42 @@
+{
+  "owner": "Daniel",
+  "signature": "Daniel",
+  "tone": [
+    "relaxed and lowkey, like a message to someone you'd be fine grabbing a coffee with",
+    "enthusiastic about the work, never gushing about the company",
+    "concrete: one real thing about this job or this stack, in plain words",
+    "short sentences, first person, no filler, no sales pitch",
+    "Czech: 'Dobrý den,' then lowercase continuation; close with 'Díky,' or just the name",
+    "English: 'Hi,' then plain prose; close with 'Thanks,' or just the name"
+  ],
+  "limits": { "minWords": 40, "maxWords": 80, "paragraphs": 2 },
+  "neverSay": [
+    "rád bych se ucházel",
+    "tímto se ucházím",
+    "tímto se hlásím",
+    "dovoluji si",
+    "v příloze zasílám",
+    "bohaté zkušenosti",
+    "těším se na",
+    "rád/a",
+    "dozvěděl/a",
+    "I am writing to",
+    "I would like to apply",
+    "I would like to express",
+    "great fit",
+    "perfect fit",
+    "I believe",
+    "I look forward",
+    "opportunity",
+    "strong background",
+    "proven",
+    "track record",
+    "skill set",
+    "leverage",
+    "passionate",
+    "excited"
+  ],
+  "neverDo": ["emoji", "exclamation marks", "skill lists (the CV does that)", "gender slashes", "praising the company", "copying the ad"],
+  "samples": [],
+  "calibration": { "approvedSamplesNeeded": 10 }
+}

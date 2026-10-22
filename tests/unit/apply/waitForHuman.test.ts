@@ -5,6 +5,7 @@ import type { ApplyContext, ApplyEvent } from "@/lib/apply/types";
 
 vi.mock("@/lib/prisma", () => ({ prisma: { applyObstacle: { create: vi.fn().mockResolvedValue({}) } } }));
 vi.mock("@/lib/apply/fieldScanner", () => ({ scanPage: vi.fn() }));
+vi.mock("@/lib/apply/notify", () => ({ notifyNeedsYou: vi.fn().mockResolvedValue(undefined) }));
 
 import { scanPage } from "@/lib/apply/fieldScanner";
 import { requestResume, waitForHuman, waitingReason } from "@/lib/apply/humanWait";

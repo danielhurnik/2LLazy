@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 import path from "path";
 
 const ONE_YEAR_SECONDS = 31_536_000;
-const UNBUNDLEABLE_SERVER_PACKAGES = ["pdf-parse"];
+const UNBUNDLEABLE_SERVER_PACKAGES = ["pdf-parse", "node-notifier"];
 const chunkUrlsAreContentHashed = process.env.NODE_ENV === "production";
 
 const nextConfig: NextConfig = {

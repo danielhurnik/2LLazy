@@ -1,9 +1,10 @@
-type NeedsYouReason = "captcha" | "login";
+type NeedsYouReason = "captcha" | "login" | "review";
 
 const NEEDS_YOU_TITLE = "Needs you";
 const REASON_PREFIX: Record<NeedsYouReason, string> = {
   captcha: "CAPTCHA on",
   login: "Sign in on",
+  review: "Review the message on",
 };
 
 const ignoreToastResult = () => undefined;

@@ -36,7 +36,7 @@ export interface ApplyJob {
 export type ApplyEvent =
   | { type: "progress"; message: string }
   | { type: "screenshot"; url: string }
-  | { type: "waiting"; reason: "captcha" | "login"; message: string; url: string }
+  | { type: "waiting"; reason: "captcha" | "login" | "review"; message: string; url: string; draft?: string }
   | { type: "resumed"; message: string }
   | { type: "done"; status: ApplyOutcome; evidenceUrl: string; message?: string }
   | { type: "error"; message: string };

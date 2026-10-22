@@ -45,6 +45,9 @@ export function releasePage(page: Page): void {
 }
 
 const INSTALLED_CHROME_CHANNEL = "chrome";
+const CHROME_PROFILE_SUFFIX = "-chrome";
+
+const channelMemory = globalThis as unknown as { applyChannelThatWorked?: "chrome" | "chromium" };
 
 async function launchOnce(): Promise<BrowserContext> {
   const { chromium } = await import("playwright");
@@ -56,11 +59,21 @@ async function launchOnce(): Promise<BrowserContext> {
     args: ["--disable-blink-features=AutomationControlled"],
     ignoreDefaultArgs: ["--enable-automation"],
   };
-  try {
-    return await chromium.launchPersistentContext(ISOLATED_PERSISTENT_PROFILE_DIR, { ...options, channel: INSTALLED_CHROME_CHANNEL });
-  } catch {
-    return chromium.launchPersistentContext(ISOLATED_PERSISTENT_PROFILE_DIR, options);
+  if (channelMemory.applyChannelThatWorked !== "chromium") {
+    try {
+      const context = await chromium.launchPersistentContext(`${ISOLATED_PERSISTENT_PROFILE_DIR}${CHROME_PROFILE_SUFFIX}`, {
+        ...options,
+        channel: INSTALLED_CHROME_CHANNEL,
+      });
+      channelMemory.applyChannelThatWorked = "chrome";
+      return context;
+    } catch {
+      if (channelMemory.applyChannelThatWorked === "chrome") throw new Error("Chrome did not start again; close the auto-apply window and retry");
+    }
   }
+  const context = await chromium.launchPersistentContext(ISOLATED_PERSISTENT_PROFILE_DIR, options);
+  channelMemory.applyChannelThatWorked = "chromium";
+  return context;
 }
 
 async function launchContext(): Promise<BrowserContext> {

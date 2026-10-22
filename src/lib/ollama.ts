@@ -42,13 +42,20 @@ async function postJson<T>(path: string, body: unknown, signal?: AbortSignal): P
   return data;
 }
 
+const AVAILABILITY_CACHE_MS = 15_000;
+let availability: { at: number; ok: boolean } | null = null;
+
 export async function ollamaAvailable(): Promise<boolean> {
+  if (availability && Date.now() - availability.at < AVAILABILITY_CACHE_MS) return availability.ok;
+  let ok = false;
   try {
     const res = await fetch(`${OLLAMA_URL}/api/tags`, { signal: AbortSignal.timeout(AVAILABILITY_TIMEOUT_MS) });
-    return res.ok;
+    ok = res.ok;
   } catch {
-    return false;
+    ok = false;
   }
+  availability = { at: Date.now(), ok };
+  return ok;
 }
 
 async function ollamaModels(): Promise<string[]> {

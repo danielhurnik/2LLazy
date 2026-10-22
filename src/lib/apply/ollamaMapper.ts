@@ -4,6 +4,7 @@ import { describeField, resolveValue, type FieldDescriptor, type FieldValue, typ
 import type { ApplyJob, ApplyProfile } from "./types";
 import { errorMessage } from "@/lib/guards";
 import { foldDiacritics } from "@/lib/text";
+import { loadVoice, samplesForPrompt, voiceGuard, type VoiceConfig, type VoiceLang } from "./voice";
 
 const MAPPABLE_KEYS = [
   "fullName",
@@ -113,12 +114,34 @@ function excerpt(text: string | null | undefined, max: number): string {
   return cleaned.length > max ? `${cleaned.slice(0, max)}…` : cleaned;
 }
 
-interface DraftResult {
+export interface DraftResult {
   text: string;
   model: string;
+  lang: VoiceLang;
 }
 
+const GENDER_SLASH = /\b\p{L}+\/[aá]\b/u;
+const SKILL_LIST = /(\b[A-Z][\w.+#-]*\b\s*,\s*){2,}\b[A-Z][\w.+#-]*\b/;
+
 const BANNED_PHRASES = [
+  /rád bych se uch[aá]zel/i,
+  /t[ií]mto se uch[aá]z[ií]m/i,
+  /t[ií]mto se hl[aá]s[ií]m/i,
+  /dovoluji si/i,
+  /v p[rř][ií]loze zas[ií]l[aá]m/i,
+  /bohat[ée] zku[sš]enosti/i,
+  /t[ěe][sš][ií]m se na/i,
+  /\bi am writing to\b/i,
+  /\bi would like to (apply|express)\b/i,
+  /\b(great|perfect) fit\b/i,
+  /\bi believe\b/i,
+  /\bi look forward\b/i,
+  /\bopportunity\b/i,
+  /\bstrong background\b/i,
+  /\bproven\b/i,
+  /\btrack record\b/i,
+  /\bskill ?set\b/i,
+  /\bexcited\b/i,
   /nadšen[ýáéí]|nadšení/i,
   /vášn|vášeň/i,
   /přesvědčen/i,
@@ -200,8 +223,20 @@ function claimClausesOf(text: string): string[] {
   return clauses;
 }
 
-export function bannedPhrases(draft: string): string[] {
-  return BANNED_PHRASES.map((re) => draft.match(re)?.[0] ?? "").filter(Boolean);
+export function bannedPhrases(draft: string, neverSay: string[] = []): string[] {
+  const configured = neverSay.map((phrase) => phrase.trim()).filter(Boolean);
+  const lower = draft.toLowerCase();
+  const fromConfig = configured.filter((phrase) => lower.includes(phrase.toLowerCase()));
+  const fromRules = BANNED_PHRASES.map((re) => draft.match(re)?.[0] ?? "").filter(Boolean);
+  return [...new Set([...fromRules, ...fromConfig])];
+}
+
+export function styleProblems(draft: string): string[] {
+  const problems: string[] = [];
+  const slash = draft.match(GENDER_SLASH)?.[0];
+  if (slash) problems.push(`gender slash: ${slash}`);
+  if (SKILL_LIST.test(draft)) problems.push("skill list");
+  return problems;
 }
 
 const CLAIM_TOKEN = /\b[A-Z][A-Za-z0-9+#]*(?:\.[A-Za-z]+)?\b|\.NET\b/g;
@@ -282,9 +317,64 @@ function cleanDraft(raw: string): string {
     .replace(/^```[a-z]*\n?|```$/g, "")
     .replace(/^(subject|předmět)\s*:.*$/gim, "")
     .replace(/^["“„']+|["”“']+$/g, "")
+    .replace(/!+/g, ".")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+function wordCount(text: string): number {
+  return text.split(/\s+/).filter(Boolean).length;
+}
+
+function buildPrompt(input: {
+  czech: boolean;
+  voice: VoiceConfig;
+  field: FieldDescriptor;
+  profile: ApplyProfile;
+  job: ApplyJob;
+  cv: string;
+  title: string;
+  company: string;
+}): { system: string; user: string } {
+  const { czech, voice, field, profile, job, cv, title, company } = input;
+  const first = voice.signature;
+  const samples = samplesForPrompt(voice, czech ? "cs" : "en");
+  const system = czech
+    ? `Píšeš krátkou zprávu do formuláře k pracovní nabídce jménem ${first}a, vývojáře, a musí znít jako on: v klidu, bez pozérství, o tu práci má zájem, ale nepřehání, příjemný na pokec. Krátké věty, první osoba. Jedna konkrétní, nenucená věc k téhle pozici nebo stacku. Žádný výčet dovedností (to má v životopise), žádné chválení firmy, žádné personalistické fráze, žádné opakování inzerátu, žádné emoji, žádné vykřičníky, žádné lomítkové tvary jako rád/a. Jen fakta ze životopisu. Výstup je čistý text bez markdownu.`
+    : `You write a short message into a job application form as ${first}, a developer, and it has to sound like him: relaxed, lowkey, into the work without overdoing it, easy to be around. Short sentences, first person. One concrete, casual hook about this particular role or stack. No skill lists (the CV does that), no praising the company, no HR phrasing, no echoing the ad, no emoji, no exclamation marks. Only facts from the CV. Plain text, no markdown.`;
+  const tone = voice.tone.length ? `${czech ? "Pravidla tónu" : "Tone rules"}:\n- ${voice.tone.join("\n- ")}` : "";
+  const never = voice.neverSay.length ? `${czech ? "Nikdy nepoužij" : "Never use"}: ${voice.neverSay.join("; ")}` : "";
+  const sampleBlock = samples.length
+    ? `${czech ? "Takhle píše (ukázky jeho vlastních zpráv; drž jejich tón, neopisuj obsah)" : "This is how he writes (his own messages; keep the tone, do not copy the content)"}:\n${samples.map((s, i) => `--- ${i + 1}\n${s.text}`).join("\n")}\n---`
+    : "";
+  const { minWords, maxWords } = voice.limits;
+  const closing = czech ? `Poslední řádek je jen "${first}". Před ním může být "Díky," nebo nic.` : `The last line is just "${first}". Before it, "Thanks," or nothing.`;
+  const instructions = cv
+    ? czech
+      ? `Napiš ${minWords}–${maxWords} slov: "Dobrý den," na prvním řádku, pak nový odstavec začínající malým písmenem. Na jakou pozici se hlásí (vlastními slovy, bez citace názvu inzerátu), jedna až dvě konkrétní věci z jeho životopisu, které k tomu sedí, a jen pokud tam opravdu něco zajímavého je, jedna věta, co ho na té nabídce baví. Firmu pojmenuj ${company}. ${closing}`
+      : `Write ${minWords}–${maxWords} words: "Hi," on the first line, then a new paragraph. Which role he is applying for (in his own words, no quoting the ad's title), one or two concrete things from his CV that fit, and only if something genuinely stands out, one sentence on what he likes about this posting. Call the company ${company}. ${closing}`
+    : czech
+      ? `Napiš ${Math.max(25, minWords - 15)}–${maxWords - 20} slov: "Dobrý den," na prvním řádku, pak nový odstavec začínající malým písmenem: na jakou pozici se hlásí (vlastními slovy) a jedna obyčejná věta, co ho na nabídce zaujalo. Podrobnosti k praxi jsou v životopise. Neuváděj žádné roky, technologie, projekty ani dovednosti jako jeho, protože jeho životopis nemáš. Firmu pojmenuj ${company}. ${closing}`
+      : `Write ${Math.max(25, minWords - 15)}–${maxWords - 20} words: "Hi," on the first line, then a new paragraph: which role he is applying for (in his own words) and one plain sentence on what caught his eye. The CV has the details. Do not claim any years, technologies, projects or skills as his, because you do not have his CV. Call the company ${company}. ${closing}`;
+  const user = [
+    `${czech ? "Pozice" : "Job"}: ${title} — ${company}`,
+    `${czech ? "Popis pozice (jen pro pochopení, neopisovat)" : "Job description (for understanding only, do not copy)"}: ${excerpt(job.description, 2500) || "-"}`,
+    `${czech ? "Uchazeč" : "Applicant"}: ${profile.name}${profile.city ? `, ${profile.city}` : ""}`,
+    `${czech ? "Životopis (výňatek)" : "CV (excerpt)"}: ${cv || (czech ? "není k dispozici" : "not available")}`,
+    `${czech ? "Pole formuláře" : "Form field"}: ${describeField(field)}`,
+    field.value ? `${czech ? "Pole nyní obsahuje tuto šablonu, kterou nahradíš" : "The field currently holds this template, which you replace"}: "${excerpt(field.value, 300)}"` : "",
+    "",
+    tone,
+    never,
+    "",
+    sampleBlock,
+    "",
+    instructions,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return { system, user };
 }
 
 export async function draftFreeText(
@@ -295,41 +385,17 @@ export async function draftFreeText(
 ): Promise<DraftResult | null> {
   if (!(await ollamaAvailable())) return null;
   const czech = detectCzech(field, job);
+  const lang: VoiceLang = czech ? "cs" : "en";
+  const voice = await loadVoice();
   const model = await ollamaPickModel(WRITER_MODEL_PREFERENCE);
   const cv = excerpt(profile.cvText, 3200);
   const title = plain(job.title);
   const company = shortCompanyName(job.company);
-  const system = czech
-    ? "Píšeš za uchazeče krátkou zprávu do formuláře k pracovní nabídce. Tón: věcný, přirozený, jako když vývojář píše sám za sebe kamarádovi z branže, kterého nezná. Krátké věty. Žádné lichotky firmě, žádné nadšení, žádné fráze z personalistiky, žádné opakování textu inzerátu. Používej pouze fakta ze životopisu; nic si nevymýšlej. Výstup je čistý text bez markdownu, nadpisů, odrážek a zástupných symbolů."
-    : "You write a short message into a job application form on behalf of the applicant. Tone: matter-of-fact and natural, like a developer writing to a stranger in the trade. Short sentences. No flattery, no enthusiasm, no HR phrasing, no echoing the job ad. Use only facts from the CV; invent nothing. Output plain text only, no markdown, headings, bullets or placeholders.";
-  const sample = czech
-    ? `Příklad tónu (jiná pozice, jiný člověk, nekopíruj obsah):\nDobrý den,\n\nhlásím se na pozici frontend vývojáře. Poslední tři roky dělám hlavně React a TypeScript, naposledy jsem u klienta postavil interní aplikaci pro správu objednávek od návrhu po nasazení. Zaujalo mě, že jde o práci s mapovými daty, k tomu jsem se zatím dostal jen okrajově a rád bych se v tom posunul.\n\nŽivotopis posílám v příloze, klidně se ozvěte a domluvíme hovor.\n\nPetr Novák`
-    : `Example of the tone (different role, different person, do not copy the content):\nHello,\n\nI'm applying for the frontend developer role. For the last three years I've mostly worked with React and TypeScript; most recently I built an internal order-management app for a client, from design to deployment. What caught my eye is the map data part, which I've only touched briefly so far and would like to get deeper into.\n\nMy CV is attached; happy to jump on a call.\n\nPeter Novak`;
-  const instructions = cv
-    ? czech
-      ? `Napiš 50–90 slov: "Dobrý den," na prvním řádku, pak nový odstavec začínající malým písmenem. První odstavec: na jakou pozici se hlásím (vlastními slovy, bez citování názvu inzerátu) a jedna až dvě konkrétní věci z mého životopisu, které s ní souvisejí. Jedna věta, co konkrétně mě na té nabídce zajímá, řečeno obyčejně, bez chvály firmy. Poslední odstavec: že životopis posílám v příloze a rád si zavolám. Na posledním řádku jen mé jméno: ${profile.name}. Firmu pojmenuj ${company}, bez právní formy. Nepoužívej slova nadšený, přesvědčen, prospěšný, inovativní, unikátní, výzva, šikovný, skvělý, mindset. Neopisuj žádné sousloví z popisu pozice.`
-      : `Write 50–90 words: "Hello," on the first line, then a new paragraph. First paragraph: which role I'm applying for (in my own words, without quoting the ad's title) and one or two concrete things from my CV that relate to it. One plain sentence on what specifically interests me in this posting, without praising the company. Last paragraph: my CV is attached and I'm happy to talk. Last line is only my name: ${profile.name}. Call the company ${company}, no legal suffix. Avoid the words excited, passionate, confident, innovative, dynamic, leverage, ideal candidate. Do not copy any phrase from the job description.`
-    : czech
-      ? `Napiš 40–70 slov: "Dobrý den," na prvním řádku, pak nový odstavec začínající malým písmenem: na jakou pozici se hlásím (vlastními slovy) a jedna obyčejná věta, co mě na nabídce zajímá. Pak věta, že podrobnosti k mé praxi jsou v přiloženém životopise a rád si zavolám. Na posledním řádku jen mé jméno: ${profile.name}. Firmu pojmenuj ${company}. Neuváděj žádné roky praxe, technologie, projekty ani dovednosti jako své vlastní, protože můj životopis nemáš. Nepoužívej slova nadšený, přesvědčen, prospěšný, inovativní, unikátní, výzva, šikovný, skvělý. Neopisuj sousloví z popisu pozice.`
-      : `Write 40–70 words: "Hello," on the first line, then a new paragraph: which role I'm applying for (in my own words) and one plain sentence on what interests me in it. Then a sentence that the details of my experience are in the attached CV and I'm happy to talk. Last line is only my name: ${profile.name}. Call the company ${company}. Do not claim any years, technologies, projects or skills as mine, because you do not have my CV. Avoid excited, passionate, confident, innovative, dynamic. Do not copy phrases from the job description.`;
-  const user = [
-    `${czech ? "Pozice" : "Job"}: ${title} — ${company}`,
-    `${czech ? "Popis pozice (jen pro pochopení, neopisovat)" : "Job description (for understanding only, do not copy)"}: ${excerpt(job.description, 2500) || "-"}`,
-    `${czech ? "Uchazeč" : "Applicant"}: ${profile.name}${profile.city ? `, ${profile.city}` : ""}`,
-    `${czech ? "Životopis (výňatek)" : "CV (excerpt)"}: ${cv || (czech ? "není k dispozici" : "not available")}`,
-    `${czech ? "Pole formuláře" : "Form field"}: ${describeField(field)}`,
-    field.value ? `${czech ? "Pole nyní obsahuje tuto šablonu, kterou nahradíš" : "The field currently holds this template, which you replace"}: "${excerpt(field.value, 300)}"` : "",
-    "",
-    sample,
-    "",
-    instructions,
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const { system, user } = buildPrompt({ czech, voice, field, profile, job, cv, title, company });
 
-  const allow = [profile.name, job.company, title, profile.city ?? ""];
+  const allow = [profile.name, voice.signature, job.company, title, profile.city ?? ""];
   let forbidden: string[] = [];
-  for (const temperature of [0.5, 0.3, 0.15]) {
+  for (const temperature of [0.6, 0.4, 0.2]) {
     const banLine = forbidden.length
       ? czech
         ? `\nVyhni se těmto výrazům a souslovím: ${forbidden.join("; ")}.`
@@ -348,15 +414,22 @@ export async function draftFreeText(
         onReject(`${model} t=${temperature}: unusable length/placeholder (${text.length} chars)`);
         continue;
       }
-      const problems = [...bannedPhrases(text), ...copiedPhrases(text, job.description, `${title} ${company}`)];
+      const problems = [...bannedPhrases(text, voice.neverSay), ...styleProblems(text), ...copiedPhrases(text, job.description, `${title} ${company}`)];
       if (cv) problems.push(...findUnsupportedClaims(text, profile.cvText ?? "", job.description, allow, job.skills));
+      if (wordCount(text) > voice.limits.maxWords + 15) problems.push(`too long (${wordCount(text)} words)`);
       if (problems.length > 0) {
         onReject(`${model} t=${temperature}: ${problems.join(" | ")}`);
-        forbidden = [...new Set([...forbidden, ...problems])];
+        forbidden = [...new Set([...forbidden, ...problems.filter((p) => !p.startsWith("too long") && !p.startsWith("skill list"))])];
         continue;
       }
       const polished = czech ? await proofreadCzech(text, model) : text;
-      return { text: enforceShape(polished, czech, profile.name), model };
+      const shaped = enforceShape(polished, czech, voice.signature, profile.name);
+      const verdict = await voiceGuard(shaped, lang, voice);
+      if (!verdict.ok) {
+        onReject(`${model} t=${temperature}: voice (similarity ${verdict.similarity} < ${verdict.threshold})`);
+        continue;
+      }
+      return { text: shaped, model, lang };
     } catch (err) {
       onReject(`${model} t=${temperature}: ${errorMessage(err).split("\n")[0]}`);
       return null;
@@ -369,16 +442,19 @@ export async function draftFreeText(
 const GREETING_LINE = /^(dobr[ýyéá] (den|r[áa]no|ve[čc]er|odpoledne)|ahoj|zdrav[íi]m( v[áa]s)?|v[áa][žz]en[ýíé].{0,40}|hello|hi|dear .{0,40}|good (morning|afternoon|evening))[,!.]?$/i;
 const SIGNOFF_LINE = /^(s (pozdravem|úctou|přáním hezkého dne)|best regards|kind regards|regards|sincerely|yours sincerely)[,.]?$/i;
 
-export function enforceShape(text: string, czech: boolean, name: string): string {
+const FORMAL_SIGNOFF = /^(s (pozdravem|úctou|přáním (hezkého|pěkného) dne)|best regards|kind regards|warm regards|regards|sincerely|yours sincerely|yours faithfully)[,.]?$/i;
+
+export function enforceShape(text: string, czech: boolean, signature: string, fullName = signature): string {
   const lines = text.split("\n").map((l) => l.trim());
-  const isNameLine = (line: string) => line.replace(/[.,!]$/, "").trim().toLowerCase() === name.trim().toLowerCase();
+  const names = [signature, fullName].map((n) => n.trim().toLowerCase()).filter(Boolean);
+  const isNameLine = (line: string) => names.includes(line.replace(/[.,!]$/, "").trim().toLowerCase());
   for (let i = lines.length - 1; i >= Math.max(1, lines.length - 5); i -= 1) {
     if (isNameLine(lines[i])) {
       lines.splice(i + 1);
       break;
     }
   }
-  const greeting = czech ? "Dobrý den," : "Hello,";
+  const greeting = czech ? "Dobrý den," : "Hi,";
   if (lines.length && GREETING_LINE.test(lines[0])) lines[0] = greeting;
   else lines.unshift(greeting, "");
   const bodyIndex = lines.findIndex((l, i) => i > 0 && l.length > 0);
@@ -386,15 +462,24 @@ export function enforceShape(text: string, czech: boolean, name: string): string
     lines[bodyIndex] = lines[bodyIndex].replace(/^(\p{Lu}{2,}(?:\s+\p{Lu}{2,})*)/u, (shouting) => shouting.toLowerCase());
     if (czech) lines[bodyIndex] = lines[bodyIndex].charAt(0).toLowerCase() + lines[bodyIndex].slice(1);
   }
-  const nameLine = name.trim();
+  const signatureLine = signature.trim();
   const lastLine = lines[lines.length - 1] ?? "";
-  if (lastLine.replace(/[.,]$/, "").toLowerCase() === nameLine.toLowerCase()) lines[lines.length - 1] = nameLine;
-  else if (lastLine.toLowerCase().includes(nameLine.toLowerCase())) {
-    lines[lines.length - 1] = lastLine.replace(new RegExp(`\\s*${nameLine.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.?$`, "i"), "").trim();
-    if (SIGNOFF_LINE.test(lines[lines.length - 1])) lines[lines.length - 1] = lines[lines.length - 1].replace(/[.]$/, ",");
-    lines.push(nameLine);
-  } else {
-    lines.push("", czech ? "S pozdravem," : "Best regards,", nameLine);
+  if (isNameLine(lastLine)) lines[lines.length - 1] = signatureLine;
+  else {
+    const inline = names.find((n) => lastLine.toLowerCase().includes(n));
+    let signOffStays = false;
+    if (inline) {
+      lines[lines.length - 1] = lastLine.replace(new RegExp(`\\s*${inline.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.?$`, "i"), "").trim();
+      if (SIGNOFF_LINE.test(lines[lines.length - 1])) {
+        lines[lines.length - 1] = lines[lines.length - 1].replace(/[.]$/, ",");
+        signOffStays = true;
+      }
+    }
+    if (!signOffStays && lines[lines.length - 1] !== "") lines.push("");
+    lines.push(signatureLine);
+  }
+  for (let i = 1; i < lines.length - 1; i += 1) {
+    if (FORMAL_SIGNOFF.test(lines[i])) lines[i] = czech ? "Díky," : "Thanks,";
   }
   return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
@@ -406,7 +491,7 @@ async function proofreadCzech(text: string, model: string): Promise<string> {
         {
           role: "system",
           content:
-            "Jsi korektor češtiny. Oprav jen gramatiku, pravopis, pády, předložky a slovosled a nahraď zbytečné anglicismy běžnými českými slovy. Zachovej obsah, délku, neformální věcný tón, oslovení, podpis a členění na řádky; nepřidávej zdvořilostní fráze ani nic jiného. Vrať pouze opravený text bez komentáře.",
+            "Jsi korektor češtiny. Oprav jen gramatiku, pravopis, pády, předložky a slovosled. Technické výrazy, které vývojáři běžně používají (frontend, backend, deploy, merge, React, TypeScript a podobně), nech být. Zachovej obsah, délku, uvolněný tón, oslovení, podpis a členění na řádky; nepřidávej zdvořilostní fráze ani nic jiného. Vrať pouze opravený text bez komentáře.",
         },
         { role: "user", content: text },
       ],

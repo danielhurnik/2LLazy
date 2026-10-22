@@ -2,6 +2,7 @@ import type { Page } from "playwright";
 import { prisma } from "@/lib/prisma";
 import { MS_PER_MINUTE, MS_PER_SECOND } from "@/lib/time";
 import { scanPage, type PageScan } from "./fieldScanner";
+import { notifyNeedsYou } from "./notify";
 import { ApplyAbort, type ApplyContext } from "./types";
 
 export type BlockerReason = "captcha" | "login";
@@ -97,13 +98,16 @@ async function blockerCleared(page: Page, reason: BlockerReason): Promise<{ clea
   return { cleared, scan };
 }
 
-async function recordObstacle(ctx: ApplyContext, reason: BlockerReason): Promise<void> {
-  let host = "";
+function hostOfPage(page: Page): string {
   try {
-    host = new URL(ctx.page.url()).hostname.replace(/^www\./, "");
+    return new URL(page.url()).hostname.replace(/^www\./, "");
   } catch {
-    host = "";
+    return "";
   }
+}
+
+async function recordObstacle(ctx: ApplyContext, reason: BlockerReason): Promise<void> {
+  const host = hostOfPage(ctx.page);
   if (!host) return;
   await prisma.applyObstacle
     .create({ data: { host, kind: reason === "captcha" ? "CAPTCHA" : "LOGIN", applicationId: ctx.applicationId, jobId: ctx.job.id } })
@@ -125,6 +129,7 @@ export async function waitForHuman(ctx: ApplyContext, reason: BlockerReason): Pr
     await ctx.setWaiting(message);
     ctx.emit({ type: "waiting", reason, message, url: file ? ctx.evidence.urlFor(file) : "" });
     await ctx.page.bringToFront().catch(() => undefined);
+    void notifyNeedsYou({ host: hostOfPage(ctx.page), company: ctx.job.company, reason });
     let knownPages = countPages(ctx.page);
     while (Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, POLL_MS));

@@ -269,7 +269,9 @@ export async function scanPage(page: Page): Promise<PageScan> {
     }
     for (const field of result.fields) fields.push({ ...field, frameIndex });
     for (const button of result.buttons) buttons.push({ ...button, frameIndex });
-    if (result.captchaChallenge || (captcha === null && result.captcha !== null)) {
+    const strongerCaptcha =
+      result.captcha !== null && (captcha === null || result.captchaChallenge || (captchaInvisible && !result.captchaInvisible && !captchaChallenge));
+    if (strongerCaptcha) {
       captcha = result.captcha;
       captchaInvisible = result.captchaInvisible;
       captchaChallenge = captchaChallenge || result.captchaChallenge;
