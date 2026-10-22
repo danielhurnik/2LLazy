@@ -38,3 +38,4 @@ next-env.d.ts
 
 /.apply-profile
 /uploads/applications
+config/voice.local.json
