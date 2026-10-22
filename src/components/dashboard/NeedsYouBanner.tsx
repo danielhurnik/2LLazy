@@ -10,7 +10,7 @@ import { calloutSx, panelLinkSx } from "./panelStyles";
 import { continueAllWaiting, type ContinueAllResult } from "./useAutoApply";
 
 const RESUME_REFRESH_DELAYS_MS = [3 * MS_PER_SECOND, 6 * MS_PER_SECOND];
-const NOTHING_RESUMED = "None of these runs is still waiting, so nothing was resumed.";
+const NOTHING_RESUMED = "Nothing to continue. Anything still waiting needs you in its card below.";
 
 interface BannerNote {
   text: string;

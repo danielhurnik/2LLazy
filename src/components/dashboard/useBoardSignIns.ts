@@ -72,21 +72,16 @@ function withPending(host: string, isPending: boolean): ReadonlySet<string> {
   return pendingHosts;
 }
 
-async function signIn(host: string): Promise<void> {
+function settle(host: string, signedIn: boolean): void {
+  update({ boards: state.boards.map((board) => (board.host === host ? { ...board, signedIn, pending: false } : board)) });
+  if (!signedIn) update({ error: `Not signed in to ${host}. The window closed or the wait ran out; try again when ready.` });
+}
+
+async function trackSignIn(host: string, start: () => Promise<boolean>): Promise<void> {
   if (state.pendingHosts.has(host)) return;
   update({ pendingHosts: withPending(host, true), error: null });
   try {
-    const response = await fetch(SIGN_IN_ENDPOINT, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ host }),
-    });
-    if (!response.ok) throw new Error(await describeRejection(response, "Could not open the sign-in window"));
-    const body: unknown = await response.json();
-    const hasStarted = isRecord(body) && body.started === true;
-    const signedIn = hasStarted ? await waitUntilSignedIn(host) : isRecord(body) && body.signedIn === true;
-    update({ boards: state.boards.map((board) => (board.host === host ? { ...board, signedIn, pending: false } : board)) });
-    if (!signedIn) update({ error: `Not signed in to ${host}. The window closed or the wait ran out; try again when ready.` });
+    settle(host, await start());
   } catch (err) {
     update({ error: errorMessage(err) });
   } finally {
@@ -94,12 +89,33 @@ async function signIn(host: string): Promise<void> {
   }
 }
 
-const refreshOnFocus = () => void refreshBoards();
+async function openSignInWindow(host: string): Promise<boolean> {
+  const response = await fetch(SIGN_IN_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ host }),
+  });
+  if (!response.ok) throw new Error(await describeRejection(response, "Could not open the sign-in window"));
+  const body: unknown = await response.json();
+  if (isRecord(body) && body.started === true) return waitUntilSignedIn(host);
+  return isRecord(body) && body.signedIn === true;
+}
+
+const signIn = (host: string) => trackSignIn(host, () => openSignInWindow(host));
+
+async function refreshAndFollowPending(): Promise<void> {
+  await refreshBoards();
+  state.boards
+    .filter((board) => board.pending && !state.pendingHosts.has(board.host))
+    .forEach((board) => void trackSignIn(board.host, () => waitUntilSignedIn(board.host)));
+}
+
+const refreshOnFocus = () => void refreshAndFollowPending();
 
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
   if (listeners.size === 1) {
-    void refreshBoards();
+    void refreshAndFollowPending();
     window.addEventListener("focus", refreshOnFocus);
   }
   return () => {
