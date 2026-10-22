@@ -39,12 +39,12 @@ The search pipeline lives in `src/lib/jobs`. `registry.ts` lists the boards, `so
 
 ## Auto-apply
 
-The Auto-apply button on the dashboard opens the posting in Playwright, fills the application form and, when it is confident, submits it. It uses a separate, persistent Chromium profile in `.apply-profile`, so it never touches your own browser. StartupJobs and jobs.cz/Teamio have dedicated adapters; every other site goes through a generic form filler.
+The Auto-apply button on the dashboard opens the posting in Playwright, fills the application form and, when it is confident, submits it. It runs your installed Google Chrome, or Playwright's bundled Chromium if Chrome is not installed. Either way it uses a separate, persistent profile in `.apply-profile`, so it never touches your own browser. StartupJobs and jobs.cz/Teamio have dedicated adapters; every other site goes through a generic form filler.
 
 - Fields are matched by their labels, names and placeholders. A local Ollama, if you run one, maps fields the matcher can't place and drafts the free-text message from your CV text and the job description, in the posting's language. The writer prefers `gemma3:4b`, then `gemma3:12b` and `gemma2:9b`, then other common chat models (`qwen2.5:7b`, `mistral-nemo`, `llama3.1`), then the default model (`ollama pull gemma3:4b` is enough); set `OLLAMA_WRITER_MODEL` to override. Drafts are short and plain, and are redrafted when they contain stock AI phrasing, sentences copied from the ad, or experience the CV does not state. Without Ollama, those fields stay empty.
 - The form is submitted only when every required field is filled and the mapping confidence is at least 0.8.
 - Otherwise the run stops as NEEDS_MANUAL, with the reason shown and the browser left open on the filled form for you to finish.
-- A login wall or a CAPTCHA pauses the run instead. A login wall pauses it before the form is filled. A CAPTCHA pauses it after filling, just before submitting. Either way the application shows as "Needs you" with a screenshot, and the run continues on its own once you sign in or solve the CAPTCHA (or press Continue). Nothing is bypassed; after `APPLY_HUMAN_WAIT_MINUTES` (default 15) the run ends as NEEDS_MANUAL. Paused runs do not block other applications, and every pause is recorded per site.
+- A login wall or a CAPTCHA pauses the run instead. A login wall pauses it before the form is filled. A visible CAPTCHA challenge pauses it after filling, just before or right after submitting. Invisible reCAPTCHA (v3 and Enterprise) never pauses a run. Either way the application shows as "Needs you" with a screenshot, and the run continues on its own once you sign in or solve the CAPTCHA (or press Continue). Nothing is bypassed; after `APPLY_HUMAN_WAIT_MINUTES` (default 15) the run ends as NEEDS_MANUAL. Paused runs do not block other applications, and every pause is recorded per site.
 - Every run saves screenshots, the submitted values (`payload.json`) and a log (`log.txt`) to `uploads/applications/<applicationId>`. The dashboard shows them in the Evidence dialog.
 - `POST /api/apply` with `"dryRun": true` fills the form but stops before submitting.
 
@@ -78,7 +78,7 @@ Optional:
 
 | Variable | Enables |
 |---|---|
-| `PLAYWRIGHT_ENABLED=true` | StartupJobs and Skilleto, and fuller Jobs.cz descriptions. Auto-apply doesn't need it, only the Chromium install |
+| `PLAYWRIGHT_ENABLED=true` | StartupJobs and Skilleto, and fuller Jobs.cz descriptions. Auto-apply doesn't need it; it uses Google Chrome, or the Chromium install if Chrome is missing |
 | `JOOBLE_API_KEY` | The Jooble board |
 | `ROBOTS_ALLOW` | Further comma-separated `host/path` exceptions to robots.txt, added to the ones in `config/sources.cz.json` |
 | `SEARCH_REFRESH_MINUTES` | How often the background pass re-reads stored postings and expires the ones that are gone (default 180, `0` disables) |
@@ -86,6 +86,7 @@ Optional:
 | `APPLY_HEADLESS=true` | Runs auto-apply without a visible browser window |
 | `APPLY_PROFILE_DIR` | Puts the auto-apply browser profile somewhere other than `.apply-profile` |
 | `APPLY_HUMAN_WAIT_MINUTES` | How long a paused auto-apply run waits for you at a CAPTCHA or login wall (default 15) |
+| `APPLY_NOTIFY=false` | Turns off the Windows "Needs you" notification for paused auto-apply runs |
 | `OLLAMA_URL`, `OLLAMA_MODEL`, `OLLAMA_WRITER_MODEL` | The local Ollama used for search profiles, result ratings and auto-apply (defaults `http://127.0.0.1:11434` and `gemma3:4b`; the writer falls back through the models listed under Auto-apply). On AMD GPUs, start Ollama itself with `OLLAMA_VULKAN=1` |
 | `OLLAMA_EMBED_MODEL` | The embedding model behind the ranker's similarity feature (default `nomic-embed-text`) |
 
@@ -103,7 +104,7 @@ Apply migrations with `prisma migrate deploy`, not `npm run db:migrate`. `migrat
 
 There is no sign-up page. `prisma/seed-test-user.ts` creates a local test account; its email and password are at the top of the file. Use it on your own machine only. With the Google variables set, you can sign in with Google instead.
 
-Open [http://localhost:3000](http://localhost:3000) and sign in. Settings is where you set your country and city, which become the search defaults, and upload CVs.
+Open [http://localhost:3000](http://localhost:3000) and sign in. Settings is where you set your country and city, which become the search defaults, and upload CVs. It also holds "Available from" and "Expected salary (CZK/month)" for application forms.
 
 ## Routes
 
