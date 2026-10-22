@@ -12,7 +12,7 @@ Nothing in it calls an AI service. The only models it can use run on an optional
 - Polite scraping: robots.txt respected by default, per-host rate limits, retries with backoff, and a pause for boards that keep failing
 - When a board sits a search out, the results say which one and why
 - Saved jobs that you move through the application pipeline on the dashboard
-- Experimental auto-apply, with adapters for StartupJobs and jobs.cz and a generic form filler elsewhere (see below)
+- Auto-apply that fills the application form and leaves sending to you, with adapters for StartupJobs and jobs.cz and a generic form filler elsewhere (see below)
 - Monthly interview calendar with optional Google Calendar sync
 - Stats on applications and outcomes
 
@@ -39,14 +39,15 @@ The search pipeline lives in `src/lib/jobs`. `registry.ts` lists the boards, `so
 
 ## Auto-apply
 
-The Auto-apply button on the dashboard opens the posting in Playwright, fills the application form and, when it is confident, submits it. It runs your installed Google Chrome, or Playwright's bundled Chromium if Chrome is not installed. Either way it uses a separate, persistent profile in `.apply-profile`, so it never touches your own browser. StartupJobs and jobs.cz/Teamio have dedicated adapters; every other site goes through a generic form filler.
+The Auto-apply button on the dashboard opens the posting in Playwright and fills the whole application form: the fields, your CV and the message. It does not send it; you do. It runs your installed Google Chrome, or Playwright's bundled Chromium if Chrome is not installed. Either way it uses a separate, persistent profile in `.apply-profile`, so it never touches your own browser. StartupJobs and jobs.cz/Teamio have dedicated adapters; every other site goes through a generic form filler.
 
 - Fields are matched by their labels, names and placeholders. A local Ollama, if you run one, maps fields the matcher can't place and drafts the free-text message from your CV text and the job description, in the posting's language. The writer prefers `gemma3:4b`, then `gemma3:12b` and `gemma2:9b`, then other common chat models (`qwen2.5:7b`, `mistral-nemo`, `llama3.1`), then the default model (`ollama pull gemma3:4b` is enough); set `OLLAMA_WRITER_MODEL` to override. Drafts are short and plain, and are redrafted when they contain stock AI phrasing, sentences copied from the ad, or experience the CV does not state. Without Ollama, those fields stay empty.
-- The form is submitted only when every required field is filled and the mapping confidence is at least 0.8.
-- Otherwise the run stops as NEEDS_MANUAL, with the reason shown and the browser left open on the filled form for you to finish.
-- A login wall or a CAPTCHA pauses the run instead. A login wall pauses it before the form is filled. A visible CAPTCHA challenge pauses it after filling, just before or right after submitting. Invisible reCAPTCHA (v3 and Enterprise) never pauses a run. Either way the application shows as "Needs you" with a screenshot, and the run continues on its own once you sign in or solve the CAPTCHA (or press Continue). Nothing is bypassed; after `APPLY_HUMAN_WAIT_MINUTES` (default 15) the run ends as NEEDS_MANUAL. Paused runs do not block other applications, and every pause is recorded per site.
-- Every run saves screenshots, the submitted values (`payload.json`) and a log (`log.txt`) to `uploads/applications/<applicationId>`. The dashboard shows them in the Evidence dialog.
-- `POST /api/apply` with `"dryRun": true` fills the form but stops before submitting.
+- Once the form is filled, the run pauses as "Needs you": the apply window comes to the front and the dashboard shows the drafted message. Check everything, fill in anything it left empty, change what you like, solve the CAPTCHA if the form has one, and press the board's own send button. The run ends as APPLIED when the board shows its confirmation page or when you press Mark as sent. Discard, closing the window, or `APPLY_REVIEW_WAIT_MINUTES` (default 60) without sending ends it as NEEDS_MANUAL.
+- A message you changed noticeably, or wrote yourself, becomes a writing sample for later drafts. Samples live in `config/voice.local.json`, which is gitignored and never committed; untouched drafts never become samples. `config/voice.json` holds only the writing rules.
+- A login wall pauses the run before the form is filled. The application shows as "Needs you" with a screenshot and continues on its own once you sign in (or press Continue). After `APPLY_HUMAN_WAIT_MINUTES` (default 15) it ends as NEEDS_MANUAL. Nothing is bypassed, paused runs do not block other applications, and every pause is recorded per site.
+- jobstack.it can be signed in to ahead of time. The "sign in" link next to it on the dashboard opens the apply window on the board's login page. You type your details there; the app never reads or stores them, and the line changes to "signed in" once you are through. Being signed in may spare you the CAPTCHA on its reply form. The app forgets the signed-in state when the server restarts.
+- Every run saves screenshots, the filled values (`payload.json`), the message handed to you for review (`review.json`) and a log (`log.txt`) to `uploads/applications/<applicationId>`. The dashboard shows them in the Evidence dialog.
+- `POST /api/apply` with `"dryRun": true` fills the form and stops before the review. Sending without your review happens only with an explicit `"autoSubmit": true` in that request. It then submits only when every required field is filled and the mapping confidence is at least 0.8, and a visible CAPTCHA challenge pauses it after filling (invisible reCAPTCHA never does).
 
 The code is in `src/lib/apply`. The design and current state are in [docs/auto-apply-plan.md](docs/auto-apply-plan.md).
 
@@ -85,8 +86,9 @@ Optional:
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Google sign-in and Google Calendar sync |
 | `APPLY_HEADLESS=true` | Runs auto-apply without a visible browser window |
 | `APPLY_PROFILE_DIR` | Puts the auto-apply browser profile somewhere other than `.apply-profile` |
-| `APPLY_HUMAN_WAIT_MINUTES` | How long a paused auto-apply run waits for you at a CAPTCHA or login wall (default 15) |
-| `APPLY_NOTIFY=false` | Turns off the Windows "Needs you" notification for paused auto-apply runs |
+| `APPLY_HUMAN_WAIT_MINUTES` | How long an auto-apply run waits for you at a login wall, or at a CAPTCHA when `autoSubmit` is on (default 15) |
+| `APPLY_REVIEW_WAIT_MINUTES` | How long a filled form waits for you to check and send it (default 60) |
+| `APPLY_NOTIFY=false` | Turns off the Windows "Needs you" notification for auto-apply runs waiting on you |
 | `OLLAMA_URL`, `OLLAMA_MODEL`, `OLLAMA_WRITER_MODEL` | The local Ollama used for search profiles, result ratings and auto-apply (defaults `http://127.0.0.1:11434` and `gemma3:4b`; the writer falls back through the models listed under Auto-apply). On AMD GPUs, start Ollama itself with `OLLAMA_VULKAN=1` |
 | `OLLAMA_EMBED_MODEL` | The embedding model behind the ranker's similarity feature (default `nomic-embed-text`) |
 
