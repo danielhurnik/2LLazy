@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { requestResume, requestResumeAll, waitingApplicationIds } from "@/lib/apply/humanWait";
+import { sweepStaleApplyRuns } from "@/lib/apply/runner";
 import { isRecord } from "@/lib/guards";
 import { prisma } from "@/lib/prisma";
 
@@ -24,7 +25,9 @@ export async function POST(req: NextRequest) {
     const owned = waiting.length
       ? await prisma.application.findMany({ where: { id: { in: waiting }, userId }, select: { id: true } })
       : [];
-    return Response.json({ ok: true, resumed: requestResumeAll(owned.map((row) => row.id)) });
+    const resumed = requestResumeAll(owned.map((row) => row.id));
+    const swept = await sweepStaleApplyRuns(userId);
+    return Response.json({ ok: true, resumed, swept });
   }
 
   const applicationId = typeof fields.applicationId === "string" ? fields.applicationId : "";

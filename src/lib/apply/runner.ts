@@ -5,6 +5,7 @@ import { findAdapter } from "./adapters";
 import { applyMutex, openApplyPage, releasePage, withApplyLock } from "./browser";
 import { Evidence } from "./evidence";
 import { runGenericFlow } from "./formFiller";
+import { waitingApplicationIds } from "./humanWait";
 import { settle } from "./pageActions";
 import { ApplyAbort, type ApplyContext, type ApplyEvent, type ApplyFile, type ApplyJob, type ApplyProfile, type ApplyResult } from "./types";
 
@@ -29,7 +30,10 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   odt: "application/vnd.oasis.opendocument.text",
 };
 
-const running = new Set<string>();
+const hotReloadSafeGlobals = globalThis as unknown as { applyRunningIds?: Set<string> };
+const running = (hotReloadSafeGlobals.applyRunningIds ??= new Set<string>());
+const IN_PROGRESS_STATUSES = ["APPLYING", "WAITING_FOR_USER"] as const;
+const STALE_RUN_MESSAGE = "The run stopped when the server restarted; finish it by hand or auto apply again";
 
 interface RunApplyOptions {
   autoSubmit?: boolean;
@@ -37,6 +41,25 @@ interface RunApplyOptions {
 
 function isApplyRunning(applicationId: string): boolean {
   return running.has(applicationId);
+}
+
+function hasLiveRun(applicationId: string): boolean {
+  return isApplyRunning(applicationId) || waitingApplicationIds().includes(applicationId);
+}
+
+export async function sweepStaleApplyRuns(userId?: string): Promise<number> {
+  const rows = await prisma.application.findMany({
+    where: { status: { in: [...IN_PROGRESS_STATUSES] }, ...(userId ? { userId } : {}) },
+    select: { id: true },
+  });
+  const stale = rows.map((row) => row.id).filter((id) => !hasLiveRun(id));
+  if (stale.length === 0) return 0;
+  await prisma.application.updateMany({
+    where: { id: { in: stale } },
+    data: { status: "NEEDS_MANUAL", errorMessage: STALE_RUN_MESSAGE },
+  });
+  refreshDashboardWhenInsideRequestScope();
+  return stale.length;
 }
 
 function refreshDashboardWhenInsideRequestScope(): void {
@@ -70,7 +93,12 @@ export async function loadApplyInput(applicationId: string, userId: string): Pro
     include: { job: true, user: { include: { userProfile: true } } },
   });
   if (!application) return { code: 404, message: "Application not found" };
-  if (application.status === "APPLYING" || application.status === "WAITING_FOR_USER" || isApplyRunning(applicationId)) {
+  const inProgress = (IN_PROGRESS_STATUSES as readonly string[]).includes(application.status);
+  if (inProgress && !hasLiveRun(applicationId)) {
+    await prisma.application
+      .update({ where: { id: applicationId }, data: { status: "NEEDS_MANUAL", errorMessage: STALE_RUN_MESSAGE } })
+      .catch(() => undefined);
+  } else if (inProgress || isApplyRunning(applicationId)) {
     return { code: 409, message: "This application is already being submitted" };
   }
   const userProfile = application.user.userProfile;
