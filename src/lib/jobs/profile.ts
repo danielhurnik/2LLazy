@@ -39,7 +39,7 @@ const LANGUAGE_WORDS: Array<[RegExp, string]> = [
   [/\b(spanish|spanelstina)\b/i, "Spanish"],
 ];
 
-export const PREFERRED_CHAT_MODELS = ["gemma3:4b", "gemma2:9b", "llama3"];
+export const PREFERRED_CHAT_MODELS = [process.env.OLLAMA_MODEL ?? "", "gemma3:4b", "gemma2:9b", "llama3"].filter(Boolean);
 const MODEL_INSTRUCTIONS =
   "You turn a CV into a job-search profile and answer with JSON only. " +
   "titles: up to 5 job titles this person should search for, in English, most relevant first. " +
